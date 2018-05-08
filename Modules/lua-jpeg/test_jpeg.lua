@@ -1,7 +1,4 @@
-dofile('../../include.lua')
-
-local jpeg = require 'jpeg'
-local unix = require'unix'
+local jpeg = require'jpeg'
 w = 320
 h = 240
 w = 128
@@ -37,28 +34,18 @@ for k=1,nbytes,ch do
   end
 end
 
-unix.usleep(2e6)
-
 local c_rgb = jpeg.compressor('rgb')
-print('compressing',c_rgb)
+print('compressing', c_rgb)
 c_rgb:quality(95)
---os.exit()
---print(jpeg.compress)
---print(c_rgb.compress)
---for i=1,10 do
-	t0=unix.time()
-	--img_jpeg = jpeg.compress( c_rgb,img:pointer(), w, h )
-	local ntimes = 100
-	for i=1,ntimes do
-		img_jpeg = c_rgb:compress( img:pointer(), w, h )
-	end
-	t1=unix.time()
-	print(ntimes..' compressions average:', (t1-t0)/ntimes );
-	print(type(img_jpeg),'Compression Ratio:', #img_jpeg, #img_jpeg/nbytes )
-	unix.usleep(1e4)
---end
 
-unix.usleep(5e6)
+t0 = os.clock()
+local ntimes = 100
+for i=1,ntimes do
+	img_jpeg = c_rgb:compress( img:pointer(), w, h )
+end
+t1 = os.clock()
+print(ntimes..' compressions average:', (t1-t0)/ntimes );
+print(type(img_jpeg),'Compression Ratio:', #img_jpeg, #img_jpeg/nbytes )
 
 
 f = io.open('img.jpeg','w')
