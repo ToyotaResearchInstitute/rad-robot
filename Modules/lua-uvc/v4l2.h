@@ -22,7 +22,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
-#include <assert.h>
+//#include <assert.h>
 #include <ctype.h>
 
 #include <linux/videodev2.h>
