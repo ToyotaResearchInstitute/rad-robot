@@ -14,9 +14,9 @@
 #include <string.h>
 #include <math.h>
 
-#include "lua.h"
-#include "lualib.h"
-#include "lauxlib.h"
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
 
 typedef const struct const_info {
   const char *name;
@@ -47,10 +47,10 @@ static int lua_sleep(lua_State *L) {
 }
 
 static int lua_uname(lua_State *L) {
-	struct utsname unameData;
-	uname(&unameData);
-	lua_pushstring(L, unameData.sysname);
-	return 1;
+  struct utsname unameData;
+  uname(&unameData);
+  lua_pushstring(L, unameData.sysname);
+  return 1;
 }
 
 static int lua_gethostname(lua_State *L) {
@@ -114,16 +114,14 @@ static int lua_time(lua_State *L) {
 }
 
 static int lua_time_ms(lua_State *L) {
-	// Answer is in milliseconds
-	// Used for BHuman code
 #ifdef __APPLE__
   struct timeval t;
   gettimeofday(&t, NULL);
-	lua_pushinteger(L, t.tv_sec * 1000 + t.tv_usec / 1000l);
+  lua_pushinteger(L, t.tv_sec * 1000 + t.tv_usec / 1000l);
 #else
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	lua_pushinteger(L, ts.tv_sec * 1000 + ts.tv_nsec / 1000000l);
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  lua_pushinteger(L, ts.tv_sec * 1000 + ts.tv_nsec / 1000000l);
 #endif
   return 1;
 }
@@ -226,10 +224,10 @@ static int lua_select(lua_State *L) {
   FD_ZERO(&fds);
 
   luaL_checktype(L, 1, LUA_TTABLE);
-#if LUA_VERSION_NUM == 502
-	nfds = lua_rawlen(L, 1);
-#else
+#if LUA_VERSION_NUM == 501
   nfds = lua_objlen(L, 1);
+#else
+  nfds = lua_rawlen(L, 1);
 #endif
 
   for (i = 1; i <= nfds; i++) {
@@ -307,7 +305,6 @@ static int lua_fork(lua_State *L) {
   return 1;
 }
 
-
 static const struct luaL_Reg unix_lib [] = {
   {"usleep", lua_usleep},
   {"sleep", lua_sleep},
@@ -350,12 +347,11 @@ static const const_info unix_constants[] = {
 
 int luaopen_unix (lua_State *L) {
 
-#if LUA_VERSION_NUM == 502
-	  luaL_newlib(L, unix_lib);
-#else
+#if LUA_VERSION_NUM == 501
   luaL_register(L, "unix", unix_lib);
+#else
+  luaL_newlib(L, unix_lib);
 #endif
-
   lua_install_constants(L, unix_constants);
   return 1;
 }
