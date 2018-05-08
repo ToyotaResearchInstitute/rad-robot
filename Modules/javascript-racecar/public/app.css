@@ -1,0 +1,10 @@
+img#map {
+    width: 640px;
+    height: auto;
+}
+img#camera {
+    width: 640px;
+    height: auto;
+    /*width: auto;
+    height: 240px;*/
+}
