@@ -1,0 +1,30 @@
+{
+  "name": "app-racecar",
+  "version": "1.0.0",
+  "description": "",
+  "main": "view_racecar.js",
+  "dependencies": {
+    "finalhandler": "^1.1.1",
+    "msgpack5": "^4.0.2",
+    "npm": "^5.8.0",
+    "serve-static": "^1.13.2",
+    "smoothie": "^1.35.0",
+    "three": "^0.92.0",
+    "ws": "^4.1.0",
+    "zeromq": "^4.6.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "jshintConfig": {
+    "esversion": 6,
+    "globals": {}
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/StephenMcGill-TRI/tri-robot.git"
+  }
+}

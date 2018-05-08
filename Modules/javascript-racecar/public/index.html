@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang=”en”>
+<head>
+<meta charset=”UTF-8″>
+<title>SUR</title>
+<link rel="stylesheet" type="text/css" href="app.css" media="screen" />
+<script type="application/javascript" src="/smoothie.js"></script>
+<script type="application/javascript" src="/msgpack5.min.js"></script>
+<script type="application/javascript" src="/three.min.js"></script>
+<!-- <script type="application/javascript" src="/OrbitControls.js"></script> -->
+<script type="application/javascript" src="/app.js"></script>
+</head>
+<body>
+	<table>
+		<tr>
+			<td><h3>Camera</h3></td>
+			<td><h3>Point Cloud</h3></td>
+		</tr>
+		<tr>
+			<td><img id='camera'/></td>
+			<td><div id="container_points"></div></td>
+		</tr>
+
+		<tr>
+			<td><h3>Orientation</h3></td>
+			<td><h3>Map</h3></td>
+		</tr>
+		<tr>
+			<td><div id="container_orientation"></div></td>
+			<td><img id='map'/></td>
+		</tr>
+		<tr>
+			<td><h3>Gyro</h3></td>
+			<td><h3>Accelerometer</h3></td>
+		</tr>
+		<tr>
+			<td><canvas id="gyro" width="400" height="100"></canvas></td>
+			<td><canvas id="accel" width="400" height="100"></canvas></td>
+		</tr>
+		<tr>
+			<td><h3>RPY</h3></td>
+			<td><h3>Info</h3></td>
+		</tr>
+		<tr>
+			<td><canvas id="rpy" width="400" height="100"></canvas></td>
+			<td>Info</td>
+		</tr>
+	</table>
+
+</body>
+</html>
