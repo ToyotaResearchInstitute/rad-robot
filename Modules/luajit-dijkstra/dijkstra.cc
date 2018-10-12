@@ -55,10 +55,10 @@ static const NeighborStruct neighbors8[] = {
   {0,-1,1.0}, {1,-1,M_SQRT2},
 };
 static const NeighborStruct neighbors16[] = {
-  {1,0,1.0}, {2,1,sqrt(5)}, {1,1,sqrt(2)}, {1,2,sqrt(5)},
-  {0,1,1.0}, {-1,2,sqrt(5)}, {-1,1,sqrt(2)}, {-2,1,sqrt(5)},
-  {-1,0,1.0}, {-2,-1,sqrt(5)}, {-1,-1,sqrt(2)}, {-1,-2,sqrt(5)},
-  {0,-1,1.0}, {1,-2,sqrt(5)}, {1,-1,sqrt(2)}, {2,-1,sqrt(5)},
+  {1,0,1.0}, {2,1,sqrt(5)}, {1,1,M_SQRT2}, {1,2,sqrt(5)},
+  {0,1,1.0}, {-1,2,sqrt(5)}, {-1,1,M_SQRT2}, {-2,1,sqrt(5)},
+  {-1,0,1.0}, {-2,-1,sqrt(5)}, {-1,-1,M_SQRT2}, {-1,-2,sqrt(5)},
+  {0,-1,1.0}, {1,-2,sqrt(5)}, {1,-1,M_SQRT2}, {2,-1,sqrt(5)},
 };
 
 // Run Dijkstra on an input matrix
@@ -339,13 +339,14 @@ extern "C"
     }
   }
 
-#ifdef USE_BACKWARDS
-  int n_directional_neighbors = 2 * (2 * shift_amount + 1);
-#else
   int n_directional_neighbors = 2 * shift_amount + 1;
+#ifdef USE_BACKWARDS
+  n_directional_neighbors *= 2;
 #endif
-  int directional_neighbor_inds[n_directional_neighbors];
-  double directional_neighbor_costs[n_directional_neighbors];
+  // fprintf(stderr, "n_directional_neighbors: %d\n", n_directional_neighbors);
+  NeighborStruct neighbors_local [n_directional_neighbors];
+  int angles_local[n_directional_neighbors];
+  double costs_local[n_directional_neighbors];
 
   int nNode = 0;
   while (!Q.empty()) {
@@ -374,41 +375,43 @@ extern "C"
     double costmap_of_self = costmap[ij0];
 
     int i_nbr = 0;
-    // Iterate over forward neighbor nodes:
+    // Non-negative heading index:
     for (int ashift = -shift_amount; ashift <= shift_amount; ashift++) {
-      // Non-negative heading index:
+      // Iterate over forward neighbor nodes:
       // (+ nNeighbors) so that the modulo works properly
       int a1 = (a0 + nNeighbors + ashift) % nNeighbors;
-      // fprintf(stderr, "a0: %d | ashift: %d | a1: %d\n", a0, ashift, a1);
-      directional_neighbor_inds[i_nbr] = a1;
+      angles_local[i_nbr] = a1;
+      // fprintf(stderr, "i_nbr: %d | a0: %d | ashift: %d | a1: %d\n", i_nbr, a0, ashift, a1);
+      neighbors_local[i_nbr] = neighbors0[a1];
       double dir_cost = (shift_amount == 0) ? 1 : (TURN_COST * abs(ashift));
-      directional_neighbor_costs[i_nbr] = dir_cost;
+      costs_local[i_nbr] = dir_cost;
       i_nbr++;
-#ifdef USE_BACKWARDS
-      // Backwards
-      int a2 = (a1 + nNeighbors / 2) % nNeighbors;
-      directional_neighbor_inds[i_nbr] = a2;
-      directional_neighbor_costs[i_nbr] = 2 * dir_cost;
-      i_nbr++;
-#endif
     }
-/*
+#ifdef USE_BACKWARDS
     for (int ashift = -shift_amount; ashift <= shift_amount; ashift++) {
-      // Non-negative heading index:
-      // (+ nNeighbors) so that the modulo works properly
+      // Backwards
       int a1 = (a0 + nNeighbors + ashift) % nNeighbors;
-      */
+      angles_local[i_nbr] = a1;
+      int a2 = (a0 + nNeighbors + ashift + nNeighbors / 2) % nNeighbors;
+      neighbors_local[i_nbr] = neighbors0[a2];
+      double dir_cost = (shift_amount == 0) ? 1 : (TURN_COST * abs(ashift));
+      // fprintf(stderr, "Fwd: %d -> Back: %d | Cost: %lf\n", a1, a2, dir_cost);
+      costs_local[i_nbr] = 4 * dir_cost;
+      i_nbr++;
+    }
+#endif
+
     for (int i_nbr=0;i_nbr<n_directional_neighbors;i_nbr++){
-      int a1 = directional_neighbor_inds[i_nbr];
+      int a1 = angles_local[i_nbr];
 
       // fprintf(stderr, "a0: %d | ashift: %d | a1: %d\n", a0, ashift, a1);
-      NeighborStruct nbr = neighbors0[a1];
+      NeighborStruct nbr = neighbors_local[i_nbr];
       int ioffset = nbr.ioffset;
       int joffset = nbr.joffset;
       double dist_nbr = nbr.distance;
 
-      // fprintf(stderr, "ioffset: %d, joffset: %d, dist: %lf\n",
-      //   nbr.ioffset, nbr.joffset, nbr.distance);
+      // fprintf(stderr, "i_nbr %d | ioffset: %d, joffset: %d, dist: %lf\n",
+      //   i_nbr, ioffset, joffset, dist_nbr);
 
       // Ensure valid within map dimensions
       int i1 = i0 - ioffset;
@@ -419,8 +422,6 @@ extern "C"
       if ((j1 < 0) || (j1 >= n)){
         continue;
       }
-      // double turn_cost_factor = (ashift == 0) ? 1 : (TURN_COST * abs(ashift));
-      double turn_cost_factor = directional_neighbor_costs[i_nbr];
 
       // Current cost to go from this node to the goal
       int ind1 = i1 + m * j1 + nMatrixNodes * a1;
@@ -450,6 +451,8 @@ extern "C"
       // fprintf(stderr, "cost=%lf\n", cost);
 
       // New node cost to go
+      // double turn_cost_factor = (ashift == 0) ? 1 : (TURN_COST * abs(ashift));
+      double turn_cost_factor = costs_local[i_nbr];
       double c1 = c0 + cost * turn_cost_factor;
       // fprintf(stderr, "cost1=%lf\n", cost);
 
