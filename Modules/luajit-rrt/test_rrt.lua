@@ -24,6 +24,8 @@ tree:plan({-0.9,-0.9}, {0.9, 0.9})
 
 -- Periodically, check to find the best trajectory
 -- Should do this within a computational bound
+if TEST_SIMPLE then
+
 for i=1,10e3 do
   tree:iterate()
   if i>1e3 and tree.goal.parent then
@@ -35,6 +37,8 @@ for i=1,10e3 do
                         i, tree.goal.parent and tree.lowerBoundCost or 0/0))
   end
   -- for _, vertex in ipairs(tree) do print(vertex.id, unpack(vertex)) end
+end
+
 end
 
 if tree.goal.parent then
@@ -106,7 +110,10 @@ local planner_car = rrt.new{
     for i, interval in ipairs(self.intervals) do
       if s[i] < interval[1] or s[i] > interval[2] then return true end
     end
-    local obstacles = {{0, 0, 12}, {10, 10, 12}, {60, 60, 12}, {-60, -60, 12}}
+    local obstacles = {{-40, 10, 15}, {-15, 15, 15}, {0, 0, 15}, {15, -15, 15}, {5, -25, 15},
+                       {-90, -50, 11}, {-70, -50, 11}, {-50, -50, 11},
+                      {0, -90, 11}, {0, -70, 11}, {0, -50, 11},
+                      }
     for _, obs in ipairs(obstacles) do
       local dp = math.sqrt((s[1] - obs[1])^2 + (s[2] - obs[2])^2)
       if dp < (obs[3] or 1) then return true end
@@ -114,22 +121,30 @@ local planner_car = rrt.new{
     return false
   end,
   is_near_goal = function(self, state, goal)
+    -- Returns false or distance to goal
     goal = goal or self.goal
     -- Check if Dubins reaches the goal collision free
-    local reaches_goal = self:extend(state, goal)
-    print("is_near_goal", reaches_goal)
-    if reaches_goal then return true end
-    -- Else, check if the sample is nearby the goal
-
+    local reaches_goal, _, length, path = self:extend(state, goal)
+    if reaches_goal then
+      return length, path
+    end
+    -- Else, check if is close enough already
     local dp = math.sqrt((state[1] - goal[1])^2 + (state[2] - goal[2])^2)
-    if #goal==2 then return dp < 0.25 end
+    local close_position = dp < 0.25
+    -- if #goal == 2 then
+    --   return close_position and dp or false
+    -- end
     local dth = state[3] - goal[3]
     if dth > math.pi then
       dth = dth - 2 * math.pi
     elseif dth < -math.pi then
       dth = dth + 2 * math.pi
     end
-    return dp < 0.5 and math.abs(dth) < (10 * math.pi / 180)
+    local close_angle = math.abs(dth) < (10 * math.pi / 180)
+    if close_position and close_angle then
+      return dp
+    end
+    return false
   end,
   distance = function(self, from, to)
     -- Check if close enough to each other...?
@@ -165,21 +180,21 @@ local planner_car = rrt.new{
       -- print("Cur", collides, unpack(cur))
       -- Collision check this configuration
       if collides then
-        return false, cur
+        return false, cur, t, path
       end
       t = t + step_size
     end
-    return true, target, length
+    return true, target, length, path
   end
 }
 
 print("Planning the car route!")
 
+-- planner_car:plan({-85,-85, 0}, {85, 85, math.pi/2})
+-- planner_car:plan({-80,-80, 0}, {75, 75, math.pi})
 -- planner_car:plan({-75,-75, 0}, {75, 75, math.pi/2})
--- planner_car:plan({-75,-75, 0}, {75, 75, math.pi})
--- planner_car:plan({-75,-75, 0}, {75, 75, math.pi/2})
-planner_car:plan({-75,-75, 0}, {75, 99, 0})
--- planner_car:plan({-75,-75, math.pi/2}, {75, 75, math.pi/2})
+-- planner_car:plan({-75,-75, 0}, {75, 99, 0})
+planner_car:plan({-75,-75, math.pi/2}, {75, 75, math.pi/2})
 -- Periodically, check to find the best trajectory
 -- Should do this within a computational bound
 local i = 0
@@ -191,7 +206,7 @@ repeat
   if i>1e3 and planner_car.goal.parent then
     print(string.format("%d | Iteration %d | Cost: %f",
                         dt, i, planner_car.lowerBoundCost))
-    break
+    -- break
   elseif i % 100 == 0 then
     print(string.format("%d | Iteration %d | Cost: %f",
                         dt, i, planner_car.goal.parent and planner_car.lowerBoundCost or 0/0))
