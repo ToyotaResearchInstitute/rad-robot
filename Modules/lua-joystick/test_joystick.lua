@@ -1,7 +1,7 @@
 #!/usr/bin/env luajit
 
 local js = require'joystick'
-js.open(arg[1])
+js.open(arg[1], true)
 while true do
   local axes = js.axis()
   print('Axes', unpack(axes))

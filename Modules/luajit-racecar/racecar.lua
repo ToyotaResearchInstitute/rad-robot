@@ -1,3 +1,7 @@
+#!/usr/bin/env luajit
+local IS_MAIN = arg[-1]=='luajit' and arg[0]:match"[^/]?racecar.lua$"=='racecar.lua' and ... ~= 'racecar'
+-- print('IS_MAIN', IS_MAIN, arg[0])
+
 local coresume = require'coroutine'.resume
 local costatus = require'coroutine'.status
 local min = require'math'.min
@@ -9,47 +13,80 @@ local tconcat = require'table'.concat
 local tinsert = require'table'.insert
 local tremove = require'table'.remove
 local has_logger, logger = pcall(require, 'logger')
-local has_packet, packet = pcall(require, 'lcm_packet')
-local fragment = has_packet and packet.fragment or function(ch, str)
-  if #ch>255 then ch = ch:sub(1, 255) end
+local has_lcm, lcm = pcall(require, 'lcm')
+local has_packet, lcm_packet = pcall(require, 'lcm_packet')
+local has_signal, signal = pcall(require, 'signal')
+local time_us = require'unix'.time_us
+local usleep = require'unix'.usleep
+-- Simple msgpack payload with no fragmentation
+local function mp_fragment(ch, str, str_sz, cnt)
+  -- Truncate the channel name (msgpack limited)
+  local ch_sz = #ch
+  if ch_sz>255 then ch = ch:sub(1, 255) end
   return tconcat{
     schar(0x81), -- 1 element map
-    schar(0xd9, #ch),
+    schar(0xd9, ch_sz),
     ch, str
   }
 end
 
-local nan = 0/0
-local RAD_TO_DEG = 180/math.pi
-local DEG_TO_RAD = math.pi/180
+local HOSTNAME = io.popen"hostname":read"*line"
 
+local nan = 0/0
+local DEG_PER_RAD = 180/math.pi
+local RAD_PER_DEG = math.pi/180
+local ROBOT_HOME = os.getenv"ROBOT_HOME" or '.'
 local lib = {
   nan = nan,
-  RAD_TO_DEG = RAD_TO_DEG,
-  DEG_TO_RAD = DEG_TO_RAD
+  RAD_TO_DEG = DEG_PER_RAD,
+  DEG_TO_RAD = RAD_PER_DEG,
+  RPM_PER_MPS = 5220,
+  HOSTNAME = HOSTNAME,
+  ROBOT_HOME = ROBOT_HOME
 }
 
 -- Jitter information
 local jitter_counts, jitter_times = {}, {}
 
-local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
--- local MCL_ADDRESS, MCL_PORT = "239.255.76.67", 7667
--- local unix = require'unix'
--- local time = require'unix'.time
-local time_us = require'unix'.time_us
-local usleep = require'unix'.usleep
-local skt = require'skt'
-local skt_mcl, err = skt.open{
-  address = MCL_ADDRESS,
-  port = MCL_PORT,
-  -- ttl = 1
-}
-if not skt_mcl then
-  io.stderr:write(string.format("MCL not available: %s\n", err))
+local skt_mcl, skt_lcm, msg_partitioner
+local function init(options)
+  if type(options)~='table' then options = {} end
+  -- MCL: localhost with ttl of 0, LCM: subnet with ttl of 1
+  if has_lcm then
+    local err
+    local has_skt, skt = pcall(require, 'skt')
+    if has_skt then
+      local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
+      skt_mcl, err = skt.open{
+        address = MCL_ADDRESS,
+        port = MCL_PORT,
+        ttl = IS_MAIN and 1 or 0
+      }
+      if skt_mcl then
+        local mtu = options.mtu or 'localhost'
+        msg_partitioner = lcm_packet.new_partitioning(mtu)
+      else
+        io.stderr:write(string.format("MCL not available: %s\n",
+                                      tostring(err)))
+      end
+      local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
+      skt_lcm, err = skt.open{
+        address = LCM_ADDRESS,
+        port = LCM_PORT,
+        -- ttl = 1
+      }
+      if not skt_lcm then
+        io.stderr:write(string.format("LCM not available: %s\n",
+                                      tostring(err)))
+      end
+    end
+  end
+  return true
 end
-local has_lcm, lcm = pcall(require, 'lcm')
+lib.init = init
 
-local has_signal, signal = pcall(require, 'signal')
+
+
 local exit_handler = false
 lib.running = true
 if has_signal then
@@ -96,20 +133,32 @@ local function announce(channel, str, cnt, t_us)
   if type(str)~='string' then
     return false, "Bad serialize"
   end
-  cnt = tonumber(cnt) or 0
-  local msg = fragment(channel, str, cnt)
+  cnt = tonumber(cnt) or jitter_counts[channel] or 0
+  local msg = msg_partitioner:fragment(channel, str, #str, cnt)
   local ret, err = skt_mcl:send_all(msg)
+  if not ret then return false, err end
   update_jitter(channel, t_us)
   return #str
 end
 lib.announce = announce
+
 function lib.log_announce(log, obj, channel)
-  local cnt, t_us
+  local str, cnt, t_us
   if log then
-    channel = channel or log.channel
-    obj, cnt, t_us = log:write(obj, channel)
+    if not channel then channel = log.channel end
+    str, cnt, t_us = log:write(obj, channel)
   end
-  return announce(channel, obj, cnt, t_us)
+  local ret, err = announce(channel, str or obj, cnt, t_us)
+  if log and not str then
+    -- Logging error
+    return false, cnt
+  elseif not ret then
+    -- Sending error
+    return false, err
+  else
+    -- OK
+    return true
+  end
 end
 
 -- Calculate the jitter in milliseconds
@@ -132,9 +181,6 @@ local function jitter_tbl(info)
   info = info or {}
   for ch, ts in pairs(jitter_times) do
     local avg, jitterA, jitterB = get_jitter(ts)
-    -- tinsert(info, string.format(
-    --   "%s\t%3d\t%5.1f Hz\t%+6.2f ms\t%3d ms\t%+6.2f ms",
-    --   ch, #ts, 1e3/avg, jitterA, avg, jitterB))
     tinsert(info, sformat(
       "%s\t%5.1f Hz\t%+6.2f ms\t%6.2f ms\t%+6.2f ms",
       ch, 1e3/avg, jitterA, avg, jitterB))
@@ -167,19 +213,22 @@ local function populate_dev()
   return devices
 end
 
-function lib.parse_arg(arg, use_dev)
+local function parse_arg(arguments, use_dev)
+  if type(arguments)~='table' then
+    return false, "Need argument as table"
+  end
   local flags = {
-    home = os.getenv"RACECAR_HOME" or '.',
     debug = tonumber(os.getenv"DEBUG")
   }
   do
     local i = 1
-    while i<=#arg do
-      local a = arg[i]
+    local n_args = #arguments
+    while i<=n_args do
+      local a = arguments[i]
       i = i + 1
-      local flag = a:match"^--([%w_]+)"
+      local flag = a:match"^%-%-([%w_]+)"
       if flag then
-        local val = arg[i]
+        local val = arguments[i]
         if not val then break end
         flags[flag] = tonumber(val) or val
       else
@@ -198,6 +247,7 @@ function lib.parse_arg(arg, use_dev)
   end
   return flags
 end
+lib.parse_arg = parse_arg
 
 -- Run through the log
 --[[
@@ -226,38 +276,61 @@ end
 --]]
 
 -- Rate: loop rate in milliseconds
-function lib.listen(cb_tbl, loop_rate, loop_fn)
+function lib.listen(options)
   assert(has_lcm, lcm)
-  assert(has_logger, logger)
-  local lcm_obj = assert(lcm.init(MCL_ADDRESS, MCL_PORT))
-  if type(cb_tbl)=='table' then
-    for ch, fn in pairs(cb_tbl) do
-      assert(lcm_obj:register(ch, fn, logger.decode))
+  local lcm_obj = assert(lcm.init{skt = skt_mcl})
+  if type(options)~='table' then options = {} end
+  -- Add LCM channels to poll
+  if type(options.channel_callbacks)=='table' then
+    assert(has_logger, logger)
+    for ch, cb in pairs(options.channel_callbacks) do
+      print("Listening for", ch)
+      assert(lcm_obj:cb_register(ch, cb, logger.decode))
     end
   end
-  loop_rate = tonumber(loop_rate) or -1
-  loop_fn = type(loop_fn)=='function' and loop_fn
-  -- local t0, t1 = 0, 0
-  local t_loop = 0
+  -- Add extra file descriptors to poll
+  if type(options.fd_updates)=='table' then
+    for fd, update in pairs(options.fd_updates) do
+      assert(lcm_obj:fd_register(fd, update))
+    end
+  end
+  local loop_rate = tonumber(options.loop_rate)
+  local loop_rate1
+  local loop_fn = type(options.loop_fn)=='function' and options.loop_fn
+  local t_update
+  local dt_poll = 4 -- 250Hz
+  local t_fn = 0
+  local dt_fn
   local t_debug = 0
-  local dt_debug = 1e6
+  local debug_rate = 1e3
+  local status = true
+  local err
   while lib.running do
-    -- t0 = time_us()
-    local loop_rate1 = max(0, loop_rate + tonumber(t_loop - time_us())/1e3)
-    local status = lcm_obj:update(loop_rate1)
-    if not status then
-      lib.running = false
-    end
-    t_loop = time_us()
+    local t = time_us()
     if loop_rate then
-      if loop_fn then loop_fn() end
-      update_jitter("lcm_loop", t_loop)
+      dt_fn = tonumber(t - t_fn) / 1e3
+      loop_rate1 = max(1, min(loop_rate - dt_fn, dt_poll))
+    else
+      loop_rate1 = -1
     end
-    if tonumber(t_loop - t_debug) > dt_debug then
-      io.write(tconcat(jitter_tbl(), '\n'), '\n')
-      t_debug = time_us()
+    status, err = lcm_obj:update(loop_rate1)
+    t_update = time_us()
+    if not status then lib.running = false; break end
+    dt_fn = tonumber(t_update - t_fn)/1e3
+    if loop_fn and dt_fn >= loop_rate then
+      t_fn = t_update
+      -- update_jitter("lcm_loop", t_fn)
+      loop_fn(t_update)
+    end
+    if tonumber(t_update - t_debug)/1e3 > debug_rate then
+      t_debug = t_update
+      local jt = jitter_tbl()
+      if #jt>0 then
+        io.write(tconcat(jt, '\n'), '\n')
+      end
     end
   end
+  return status, err
 end
 
 function lib.play(fnames, realtime, update, cb)
@@ -289,6 +362,16 @@ function lib.play(fnames, realtime, update, cb)
     t_log1 = t_us
     local ret = realtime and cb and cb(dt0_log, ch)
   until not lib.running
+end
+
+if IS_MAIN then
+  init()
+  local flags = parse_arg(arg, false)
+  local msg = flags[1]
+  if msg then
+    print("Sending", msg)
+    assert(announce('houston', {evt=msg}))
+  end
 end
 
 return lib

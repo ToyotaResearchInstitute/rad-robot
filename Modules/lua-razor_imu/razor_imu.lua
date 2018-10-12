@@ -23,16 +23,14 @@ local function line2vals(line)
 end
 lib.line_values = line2vals
 
-local function parse(line)
+local function parse(line, tbl)
   local vals = line2vals(line)
---[[
+  if not tbl then tbl = {} end
   if #vals ~= nvals then
-    io.stderr:write(string.format(
-      "Expected %d Got %d\n", nvals, #vals))
+    return false, string.format(
+      "Expected %d Got %d\n", nvals, #vals)
   end
---]]
   -- Check the length of vals
-  local tbl = {}
   tbl.timeM = vals[1]
   local ival = 2
   if ival>#vals then return tbl end
@@ -73,28 +71,39 @@ local function parse(line)
 end
 lib.parse = parse
 
-function lib.update(new_data)
-  local str = ''
+-- pkt: new data
+-- obj: table in which to store info
+-- buffer: current data
+local function update(pkt, obj, buffer)
+  -- Append new data to our buffer
+  if pkt then buffer = buffer..pkt end
+  local iline = buffer:find('\n', 1, true)
+  -- If no complete packet exists, just return
+  if not iline then return obj, buffer end
+  -- Save the buffer
+  local buffer1 = buffer:sub(iline + 1)
+  -- Take the line
+  local line = buffer:sub(1, iline-1)
+  -- Return the data and the buffer
+  return parse(line, obj), buffer1
+end
+lib.update = update
+
+local coyield = require'coroutine'.yield
+function lib.co_update(pkt)
+  local buffer = ''
+  local obj = {}
   while true do
-    if type(new_data)=='string' then
-      str = str..new_data
-    end
-    local istart = str:find('\n', 1, true)
-    local obj
-    if istart then
-      local line = str:sub(1, istart-1)
-      str = str:sub(istart + 1)
-      obj = parse(line)
-    end
-    new_data = coroutine.yield(obj)
+    update(pkt, obj, buffer)
+    pkt = coyield(obj)
   end
 end
 
 local function co_service(devname)
   local f = io.open(devname)
-  coroutine.yield(f)
+  coyield(f)
   for line in f:lines() do
-    coroutine.yield(parse(line))
+    coyield(parse(line))
   end
 end
 
@@ -103,7 +112,7 @@ function lib.service(devname, wrap)
     return false, "Bad device name"
   end
   if wrap then
-    local fn =  coroutine.wrap(co_service)
+    local fn = coroutine.wrap(co_service)
     fn(devname)
     return fn
   else

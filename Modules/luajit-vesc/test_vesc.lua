@@ -72,9 +72,10 @@ print("Sending command the board")
 -- local send_pkt = assert(vesc.servo_position(val or 0.5))
 local send_pkts = {
   assert(vesc.sensors()),
-  assert(vesc.duty_cycle(val or 0)),
+  --assert(vesc.duty_cycle(val or 0)),
+  assert(vesc.rpm(val or 0)),
   assert(vesc.sensors()),
-  assert(vesc.duty_cycle(val or 0)),
+  assert(vesc.rpm(val or 0)),
   assert(vesc.sensors())
 }
 

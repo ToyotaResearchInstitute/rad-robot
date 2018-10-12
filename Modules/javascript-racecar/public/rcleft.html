@@ -6,11 +6,12 @@
 <link rel="stylesheet" type="text/css" href="rcleft.css" media="screen" />
 <script type="application/javascript" src="/msgpack5.min.js"></script>
 <script type="application/javascript" src="/plotly.min.js"></script>
+<script type="application/javascript" src="/three.min.js"></script>
 <script type="application/javascript" src="/rcleft.js"></script>
 </head>
 <body>
   <div class="row">
-    <div class="column">
+    <div id="left" class="column">
       <!--  width="576" height="720" -->
       <svg id="environment" viewBox="-3 -6 8 10">
         <!-- preserveAspectRatio="xMidYMid meet" -->
@@ -37,38 +38,38 @@
       </svg>
       <canvas id="stage"></canvas>
     </div>
-    <div class="column">
+    <div id="right" class="column">
+      <table>
+        <tr>
+          <td><img id='video1'/></td>
+          <td><img id='video2'/></td>
+          <td><img id='video3'/></td>
+        </tr>
+      </table>
       <div id="graph"></div>
       <form id="likelihoodSelection" name="likelihoodSelection">
         <fieldset>
           <legend>Select likelihood</legend>
-          <div>
-              <input type="radio" id="visibilities" name="likelihood" />
-              <label for="visibilities">Visibilities</label>
-          </div>
-          <div>
-              <input type="radio" id="beliefs" name="likelihood" checked />
-              <label for="beliefs">Belief State</label>
-          </div>
-          <div>
-              <input type="radio" id="unseen_risk" name="likelihood" />
-              <label for="unseen_risk">Unseen</label>
-          </div>
-          <div>
-              <input type="radio" id="brake_rates" name="likelihood" />
-              <label for="brake_rates">Brake Rate</label>
-          </div>
-          <div>
-              <input type="radio" id="valid" name="likelihood" />
-              <label for="valid">Valid</label>
-          </div>
-          <div>
-              <input type="radio" id="total_risk" name="likelihood" />
-              <label for="total_risk">Total Risk</label>
-          </div>
+          <input type="radio" id="visibilities" name="likelihood" />
+          <label for="visibilities">Visibilities</label>
+
+          <input type="radio" id="beliefs" name="likelihood" checked />
+          <label for="beliefs">Belief State</label>
+
+          <input type="radio" id="unseen_risk" name="likelihood" />
+          <label for="unseen_risk">Unseen</label>
+
+          <input type="radio" id="reaction_likelihood" name="likelihood" />
+          <label for="brake_rates">Brake Rate</label>
+
+          <input type="radio" id="conditioned_risk" name="likelihood" />
+          <label for="total_risk">Total Risk</label>
         </fieldset>
       </form>
+      <!-- <button id="go" type="button">Go</button>
+      <button id="stop" type="button">Stop</button> -->
       <div id="info"></div>
+      <div id="three"></div>
     </div>
   </div>
 </body>

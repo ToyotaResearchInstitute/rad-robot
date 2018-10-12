@@ -52,6 +52,10 @@ local function plan(self, start, goal)
   -- Do not add the goal to the kd-tree
 end
 
+local function evaluateCostToGo0(self, s)
+  return self:distState(s, self.goal)
+end
+
 -- Iterate the dimensions
 -- Default distance
 -- Return the distance and each dimensions' distances
@@ -59,7 +63,7 @@ local function distState0(self, from, to)
   local diff = {}
   for i, f in ipairs(from) do diff[i] = to[i] - f end
   local s = 0
-  for _, d in ipairs(diff) do s = s + math.pow(d, 2) end
+  for _, d in ipairs(diff) do s = s + d ^ 2 end
   return math.sqrt(s), diff
 end
 
@@ -68,10 +72,10 @@ local function is_near_goal0(self, state)
 end
 
 -- Walk from state to goal
--- Returns boolean idicating if we got to the goal state (exactConnection)
+-- Returns boolean indicating if we got to the goal state (exactConnection)
 -- and the final state that we did get to,
 -- walking in one direction to the goal
-local function extend0(self, state, target)
+local function extend0(self, state, target, extra)
   -- Assume that both to and from are collision-free
   local cost, dists = self:distState(state, target)
   local incrementTotal = cost / self.DISCRETIZATION_STEP
@@ -113,39 +117,44 @@ local function set_system(self, funcs)
   if type(funcs.is_near_goal)=='function' then
     self.is_near_goal = funcs.is_near_goal
   end
-  return true
+  return self
 end
 
 -- Returns the best candidate if we can connect, else false
 local function findBestCandidate(self, state, neighbors)
   -- print("stateRandom", unpack(state))
   -- Which neighbor should be our parent?
+  -- NOTE: This does _not_ include the collision checking
   local candidates = {}
   for _, neighbor in ipairs(neighbors) do
-    local costFromParent = self:distState(neighbor, state)
-    local costFromRoot = neighbor.costFromRoot + costFromParent
     local parent = self.tree[neighbor.id]
+    local costFromParent, extraFromParent = self:distState(parent, state)
     -- print("neighbor", unpack(neighbor))
-    if costFromParent>0 then
+    if costFromParent > 0 then
       table.insert(candidates, {
         parent = parent,
-        costFromRoot = costFromRoot,
+        costFromRoot = parent.costFromRoot + costFromParent,
         costFromParent = costFromParent,
+        extraFromParent = extraFromParent,
         unpack(state)
       })
     end
   end
-  if #candidates == 0 then return false end
+  if #candidates == 0 then return false, "No candidates" end
   -- Sort by costFromRoot
   table.sort(candidates, function(a, b) return a.costFromRoot < b.costFromRoot end)
   -- Now, try to extend this state to the best neighbor
   for _, c in ipairs(candidates) do
-    local is_collision_free = self:extend(c.parent, state)
+    -- print("Go from", unpack(c.parent))
+    -- print("Go to", unpack(state))
+    local is_collision_free = self:extend(
+      c.parent, state, c.costFromParent, c.extraFromParent)
     if is_collision_free then
+      -- Can return here, since sorted
       return c
     end
   end
-  return false
+  return false, "No collision free"
 end
 
 local function rewire(self, neighbors, vertexNew)
@@ -161,7 +170,8 @@ local function rewire(self, neighbors, vertexNew)
         neighbor.costFromRoot = totalCost
         neighbor.costFromParent = cost
         -- TODO: Set the cost to the goal...
-        if self:is_near_goal(neighbor) and neighbor.costFromRoot < self.lowerBoundCost then
+        local nbr_near_goal = self:is_near_goal(neighbor)
+        if nbr_near_goal and neighbor.costFromRoot < self.lowerBoundCost then
           self.goal.parent = neighbor
           self.lowerBoundCost = neighbor.costFromRoot
         end
@@ -196,8 +206,8 @@ local function iterate(self)
     nearby[i] = self.tree[id]
   end
   -- // 3. Find the best parent and extend from that parent
-  local candidate = findBestCandidate(self, stateRandom, nearby)
-  if not candidate then return false, "No valid candidates" end
+  local candidate, err = findBestCandidate(self, stateRandom, nearby)
+  if not candidate then return false, err end
 
   -- // Check for admissible cost-to-go until the goal
   -- This is the A* bit: Ignore samples that aren't guided
@@ -205,7 +215,9 @@ local function iterate(self)
     local costToGo = self:evaluateCostToGo(candidate)
     if costToGo >= 0 then
       -- > lowerBoundCost
-      if (candidate.costFromRoot + costToGo) > self.lowerBoundCost then
+      local newCost = candidate.costFromRoot + costToGo
+      -- print("newCost", newCost, "oldCost", self.lowerBoundCost)
+      if newCost > self.lowerBoundCost then
         return false, "Short circuit"
       end
     end
@@ -235,7 +247,8 @@ local function iterate(self)
 end
 
 -- Input: list of min and max for each dimension {{a,b},{c,d},...}
-function lib.new(intervals)
+function lib.new(parameters)
+  local intervals = parameters.intervals
   local nDim = #intervals
   local ranges = {}
   local centers = {}
@@ -256,7 +269,7 @@ function lib.new(intervals)
     set_system = set_system,
     distState = distState0,
     extend = extend0,
-    evaluateCostToGo = function(self, s) return self:distState(s, self.goal) end,
+    evaluateCostToGo = evaluateCostToGo0,
     is_collision = function() return false end,
     is_near_goal = is_near_goal0,
     -- Our path result
@@ -273,8 +286,9 @@ function lib.new(intervals)
     BIAS_THRESHOLD = 0.1, -- Fraction
     GOAL_PERTURBATION = 0.1,
     CLOSE_DISTANCE = 0.01,
-    DISCRETIZATION_STEP = 0.005, -- TODO: Unit
-    EPS_REWIRE = 0, --0.001
+    -- TODO: Units...?
+    DISCRETIZATION_STEP = tonumber(parameters.DISCRETIZATION_STEP) or 0.005,
+    EPS_REWIRE = 0.001, --0, --0.001
   }
 
   -- Return the object

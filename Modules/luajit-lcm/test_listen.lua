@@ -14,10 +14,14 @@
 -- export LCM_DEFAULT_URL=udpm://239.255.76.67:7667?ttl=1
 
 local skt = require'skt'
-local packet = require'packet'
+local packet = require'lcm_packet'
 
-local ADDRESS, PORT = "239.255.76.67", 7667
-local transport = assert(skt.init_mc(ADDRESS, PORT))
+local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
+local transport = assert(skt.open{
+    address = LCM_ADDRESS,
+    port = LCM_PORT,
+    ttl = 0
+  })
 
 local lcmtype = 'example_t'
 local default = false

@@ -1,45 +1,61 @@
+local bor = require'bit'.bor
+local lshift = require'bit'.lshift
 local ffi = require'ffi'
 local C = ffi.C
 
+local ceil = require'math'.ceil
+local min = require'math'.min
+local tinsert = require'table'.insert
+
 local lib = {}
+
+--[[
+luajit: ...a/dev/tri-robot/Modules/luajit-lcm_packet/lcm_packet.lua:211: attempt to perform arithmetic on field 'fragments_remaining' (a nil value)
+stack traceback:
+        ...a/dev/tri-robot/Modules/luajit-lcm_packet/lcm_packet.lua:211: in function 'assemble'
+        /home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:48: in function 'lcm_receive'
+        /home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:118: in function </home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:118>
+        /home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:77: in function 'update'
+        .../nvidia/dev/tri-robot/Modules/luajit-racecar/racecar.lua:299: in function 'listen'
+        ./run_joystick.lua:64: in main chunk
+        [C]: at 0x00404e30
+
+]]
 
 -- Packet reassembly
 local MAGIC_LCM2 = 0x4c433032
 local MAGIC_LCM3 = 0x4c433033
 
---[[
-// Disable long packet reception by setting NUM BUFFERS to zero.
-// Total memory allocated is roughly:
-//
-// NUM_BUFFERS*(MAX_PACKET_SIZE + MAX_FRAGMENTS + CHANNEL_LENGTH) + PUBLISH_BUFFER_SIZE
-//
-// Note that for full LCM compatibility, CHANNEL_LENGTH must be 256.
-//
---]]
 local LCM3_NUM_BUFFERS = 4
-local LCM3_MAX_PACKET_SIZE = 300000
 local LCM3_MAX_FRAGMENTS = 256
-local LCM_MAX_CHANNEL_LENGTH = 256
+-- local LCM_MAX_CHANNEL_LENGTH = 256
+local LCM_MAX_CHANNEL_LENGTH = 63
 
---[[
-// LCMLite will allocate a single buffer of the size below for
-// publishing messages. The LCM3 fragmentation option will be used to
-// send messages larger than this.
---]]
---[[
--- for osx in the LCM library
-40:#define LCM_SHORT_MESSAGE_MAX_SIZE 1435
-41:#define LCM_FRAGMENT_MAX_PAYLOAD 1423
---]]
--- In lcm-lite
-local MAXIMUM_HEADER_LENGTH = 300
-local LCM_PUBLISH_BUFFER_SIZE = 8192
+-- local MAXIMUM_HEADER_LENGTH = 300
 
--- MTU limited if using on, e.g., a wireless link
-local LCM_PUBLISH_BUFFER_SIZE = 1435
+local IP_HEADER_SZ = 20 -- Can go up to 60
+local UDP_HEADER_SZ = 8
+-- Nested with the UDP header are _more_ headers
+local LCM2_HEADER_SZ = 8
+local LCM3_HEADER_SZ = 20
 
--- Max it out...
--- local LCM_PUBLISH_BUFFER_SIZE = 16384
+local partition_sizes = setmetatable({
+  ['OSX'] = 1443, -- Not sure why smaller... 1435 in lcm udpm
+  ['wifi'] = 1500 - IP_HEADER_SZ - UDP_HEADER_SZ,
+  -- ['lite'] = 8192, -- In lcm-lite
+  ['localhost'] = math.pow(2, 14) - IP_HEADER_SZ - UDP_HEADER_SZ,
+  -- (math.pow(2, 16) - 1) is 0xFFFF
+  ['jumbo'] = (math.pow(2, 16) - 1) - IP_HEADER_SZ - UDP_HEADER_SZ,
+}, {
+__call = function(self, mtu)
+  if type(mtu) == 'number' then
+    return mtu - IP_HEADER_SZ - UDP_HEADER_SZ
+  elseif type(mtu) == 'string' then
+    return self[mtu]
+  end
+  return self.wifi
+end
+})
 
 ffi.cdef[[
 uint32_t ntohl(uint32_t netlong);
@@ -47,11 +63,6 @@ uint16_t ntohs(uint16_t netshort);
 uint32_t htonl(uint32_t hostlong);
 uint32_t htons(uint16_t hostlong);
 ]]
-
--- TODO: The buffers should not be global, they should be allocated per packet instance
---local fragment_buffers = ffi.new('fragment_buffer[?]', LCM3_NUM_BUFFERS)
-local fragment_buffers = {}
-local last_fragment_count = 0
 
 local function encode_u32(buf, num)
   -- Try to just use the built-in...
@@ -77,34 +88,68 @@ local function decode_u16(buf)
   return C.ntohs(ffi.cast('uint16_t*', buf)[0])
 end
 
-local function assemble2(buf, buf_len, from_addr)
-  local buf_pos = 4
-  local msg_seq = decode_u32(buf + buf_pos)
-  buf_pos = buf_pos + 4
-  -- copy out zero-terminated string holding the channel #.
-  local channel = ffi.new('uint8_t[?]', LCM_MAX_CHANNEL_LENGTH)
-  local channel_len = 0
+ffi.cdef[[
+size_t strnlen(const char *s, size_t maxlen);
+]]
+local function assemble2(self, buf, buf_len, msg_id, msg_seq)
+  local buf_pos = 8
+  -- copy zero-terminated string holding the channel #
 
-  while buf[buf_pos] ~= 0 do
-    -- Test malformed packet
-    if (buf_pos >= buf_len) or (channel_len >= LCM_MAX_CHANNEL_LENGTH) then
-      return false, "Malformed channel name"
-    end
-    channel[channel_len] = buf[buf_pos]
-    buf_pos = buf_pos + 1
-    channel_len = channel_len + 1
+  -- TODO: Use size_t strnlen(const char *s, size_t maxlen);
+  local cap_sz = min(buf_len - buf_pos, self.LCM_MAX_CHANNEL_LENGTH)
+  local ch_sz = tonumber(C.strnlen(buf + buf_pos, cap_sz))
+  if ch_sz == cap_sz then
+    return false, string.format("Bad name: %d / %d", ch_sz, cap_sz)
   end
-  channel[channel_len] = 0
-  buf_pos = buf_pos + 1 -- skip the zero.
-
+  local channel = ffi.string(buf + buf_pos)
+  buf_pos = buf_pos + ch_sz + 1 -- Plus the null terminator
   -- Return the Channel and Payload
-  return ffi.string(channel), ffi.string(buf + buf_pos, buf_len - buf_pos)
+  return channel, ffi.string(buf + buf_pos, buf_len - buf_pos)
 end
 
-local function assemble3(buf, buf_len, from_addr)
-  local buf_pos = 4 -- already started...
-  local msg_seq = decode_u32(buf + buf_pos)
-  buf_pos = buf_pos + 4
+local function get_buffer(fragment_buffers, msg_id, msg_seq, msg_size, fragments_in_msg)
+  -- Search for fragment
+  for i, f in ipairs(fragment_buffers) do
+    if f.msg_id == msg_id and f.msg_seq == msg_seq and f.msg_size == msg_size and f.fragments_in_msg == fragments_in_msg then
+      return f, i
+    end
+  end
+  local fbuf, ibuf
+  if #fragment_buffers >= LCM3_NUM_BUFFERS then
+    -- Find the oldest packet
+    local old_seq = math.huge
+    for i, f in ipairs(fragment_buffers) do
+      -- Use a completed packet, while waiting on the others
+      if f.fragments_remaining==0 then
+        ibuf = i
+        fbuf = f
+        break
+      elseif f.msg_seq < old_seq then
+        old_seq = f.msg_seq
+        ibuf = i
+        fbuf = f
+      end
+    end
+  else
+    fbuf = {}
+    tinsert(fragment_buffers, fbuf)
+    ibuf = #fragment_buffers
+  end
+
+  -- Initialize the buffer
+  fbuf.msg_id = msg_id --sender id
+  fbuf.msg_seq = msg_seq
+  fbuf.msg_size = msg_size
+  fbuf.buf = ffi.new('uint8_t[?]', msg_size)
+  fbuf.fragments_in_msg = fragments_in_msg
+  fbuf.frag_received = {} -- just accumulate the received packets
+  fbuf.fragments_remaining = fragments_in_msg
+
+  return fbuf, ibuf
+end
+
+local function assemble3(self, buf, buf_len, msg_id, msg_seq)
+  local buf_pos = 8 -- Have started already
   local msg_size = decode_u32(buf + buf_pos)
   buf_pos = buf_pos + 4
   local fragment_offset = decode_u32(buf + buf_pos)
@@ -114,17 +159,19 @@ local function assemble3(buf, buf_len, from_addr)
   local fragments_in_msg = decode_u16(buf + buf_pos)
   buf_pos = buf_pos + 2
 
-  -- TODO: Ensure >=0
+  -- Add sanity checks
   local payload_len = buf_len - buf_pos
+  if payload_len < 1 then
+    return false, "Bad payload size"
+  end
 
   if fragments_in_msg > LCM3_MAX_FRAGMENTS then
-    return false, "LCM3_MAX_FRAGMENTS breached: "..fragments_in_msg
+    return false, string.format("%d > LCM3_MAX_FRAGMENTS", fragments_in_msg)
   end
 
   if fragment_id >= fragments_in_msg then
-    return false, string.format(
-      "Invalid fragment ID %d/%d",
-      fragment_id, fragments_in_msg)
+    return false, string.format("Invalid fragment ID %d/%d",
+                                fragment_id, fragments_in_msg)
   end
 
   if fragment_offset + payload_len > msg_size then
@@ -133,120 +180,77 @@ local function assemble3(buf, buf_len, from_addr)
       fragment_offset, tonumber(payload_len), tonumber(fragment_offset + payload_len), msg_size)
   end
 
-  -- Search for fragment
-  local fbuf
-  for i, f in ipairs(fragment_buffers) do
-    if f.msg_seq == msg_seq and f.from_addr == from_addr then
-      fbuf = f
-      break
-    end
+  -- Find our buffer
+  local fbuf = get_buffer(self, msg_id, msg_seq, msg_size, fragments_in_msg)
+  -- Check if the buffer has been completed already
+  if fbuf.fragments_remaining == 0 then
+    return false, "Redudant packet"
+  elseif fbuf.frag_received[fragment_id + 1] then
+    return false, "Redundant fragment"
   end
 
-  -- We only do ejection here, in case there are redundant packets sent over the wire,
-  -- which should not create new buffers after the packet was finished...
-  if not fbuf then
-
-    -- Not found, so create a new buffer if there is room
-    -- NOTE: This is unecessary if we init the fragment buffers properly in self
-    if #fragment_buffers < LCM3_NUM_BUFFERS then
-      fbuf = {}
-      table.insert(fragment_buffers, fbuf)
-    else
-      local max_age = -1
-      for i, f in ipairs(fragment_buffers) do
-        if f.fragments_remaining==0 then
-          fbuf = f
-          break
-        else
-          -- Find the oldest packet
-          local age = last_fragment_count - f.last_fragment_count
-          if age > max_age then
-            max_age = age
-            fbuf = f
-          end
-        end
-      end
-    end
-    -- Should not get here...
-    if not fbuf then return false, "Fragment not assigned" end
-
-    -- Initialize the buffer
-    --print("INIT BUFFER", msg_seq)
-    fbuf.from_addr = from_addr
-    fbuf.msg_seq = msg_seq
-    fbuf.buf = ffi.new('uint8_t[?]', msg_size)
-    fbuf.frag_received = {} -- just accumulate the received packets
-    fbuf.fragments_remaining = fragments_in_msg
-  end
-
-  -- Save the fragment counters as a proxy for timestamp ages
-  fbuf.last_fragment_count = last_fragment_count
-  last_fragment_count = last_fragment_count + 1
-
+  -- First fragment contains the channel name plus data
   if fragment_id == 0 then
-    -- this fragment contains the channel name plus data
-    -- Safely find the name (In case no null termination...)
-    local channel_len = 0
-    while buf[buf_pos] ~= 0 do
-      if buf_pos >= buf_len or channel_len >= LCM_MAX_CHANNEL_LENGTH then
-        return false, "Bad name"
-      end
-      channel_len = channel_len + 1
-      buf_pos = buf_pos + 1
+    local cap_sz = min(buf_len - buf_pos, self.LCM_MAX_CHANNEL_LENGTH)
+    local ch_sz = tonumber(C.strnlen(buf + buf_pos, cap_sz))
+    if ch_sz == cap_sz then
+      return false, string.format("Bad name: %d / %d", ch_sz, cap_sz)
     end
-    -- We know for certain it is null terminated
-    fbuf.channel = ffi.string(buf + buf_pos - channel_len)
-    -- Skip the null termination in the buffer
-    buf_pos = buf_pos + 1
+    fbuf.channel = ffi.string(buf + buf_pos)
+    buf_pos = buf_pos + ch_sz + 1
   end
 
   -- Copy the payload fragment into the buffer
-  if buf_pos < buf_len then
-    ffi.copy(fbuf.buf + fragment_offset, buf + buf_pos, buf_len - buf_pos)
+  local payload_sz = buf_len - buf_pos
+  if payload_sz > 0 then
+    ffi.copy(fbuf.buf + fragment_offset, buf + buf_pos, payload_sz)
   end
 
-  -- Accounting update in case we have not seen this fragment before
-  if not fbuf.frag_received[fragment_id+1] then
-    fbuf.frag_received[fragment_id+1] = true
-    fbuf.fragments_remaining = fbuf.fragments_remaining - 1
-    -- Debug
-    --[[
-    local pkts={}
-    for i=1,fragments_in_msg do
-      pkts[i] = fbuf.frag_received[i] and 'X' or '-'
-    end
-    print("Packets:", table.concat(pkts))
-    --]]
+  -- Set as received
+  fbuf.frag_received[fragment_id+1] = true
+  -- Decerement number of fragments we need for a full packet
+  fbuf.fragments_remaining = fbuf.fragments_remaining - 1
+  -- Debug
+  --[[
+  local pkts={}
+  for i=1,fragments_in_msg do
+    pkts[i] = fbuf.frag_received[i] and 'X' or '-'
+  end
+  print("Packets:", table.concat(pkts))
+  --]]
 
-    -- Check if we are done assembling this fragment
-    if fbuf.fragments_remaining == 0 then
-    --if #fbuf.frag_received == fragments_in_msg then
-      --print("Delivering...")
-      return fbuf.channel, ffi.string(fbuf.buf, msg_size)
-    elseif #fbuf.frag_received > fragments_in_msg then
-      return false, "Extra packets"
-    end
+  -- Check if we are done assembling this fragment
+  if fbuf.fragments_remaining == 0 then
+    -- Retain in the buffer, in case redundant packets were sent for reliability
+    -- When receiving a redundant packet for a message that already was assembled,
+    -- the buffer is aware
+    return fbuf.channel, ffi.string(fbuf.buf, msg_size)
+  else
+    -- Still need packets for assembling
+    return fbuf.channel or true
   end
 
-  return fbuf.channel, fbuf.fragments_remaining, fbuf
 end
 
 -------------------
 -- Assembly area --
 -------------------
 -- Buffer is a uint8_t*
-function lib.assemble(buffer, buf_len, msgid)
-  if not buffer then return false, "bad input" end
+local function assemble(self, buffer, buf_len, msg_id)
+  if not buffer then return false, "Bad input" end
   if buf_len < 4 then return false, "Header too small" end
   local buf = ffi.cast('uint8_t*', buffer)
   local magic = decode_u32(buf)
-  return (magic==MAGIC_LCM2 and assemble2 or assemble3)(buf, buf_len, msgid)
-end
-
-function lib.get_nfragments(buffer, buf_len)
-  if buf_len < 4 then return false, "Header too small" end
-  local buf = ffi.cast('uint8_t*', buffer)
-  return decode_u32(buf)==MAGIC_LCM2 and 1 or decode_u16(buf + 18)
+  local msg_seq = decode_u32(buf + 4)
+  if magic==MAGIC_LCM2 then
+    return assemble2(self, buf, buf_len, msg_id or 0, msg_seq)
+  elseif magic==MAGIC_LCM3 then
+    -- local nfrags = decode_u16(buf + 18)
+    -- print("nfrags", nfrags)
+    return assemble3(self, buf, buf_len, msg_id or 0, msg_seq)
+  else
+    return false, "Bad magic number"
+  end
 end
 
 ------------------------
@@ -257,10 +261,13 @@ end
 -- TODO: Message is string or void*
 -- TODO: Have a pre-existing buffer for message sending...
 -- Smaller buffer creation
-local function frag2(channel, message, msg_len, msg_seq)
+local function frag2(self, channel, ch_sz, message, msg_sz, msg_seq)
+  if type(msg_seq)~='number' then
+    return false, "Need a message sequence number"
+  end
   -- Assemble non-fragmented message
   local buf_pos = 0
-  local buf = ffi.new('uint8_t[?]', LCM_PUBLISH_BUFFER_SIZE)
+  local buf = ffi.new('uint8_t[?]', self.LCM_MAX_MESSAGE_SZ)
   local msg = ffi.cast("uint8_t*", message)
   -- Set the header identifier
   encode_u32(buf + buf_pos, MAGIC_LCM2)
@@ -268,31 +275,36 @@ local function frag2(channel, message, msg_len, msg_seq)
   -- TODO: Track the message sequence
   encode_u32(buf + buf_pos, msg_seq)
   buf_pos = buf_pos + 4
-  -- copy channel
+  -- copy channel (and null terminator)
   ffi.copy(buf + buf_pos, channel)
-  -- Plus the null terminator
-  buf_pos = buf_pos + #channel + 1
+  buf_pos = buf_pos + ch_sz + 1
 
-  ffi.copy(buf + buf_pos, msg, msg_len);
-  buf_pos = buf_pos + msg_len
+  ffi.copy(buf + buf_pos, msg, msg_sz)
+  buf_pos = buf_pos + msg_sz
 
+  -- Give a Lua string
+  -- TODO: Choose between Lua string and ffi array
   return ffi.string(buf, buf_pos)
 end
 
 -- TODO: Make this coroutine based
-local function frag3(channel, message, msg_len, msg_seq)
-  --print('sending', msg_len)
-  local fragment_offset = 0
-  --local max_fragment_size = LCM_PUBLISH_BUFFER_SIZE - MAXIMUM_HEADER_LENGTH
-  -- 20 is the header length; channel is the remaining bit
-  local max_fragment_size = LCM_PUBLISH_BUFFER_SIZE - 20 - #channel - 1
-  local fragment_id = 0
-  local fragments_in_msg = math.floor((msg_len + max_fragment_size - 1) / max_fragment_size)
+local function frag3(self, channel, ch_sz, message, msg_len, msg_seq)
+  -- TODO: Maximum channel size
+  -- TODO: Is this wrong?
+  local fragments_in_msg = ceil((msg_len + ch_sz) / self.LCM3_MAX_FRAGMENT_SZ)
+  if fragments_in_msg > self.MAX_NUM_FRAGMENTS then
+    return false, "Message requires too many fragments"
+  end
+
+  print(self.LCM3_MAX_FRAGMENT_SZ, self.LCM_MAX_MESSAGE_SZ)
+
   local msg = ffi.cast("uint8_t*", message)
   -- Table-based for now...
   local fragments = {}
-  local buf = ffi.new('uint8_t[?]', LCM_PUBLISH_BUFFER_SIZE)
+  local buf = ffi.new('uint8_t[?]', self.LCM_MAX_MESSAGE_SZ)
   -- Go through the message
+  local fragment_id = 0
+  local fragment_offset = 0
   while fragment_offset < msg_len do
     local buf_pos = 0
     -- TODO: Use a struct here
@@ -309,36 +321,64 @@ local function frag3(channel, message, msg_len, msg_seq)
     buf_pos = buf_pos + 2
     encode_u16(buf + buf_pos, fragments_in_msg)
     buf_pos = buf_pos + 2
+    local n_msg_bytes_to_copy
+    local n_msg_bytes_left = msg_len - fragment_offset
     if fragment_id==0 then
+      -- Accrue fragment usage
       -- Copy the channel name
       ffi.copy(buf + buf_pos, channel)
-      -- Plus the null terminator
-      buf_pos = buf_pos + #channel + 1
+      -- Plus the null terminator (OK since buffer is initially zeros)
+      local fragment_usage = ch_sz + 1
+      buf_pos = buf_pos + fragment_usage
+      n_msg_bytes_to_copy = min(self.LCM3_MAX_FRAGMENT_SZ - fragment_usage, n_msg_bytes_left)
+    else
+      n_msg_bytes_to_copy = min(self.LCM3_MAX_FRAGMENT_SZ, n_msg_bytes_left)
     end
-    -- Fragment management for _this_ fragment
-    local frag_sz = math.min(msg_len - fragment_offset, max_fragment_size)
-    --print('frag_sz', frag_sz)
-    ffi.copy(buf + buf_pos, msg + fragment_offset, frag_sz)
-    buf_pos = buf_pos + frag_sz
-    table.insert(fragments, ffi.string(buf, buf_pos))
+    -- Check
+    print(fragment_id, 'n_msg_bytes_to_copy', n_msg_bytes_to_copy, buf_pos)
+    ffi.copy(buf + buf_pos, msg + fragment_offset, n_msg_bytes_to_copy)
+    buf_pos = buf_pos + n_msg_bytes_to_copy
+    tinsert(fragments, ffi.string(buf, buf_pos))
     -- Accounting
-    fragment_offset = fragment_offset + frag_sz
+    fragment_offset = fragment_offset + n_msg_bytes_to_copy
     fragment_id = fragment_id + 1
   end
   return fragments
 end
 
-function lib.fragment(channel, message, msg_seq)
-  local msg_sz = #message
-  if (msg_sz < LCM_PUBLISH_BUFFER_SIZE - MAXIMUM_HEADER_LENGTH) then
-    return frag2(channel, message, msg_sz, msg_seq)
+-- TODO: channel size and message size as inputs?
+local function fragment(self, channel, message, msg_sz, msg_seq)
+  local ch_sz = #channel
+  if ch_sz > self.LCM_MAX_CHANNEL_LENGTH then
+    return false, "Channel name is too long"
+  end
+  if (msg_sz + ch_sz) < self.LCM2_MAX_PAYLOAD_SZ then
+    return frag2(self, channel, ch_sz, message, msg_sz, msg_seq)
   else
-    return frag3(channel, message, msg_sz, msg_seq)
+    return frag3(self, channel, ch_sz, message, msg_sz, msg_seq)
   end
 end
 
+-- Message sender ID
 function lib.gen_id(address, port)
-  return bit.bor(address, ffi.cast('uint64_t', bit.lshift(port, 32)))
+  return bor(address, ffi.cast('uint64_t', lshift(port, 32)))
+end
+
+function lib.new_partitioning(mtu)
+  local LCM_MAX_MESSAGE_SZ = partition_sizes(mtu)
+  local LCM2_MAX_PAYLOAD_SZ = LCM_MAX_MESSAGE_SZ - LCM2_HEADER_SZ
+  local LCM3_MAX_FRAGMENT_SZ = LCM_MAX_MESSAGE_SZ - LCM3_HEADER_SZ
+  --local fragment_buffers = ffi.new('fragment_buffer[?]', LCM3_NUM_BUFFERS)
+  local fragment_buffers = {
+    LCM_MAX_CHANNEL_LENGTH = LCM_MAX_CHANNEL_LENGTH,
+    LCM_MAX_MESSAGE_SZ = LCM_MAX_MESSAGE_SZ,
+    LCM2_MAX_PAYLOAD_SZ = LCM2_MAX_PAYLOAD_SZ,
+    LCM3_MAX_FRAGMENT_SZ = LCM3_MAX_FRAGMENT_SZ,
+    MAX_NUM_FRAGMENTS = math.pow(2, 12),
+    fragment = fragment,
+    assemble = assemble
+  }
+  return fragment_buffers
 end
 
 return lib

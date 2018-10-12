@@ -6,10 +6,10 @@ local coresume = require'coroutine'.resume
 local costatus = require'coroutine'.status
 local has_mmap, mmap = pcall(require, 'mmap')
 if not has_mmap then io.stderr:write"No mmap support\n" end
-local usleep = require'unix'.usleep
+-- local usleep = require'unix'.usleep
 local utime = require'unix'.time_us
 local tconcat = require'table'.concat
-local tsort = require'table'.sort
+-- local tsort = require'table'.sort
 local unpack = unpack or require'table'.unpack
 
 -- File extension
@@ -112,9 +112,7 @@ local function write(self, obj, channel)
   -- TODO: Add ftell for retrying
   -- TODO: Check the return code of write
   local ret, err = self.f_log:write(entry)
-  if not ret then
-    return false, err
-  end
+  if not ret then return false, err end
   self.last_count = count
   self.n_entries_log = self.n_entries_log + 1
   return str, count, t_us
@@ -133,8 +131,8 @@ local function write_raw(self, str, channel, t_us, count)
     return false, "Bad timestamp type"
   elseif not (type(count)=='number' or ffi.istype('uint64_t', count)) then
     return false, "Bad count type"
-  elseif count <= self.last_count then
-    return false, "Non-increasing log count"
+  elseif count < self.last_count then
+    return false, "Decreasing log count"
   end
   local hdr = lcm_hdr_t{
     SYNC_WORD,
@@ -186,8 +184,6 @@ if has_mmap then
   playback_mmap = function(logname)
     local mobj = assert(mmap.open(logname))
     local ptr, sz = unpack(mobj)
-    local data
-    local t_last
     coyield()
     local offset = 0
     while offset >= 0 and offset < sz do
@@ -227,7 +223,7 @@ local function playback_multiple(lognames, callbacks)
   end
   -- Initial yield is the nuber of states
   coyield(#states)
-  -- Run until we no log logs are available
+  -- Run until no logs are available
   while #states > 0 do
     -- Find the minimum timestamp
     local imin, tmin = 0, math.huge
@@ -245,7 +241,7 @@ local function playback_multiple(lognames, callbacks)
     if callbacks then
       local obj = decode(str)
       local fn = callbacks[ch]
-      local ret = fn and fn(obj, t_us)
+      if fn then fn(obj, t_us) end
     end
     coyield(str, ch, t_us, cnt)
     -- Repopulate or remove
@@ -282,6 +278,18 @@ function lib.play(lognames, use_iterator, callbacks)
   end
 end
 
+local function combine(log, lognames)
+  local co_play = coroutine.wrap(playback_multiple, true)
+  -- local ok, status = coresume(co_play, lognames)
+  -- if not ok then return false, status end
+  co_play(lognames)
+  for str, channel, t_us, count in co_play do
+    assert(log:write_raw(str, channel, t_us))
+  end
+  return log
+end
+lib.combine = combine
+
 local function close(self)
   if io.type(self.f_log)=='file' then
     self.f_log:close()
@@ -289,6 +297,7 @@ local function close(self)
     os.execute(string.format(
       "chmod a-wx '%s'", self.fname))
   end
+  return self
 end
 
 local mt = {
@@ -301,7 +310,7 @@ function lib.new(name, log_dir, datestamp)
   log_dir = type(log_dir)=='string' and log_dir or './logs'
   local status = os.execute("mkdir -p "..log_dir)
   if not status or status==0 then
-    return false, "Cannot make directory"
+    return false, string.format("Cannot make directory %s", log_dir)
   end
   -- Log new data
   if type(datestamp)~='string' or datestamp:find(iso8601_find)~=1 then
@@ -317,6 +326,7 @@ function lib.new(name, log_dir, datestamp)
     write = encode and write,
     write_raw = write_raw,
     close = close,
+    combine = combine,
     --
     channel = name,
     datestamp = datestamp,
