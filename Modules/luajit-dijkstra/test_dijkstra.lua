@@ -26,8 +26,8 @@ local USE_BACKWARDS = true
 -- local m, n = 320, 240
 -- j is x, i is y
 -- local m, n = 160, 120
--- local m, n = 80, 60
-local m, n = 40, 30
+local m, n = 80, 60
+-- local m, n = 40, 30
 -- local m, n = 20, 15
 
 local n_cells = m * n
