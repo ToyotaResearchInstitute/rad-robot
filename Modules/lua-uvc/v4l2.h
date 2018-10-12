@@ -1,6 +1,6 @@
 /*
   Author: Daniel D. Lee <ddlee@seas.upenn.edu>, 05/10
-  	: Stephen McGill 10/10
+        : Stephen McGill 10/10
     : Yida Zhang 05/13
 */
 
@@ -10,14 +10,14 @@
 #define INVERT 0
 #define NBUFFERS 2
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 
-#include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -47,39 +47,40 @@
 /* struct for query ctrl and menu */
 typedef struct query_node query_node;
 struct query_node {
-    char * key;
-    void * value;
-    query_node * next;
+  char *key;
+  void *value;
+  query_node *next;
 };
 
 /* struct for uvc camera object */
 typedef struct {
-    int fd;
-    int init;
-    int width;
-    int height;
-    int count;
-    const char * pixelformat; 
-    void ** buffer;
-    int *buf_len;
-    query_node *ctrl_map; 
-    query_node *menu_map;
-    int fps_num;
-    int fps_denum;
+  int fd;
+  int init;
+  int width;
+  int height;
+  int count;
+  const char *pixelformat;
+  void **buffer;
+  int *buf_len;
+  int *buf_used;
+  query_node *ctrl_map;
+  query_node *menu_map;
+  int fps_num;
+  int fps_denum;
 } v4l2_device;
 
 int v4l2_error(const char *error_msg);
 int v4l2_open(const char *device);
-int v4l2_init(v4l2_device * vdev);
-int v4l2_close(v4l2_device * vdev);
-int v4l2_stream_on(v4l2_device * vdev);
-int v4l2_stream_off(v4l2_device * vdev);
-int v4l2_get_ctrl(v4l2_device * vdev, const char *name, int *value);
-int v4l2_set_ctrl(v4l2_device * vdev, const char *name, int value);
-int v4l2_read_frame(v4l2_device * vdev);
-int v4l2_init_mmap(v4l2_device * vdev);
-int v4l2_uninit_mmap(v4l2_device * vdev);
-int v4l2_close_query(v4l2_device * vdev);
+int v4l2_init(v4l2_device *vdev);
+int v4l2_close(v4l2_device *vdev);
+int v4l2_stream_on(v4l2_device *vdev);
+int v4l2_stream_off(v4l2_device *vdev);
+int v4l2_get_ctrl(v4l2_device *vdev, const char *name, int *value);
+int v4l2_set_ctrl(v4l2_device *vdev, const char *name, int value);
+int v4l2_read_frame(v4l2_device *vdev);
+int v4l2_init_mmap(v4l2_device *vdev);
+int v4l2_uninit_mmap(v4l2_device *vdev);
+int v4l2_close_query(v4l2_device *vdev);
 
 /*
 int v4l2_set_ctrl_by_id(int id, int value);

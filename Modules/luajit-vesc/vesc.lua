@@ -7,6 +7,7 @@ local bxor = require'bit'.bxor
 local lshift = require'bit'.lshift
 local rshift = require'bit'.rshift
 local coyield = require'coroutine'.yield
+local floor = require'math'.floor
 
 local function lshift16(val, amt)
   return band(lshift(val, amt or 1), 0xFFFF)
@@ -22,7 +23,7 @@ local function generate_crc16_lut()
   for idx=0, 255 do
     local crc = 0
     local c = lshift16(idx, 8)
-    for i=0, 7 do
+    for _=0, 7 do
       if band(bxor(c, crc), 0x8000) ~= 0 then
         crc = bxor(lshift16(crc), base)
       else
@@ -90,7 +91,7 @@ function lib.duty_cycle(val)
   elseif val<-100 or val>100 then
     return false, "Bad duty cycle range! [-100, 100]"
   end
-  val = math.floor(val * 1e3)
+  val = floor(val * 1e3)
   return set_crc{
     -- Set the length
     0x02, 0x05,
@@ -116,7 +117,7 @@ function lib.current(val)
   elseif val<-MAX_CURRENT or val>MAX_CURRENT then
     return false, "Bad current range!"
   end
-  val = math.floor(val)
+  val = floor(val)
   return set_crc{
     -- Set the length
     0x02, 0x05,
@@ -141,7 +142,7 @@ function lib.current_brake(val)
   elseif val<-MAX_CURRENT or val>MAX_CURRENT then
     return false, "Bad current range!"
   end
-  val = math.floor(val)
+  val = floor(val)
   return set_crc{
     -- Set the length
     0x02, 0x05,
@@ -159,7 +160,7 @@ function lib.current_brake(val)
 end
 
 local MAX_RPM = 30000
-local ID_SET_RPM = 0x07
+local ID_SET_RPM = 0x08
 function lib.rpm(val)
   -- input rotations per minute
   if type(val)~='number' then
@@ -167,7 +168,7 @@ function lib.rpm(val)
   elseif val<-MAX_RPM or val>MAX_RPM then
     return false, "Bad rpm range!"
   end
-  val = math.floor(val)
+  val = floor(val)
   return set_crc{
     -- Set the length
     0x02, 0x05,
@@ -185,7 +186,7 @@ function lib.rpm(val)
 end
 
 local MAX_POSITION = 100000
-local ID_SET_POSITION = 0x08
+local ID_SET_POSITION = 0x09
 function lib.position(val)
   -- input motor position
   if type(val)~='number' then
@@ -193,7 +194,7 @@ function lib.position(val)
   elseif val<-MAX_POSITION or val>MAX_POSITION then
     return false, "Bad position range!"
   end
-  val = math.floor(val)
+  val = floor(val)
   return set_crc{
     -- Set the length
     0x02, 0x05,
@@ -219,7 +220,7 @@ function lib.servo_position(val)
   elseif val<0 or val>1 then
     return false, "Bad servo position range [0,1]!"
   end
-  val = math.floor(val * 1e3)
+  val = floor(val * 1e3)
   return set_crc{
     -- Set the length
     0x02, 0x03,
@@ -235,7 +236,7 @@ function lib.servo_position(val)
 end
 
 -- Input payload table
-local function parse_values(p)
+local function parse_values(p, tbl)
   local id = p[1]
   if id == GET_FW_VERSION_ID then
     return p[2] * 16 + p[3]
@@ -243,50 +244,50 @@ local function parse_values(p)
   if id ~= GET_SENSORS_ID or #p ~= 56 then
     return false, "Not a values packet: "..tostring(p[1])
   end
-  return {
-    -- id = p[1],
-    -- MOSFET Temperature in Celsius
-    mos_C = {
-      (lshift(p[2], 8) + p[3]) / 10,
-      (lshift(p[4], 8) + p[5]) / 10,
-      (lshift(p[6], 8) + p[7]) / 10,
-      (lshift(p[8], 8) + p[9]) / 10,
-      (lshift(p[10], 8) + p[11]) / 10,
-      (lshift(p[12], 8) + p[13]) / 10,
-    },
-    -- Board Temperature in Celsius
-    pcb_C = (lshift(p[14], 8) + p[15]) / 10,
-    -- current_motor:
-    motor_mA = (lshift(p[16], 24) + lshift(p[17], 16)
-          + lshift(p[18], 8) + p[19]) * 10,
-    -- current_in:
-    battery_mA = lshift(p[20], 24) + lshift(p[21], 16)
-      + lshift(p[22], 8) + p[23],
-    -- PWM duty cycle, now
-    pwm = (lshift(p[24], 8) + p[25]) / 10,
-    rpm = lshift(p[26], 24) + lshift(p[27], 16)
-      + lshift(p[28], 8) + p[29],
-    v_in = (lshift(p[30], 8) + p[31]) / 10,
-    -- Drawn capacity, in milliAmp-hours:
-    drawn_mAh = (lshift(p[32], 24) + lshift(p[33], 16)
-      + lshift(p[34], 8) + p[35]) / 10,
-    -- Charged capacity, in milliAmp-hours:
-    charged_mAh = (lshift(p[36], 24) + lshift(p[37], 16)
-      + lshift(p[38], 8) + p[39]) / 10,
-    -- Drawn energy, in milliWatt-hours:
-    drawn_mWh = (lshift(p[40], 24) + lshift(p[41], 16)
-          + lshift(p[42], 8) + p[43]) / 10,
-    -- Charged energy, in milliWatt-hours:
-    charged_mWh = (lshift(p[44], 24) + lshift(p[45], 16)
-          + lshift(p[46], 8) + p[47]) / 10,
-    -- Tachometer
-    tach = lshift(p[48], 24) + lshift(p[49], 16)
-      + lshift(p[50], 8) + p[51],
-    tach_abs = lshift(p[52], 24) + lshift(p[53], 16)
-      + lshift(p[54], 8) + p[55],
-    -- MC Fault Code
-    fault = p[56]
+  if not tbl then tbl = {} end
+  -- id = p[1],
+  -- MOSFET Temperature in Celsius
+  tbl.mos_C = {
+    (lshift(p[2], 8) + p[3]) / 10,
+    (lshift(p[4], 8) + p[5]) / 10,
+    (lshift(p[6], 8) + p[7]) / 10,
+    (lshift(p[8], 8) + p[9]) / 10,
+    (lshift(p[10], 8) + p[11]) / 10,
+    (lshift(p[12], 8) + p[13]) / 10,
   }
+  -- Board Temperature in Celsius
+  tbl.pcb_C = (lshift(p[14], 8) + p[15]) / 10
+  -- current_motor:
+  tbl.motor_mA = (lshift(p[16], 24) + lshift(p[17], 16)
+        + lshift(p[18], 8) + p[19]) * 10
+  -- current_in:
+  tbl.battery_mA = lshift(p[20], 24) + lshift(p[21], 16)
+    + lshift(p[22], 8) + p[23]
+  -- PWM duty cycle, now
+  tbl.pwm = (lshift(p[24], 8) + p[25]) / 10
+  tbl.rpm = lshift(p[26], 24) + lshift(p[27], 16)
+    + lshift(p[28], 8) + p[29]
+  tbl.v_in = (lshift(p[30], 8) + p[31]) / 10
+  -- Drawn capacity, in milliAmp-hours:
+  tbl.drawn_mAh = (lshift(p[32], 24) + lshift(p[33], 16)
+    + lshift(p[34], 8) + p[35]) / 10
+  -- Charged capacity, in milliAmp-hours:
+  tbl.charged_mAh = (lshift(p[36], 24) + lshift(p[37], 16)
+    + lshift(p[38], 8) + p[39]) / 10
+  -- Drawn energy, in milliWatt-hours:
+  tbl.drawn_mWh = (lshift(p[40], 24) + lshift(p[41], 16)
+        + lshift(p[42], 8) + p[43]) / 10
+  -- Charged energy, in milliWatt-hours:
+  tbl.charged_mWh = (lshift(p[44], 24) + lshift(p[45], 16)
+        + lshift(p[46], 8) + p[47]) / 10
+  -- Tachometer
+  tbl.tach = lshift(p[48], 24) + lshift(p[49], 16)
+    + lshift(p[50], 8) + p[51]
+  tbl.tach_abs = lshift(p[52], 24) + lshift(p[53], 16)
+    + lshift(p[54], 8) + p[55]
+  -- MC Fault Code
+  tbl.fault = p[56]
+  return tbl
 end
 lib.parse_values = parse_values
 
@@ -300,18 +301,13 @@ local VESC_CHECKSUM_HIGH = 5
 local VESC_CHECKSUM_LOW = 6
 local VESC_END = 7
 function lib.update(new_data)
-  local str = ''
+  local str = type(new_data)=='string' and new_data or ''
   local pkt_state = VESC_START
   local pkt_len = 0
   local pkt_crc = 0
   local pkt_payload = {}
   local pkt_done = false
   while true do
-    -- Add any new data
-    if type(new_data)=='string' then
-      str = str..new_data
-      new_data = false
-    end
     local cursor = 1
     while cursor <= #str do
       local byte = str:byte(cursor)
@@ -385,6 +381,10 @@ function lib.update(new_data)
       pkt_done = false
     else
       new_data = coyield(false, pkt_state)
+    end
+    -- Add any new data
+    if type(new_data)=='string' then
+      str = str..new_data
     end
   end -- while a string
 end

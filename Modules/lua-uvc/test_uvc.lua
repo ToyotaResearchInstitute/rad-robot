@@ -2,7 +2,8 @@
 local uvc = require'uvc'
 
 local devname = arg[1] or '/dev/video0'
-local cam = assert(uvc.init(devname, 1344, 376, 'yuyv', 1, 15))
+--local cam = assert(uvc.init(devname, 1344, 376, 'yuyv', 1, 15))
+local cam = assert(uvc.init(devname, 320, 240, 'mjpeg', 1, 15))
 local timeout = tonumber(arg[2]) or -1
 
 local t0 = os.time()

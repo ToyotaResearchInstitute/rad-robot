@@ -1,6 +1,8 @@
 local lib = {}
 local has_ffi, ffi = pcall(require, 'ffi')
 local has_unix, unix = pcall(require, 'unix')
+local min, max = require'math'.min, require'math'.max
+local floor = require'math'.floor
 local sformat = require'string'.format
 local tconcat = require'table'.concat
 local tinsert = require'table'.insert
@@ -117,19 +119,22 @@ function lib.save_netpbm(fname, map, width, height, resolution, offset)
     local line = {}
     for row in map do
       for i, el in ipairs(row) do
-        line[i] = math.max(0, math.min(maxval, math.floor(el)))
+        line[i] = max(0, min(maxval, floor(el)))
       end
       f_pgm:write(tconcat(line, " "), "\n")
     end
   else
     local header = {
       "P5",
-      sformat("%d %d", width, height),
-      maxval,
       sformat('# resolution: %.2f', tonumber(resolution) or 0),
       sformat('# offset: %.2f', tonumber(offset) or 0),
+      sformat("%d %d", width, height),
+      maxval,
+      ''
     }
-    f_pgm:write(tconcat(header, "\n"), "\n")
+    local hdr = tconcat(header, "\n")
+    -- f_pgm:write(hdr, "\n")
+    unix.fwrite(f_pgm, hdr, #hdr)
     unix.fwrite(f_pgm, map, width * height)
   end
   f_pgm:close()
@@ -181,15 +186,21 @@ function lib.load_ply(fname, points, is_planar)
   end
   -- Now read all the points
   print(sformat("%d points of dimension %d", n_pts, #props))
-  local tp = type(points)
-  if tp~='table' and tp~='cdata' then points = {} end
-  if is_planar then
-    for i=1,#props do points[i] = points[i] or {} end
+  local use_cb = type(points)=='function'
+  if not use_cb then
+    local tp = type(points)
+    if tp~='table' and tp~='cdata' then points = {} end
+    if is_planar then
+      for i=1,#props do points[i] = points[i] or {} end
+    end
   end
   for l in f_ply:lines() do
     local row = {}
     for v in l:gmatch"%S+" do row[#row+1] = tonumber(v) end
-    if is_planar then
+    -- Callback on the row...
+    if use_cb then
+      points(row)
+    elseif is_planar then
       for i=1,#props do
         local p = points[i]
         p[#p+1] = row[i]

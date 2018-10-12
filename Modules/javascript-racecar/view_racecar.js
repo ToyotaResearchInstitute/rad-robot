@@ -87,7 +87,9 @@ mcl_transport.on('message', (msg, rinfo) => {
     const msg_mp =
         Buffer.concat([ Buffer.from([ 0x81, 0xd9, ch.length ]), ch, payload ]);
     // console.log(`LCM0 [${seq_id0}]`, ch.toString('utf8'), msg_mp.length);
-    wss.broadcast(msg_mp);
+    if (ch.toString('utf8') != 'vicon') {
+      wss.broadcast(msg_mp);
+      }
     break;
   case 0x3033: // Decode LCM multiple: 0x4c43 3033
     const seq_id = msg.readUInt32BE(4);
@@ -127,7 +129,8 @@ mcl_transport.on('message', (msg, rinfo) => {
     if (n === nfrag) {
       fragments.delete(uuid);
       const msg_mp = Buffer.concat(frag_list);
-      // console.log(`LCM1 [${seq_id}]`, msg_mp.length, fragments.size);
+      // console.log(`LCM1 [${seq_id}]`, ch.toString('utf8'), msg_mp.length,
+      // fragments.size);
       wss.broadcast(msg_mp);
       }
     break;
@@ -182,7 +185,8 @@ if (zeromq) {
 // Send from WebSockets client to multicast network
 wss.on('connection', (ws) => {
   ws.binaryType = 'arraybuffer';
-  ws.on('message', (data) => { mcl_transport.send(data); });
+  ws.on('message', (data) => { console.log("Received", typeof data, data); });
+  // ws.on('message', (data) => { mcl_transport.send(data); });
   ws.on('close', function close() { console.log('disconnected'); });
   ws.on('error', console.error);
 });

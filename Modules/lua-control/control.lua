@@ -8,82 +8,89 @@ local tinsert = require'table'.insert
 local unpack = unpack or require'table'.unpack
 local dist = require'vector'.distance
 local tf2D = require'transform'.tf2D
-local kdtree = require'kdtree'
+local vector = require'vector'
+
+local function gen_path(waypoints, ds)
+  ds = tonumber(ds) or 0.05
+  -- Two dimensional points
+  local path, length = {}, 0
+  for i=1, #waypoints-1 do
+    local p_a = vector.new(waypoints[i])
+    local p_b = vector.new(waypoints[i+1])
+    local dp = p_b - p_a
+    local d = vector.norm(dp)
+    length = length + d
+    dp = vector.unit(dp)
+    tinsert(path, p_a)
+    for step = ds, d-ds, ds do
+      local p = p_a + step * dp
+      tinsert(path, p)
+    end
+  end
+  return path, length
+end
+lib.gen_path = gen_path
 
 -- Usage: c
 -- L is lookahead distance
 -- threshold_close is how far away from the path before we give up
--- TODO: Make lookahead a function - shuld use the curvature of the car, currently
-local function pure_pursuit(path, lookahead, threshold_close)
+local function pure_pursuit(params)
   -- Initialization bits
-  threshold_close = tonumber(threshold_close) or 0.5 -- meters
-  -- Two dimensional points
-  local tree = kdtree.create(2)
-  -- Populate the tree with the points on the path
-  for i, p in ipairs(path) do tree:insert(p, i) end
-  local p_final = path[#path]
-  local id_path_last
+  params = type(params)=='table' and params or {}
+  local path = params.path
+  local fn_nearby = params.fn_nearby
+  if type(path)~='table' then
+    return false, "Bad path"
+  elseif #path==0 then
+    return false, "No path points"
+  elseif type(fn_nearby)~='function' then
+    return false, "No nearby function"
+  end
+  local lookahead = tonumber(params.lookahead) or 1
+  local n_path = #path
+  local p_final = path[n_path]
+  local id_last = tonumber(params.id_start)
   -- Give a function to be created/wrapped by coroutine
   return function(pose_rbt)
+    local result
     while pose_rbt do
       -- Now, the update routine
       local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
+      local d_goal = dist(pose_rbt, p_final)
       -- Find the lookahead point
       local x_ahead, y_ahead = tf2D(lookahead, 0, th_rbt, x_rbt, y_rbt)
       local p_lookahead = {x_ahead, y_ahead}
       -- Find this in the path
-      local nearby = tree:nearest(p_lookahead, threshold_close)
-      if not nearby then
-        --return false, string.format("Too far: (%.2f, %.2f) %.2f",
-        --                            x_ahead, y_ahead, threshold_close)
-        id_path_last = nil
-        coyield(string.format("Too far: (%.2f, %.2f) %.2f",x_ahead, y_ahead, threshold_close))
-      else
-      -- Lookahead point does not go backwards
-      if not id_path_last then
-        id_path = nearby[1].user
-      else
-	-- Sort by distance
-        -- table.sort(nearby, function(a, b) return a.dist_sq < b.dist_sq end)
-        for _, nby in ipairs(nearby) do
-          if nby.user >= id_path_last then
-            id_path = nby.user
-            break -- Take the first one
-          end
-        end
-	-- Don't skip too far in a single timestep
-	-- TODO: Fancier implementation
-        id_path = min(id_path, id_path_last + 1)
-      end
-      -- Check if we are done
-      local d_goal = dist(pose_rbt, p_final)
-      if id_path>=#path and d_goal <= lookahead then
-        return {done=true}
-      end
-      -- The reference point is the nearby one furthest along in the path
+      local id_nearby, dist = fn_nearby(id_last, p_lookahead)
       -- Save the point for next time
-      id_path_last = id_path
-      local p_near = path[id_path]
-      -- Generate the heading
-      local x_ref, y_ref = unpack(p_near)
-      local dx = x_ref - x_rbt
-      local dy = y_ref - y_rbt
-      -- Relative angle towards the lookahead reference point
-      local alpha = atan2(dy, dx) - th_rbt
-      -- kappa is curvature (inverse of the radius of curvature)
-      local kappa = 2 * sin(alpha) / lookahead
-      -- Give result and take the next pose
-      pose_rbt = coyield{kappa = kappa,
-                         id_path = id_path,
-                         pose_rbt = pose_rbt,
-                         p_near = p_near,
-                         p_lookahead = p_lookahead,
-                         alpha = alpha,
-                         lookahead = lookahead,
-                         d_goal = d_goal,
-                         }
-
+      id_last = id_nearby
+      -- Wait until we are close
+      if not id_nearby then
+        id_last = nil
+        result = {err= dist}
+      elseif id_nearby >= n_path and d_goal <= lookahead then
+        result = {done = true}
+      else
+        -- Find delta between robot and lookahead path point
+        local p_nearby = path[id_nearby]
+        local x_ref, y_ref = unpack(p_nearby)
+        -- Relative angle towards the lookahead reference point
+        local alpha = atan2(y_ref - y_rbt, x_ref - x_rbt)
+        alpha = alpha - th_rbt
+        -- kappa is curvature (inverse of the radius of curvature)
+        local kappa = 2 * sin(alpha) / lookahead
+        -- Give result and take the next pose
+        result = {kappa = kappa,
+                  id_path = id_nearby,
+                  pose_rbt = pose_rbt,
+                  p_nearby = p_nearby,
+                  p_lookahead = p_lookahead,
+                  alpha = alpha,
+                  lookahead = lookahead,
+                  d_goal = d_goal,
+                 }
       end
+      pose_rbt = coyield(result)
     end
     return false, "No pose"
   end

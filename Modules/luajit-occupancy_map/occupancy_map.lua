@@ -120,6 +120,7 @@ local function tf2D(x, y, c, s, tx, ty)
 end
 
 -- Binary PGM is easiest
+-- TODO: Use fileformats library
 function lib.save_pgm(fname)
   if ffi.sizeof(map_type) ~= 1 then
     return false, "Bad map type"

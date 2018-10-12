@@ -91,16 +91,13 @@ end
 -- FSM is as if it had just been initialized
 -- The return of the coroutine is passed to the callback
 local function enter(self, state)
-  if type(state) ~= 'string' then
-    return false, 'Bad state'
-  end
   -- Check that the state exists
   if not self.transitions[state] then
     return false, 'State does not exist'
   end
   -- Stop the current state, without a callback
   -- NOTE: Callbacks are on events, not just state changes
-  exit(self)
+  if self.current_state then exit(self) end
   -- Set the next state
   self.current_state = state
   -- Nothing needed if no coroutines
@@ -116,29 +113,25 @@ end
 -- After firing an event, the FSM moves into
 -- a "just created" state, per enter
 local function dispatch(self, event)
-  if type(event) ~= 'string' then
-    return false, 'Bad event'
-  end
   local stateA = self.current_state
   if not stateA then
     return false, 'Uninitialized FSM'
   end
   local transitions = self.transitions[stateA]
-  if type(transitions) ~= 'table' then
+  if not transitions then
     return false, 'Bad state'
   end
   local stateB = transitions[event]
-  if type(stateB) ~= 'string' then
+  if not stateB then
     return false, 'Invalid transition'
   end
-  -- Stop the current state with a callback
+  -- Stop the current state
+  local ret = exit(self)
   -- Run the callback between the switch of states
   local callbacks = self.callbacks[stateA]
-  local callback = (type(callbacks) == 'table') and callbacks[event]
-  if type(callback) == 'function' then
-    pcall(callback, exit(self))
-  else
-    exit(self)
+  local callback = callbacks and callbacks[event]
+  if callback then
+    pcall(callback, stateA, stateB, event, ret)
   end
   -- Enter the new state
   return enter(self, stateB)
@@ -192,9 +185,9 @@ local function add_state(self, state, loop)
   -- Add the loop
   add_coro(self, state, loop)
   -- Check if we should initialize the FSM
-  -- if type(self.current_state) ~= 'string' then
-  --   self.current_state = state
-  -- end
+  if type(self.current_state) ~= 'string' then
+    self.current_state = state
+  end
   return true
 end
 
