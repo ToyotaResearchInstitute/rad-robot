@@ -64,11 +64,17 @@ local function distState0(self, from, to)
   for i, f in ipairs(from) do diff[i] = to[i] - f end
   local s = 0
   for _, d in ipairs(diff) do s = s + d ^ 2 end
+  -- Diff is the extra stuff
   return math.sqrt(s), diff
 end
 
 local function is_near_goal0(self, state)
-  return self:distState(state, self.goal) < self.CLOSE_DISTANCE
+  -- Should return same as distState, nearly
+  local d, extra = self:distState(state, self.goal)
+  if d < self.CLOSE_DISTANCE then
+    return d, extra
+  end
+  return false
 end
 
 -- Walk from state to goal
@@ -82,14 +88,16 @@ local function extend0(self, state, target, extra)
   local numSegments = math.floor(incrementTotal)
   -- print("numSegments", numSegments)
   -- // normalize the distance according to the discretization step
-  for i=1,#dists do dists[i] = dists[i] / incrementTotal end
+  for j=1,#dists do dists[j] = dists[j] / incrementTotal end
   -- print("dists", unpack(dists))
   local cur = {unpack(state)}
-  for _=1,numSegments do
+  for i=1,numSegments do
     -- print("cur", unpack(cur))
-    if self:is_collision(cur) then return false, cur end
+    if self:is_collision(cur) then
+      return false, cur, i * self.DISCRETIZATION_STEP
+    end
     -- Walk a step towards the target
-    for i, d in ipairs(dists) do cur[i] = cur[i] + d end
+    for j, d in ipairs(dists) do cur[j] = cur[j] + d end
   end
   return true, target, cost
 end
@@ -159,9 +167,9 @@ end
 
 local function rewire(self, neighbors, vertexNew)
   for _, neighbor in ipairs(neighbors) do
-    local is_collision_free, _, cost = self:extend(vertexNew, neighbor)
+    local is_collision_free, _, cost, extra = self:extend(vertexNew, neighbor)
     if is_collision_free then
-      -- Now, check if actually a better way to reach neightbor
+      -- Now, check if actually a better way to reach neighbor
       local totalCost = vertexNew.costFromRoot + cost
       if totalCost < (neighbor.costFromRoot - self.EPS_REWIRE) then
         -- Rewire the neighbor to come from the new node,
@@ -170,10 +178,13 @@ local function rewire(self, neighbors, vertexNew)
         neighbor.costFromRoot = totalCost
         neighbor.costFromParent = cost
         -- TODO: Set the cost to the goal...
-        local nbr_near_goal = self:is_near_goal(neighbor)
-        if nbr_near_goal and neighbor.costFromRoot < self.lowerBoundCost then
-          self.goal.parent = neighbor
-          self.lowerBoundCost = neighbor.costFromRoot
+        local costNeighborToGoal = self:is_near_goal(neighbor)
+        if costNeighborToGoal then
+          local costFromRootToGoal = neighbor.costFromRoot + costNeighborToGoal
+          if costFromRootToGoal < self.lowerBoundCost then
+            self.goal.parent = neighbor
+            self.lowerBoundCost = costFromRootToGoal
+          end
         end
       end
     end
@@ -209,8 +220,15 @@ local function iterate(self)
   local candidate, err = findBestCandidate(self, stateRandom, nearby)
   if not candidate then return false, err end
 
+  -- print("candidate")
+  -- for k, v in pairs(candidate) do
+  --   print(k, v)
+  -- end
+  -- os.exit()
+
   -- // Check for admissible cost-to-go until the goal
   -- This is the A* bit: Ignore samples that aren't guided
+  ----[[
   if self.goal.parent then -- lowerBoundVertex
     local costToGo = self:evaluateCostToGo(candidate)
     if costToGo >= 0 then
@@ -222,6 +240,7 @@ local function iterate(self)
       end
     end
   end
+  --]]
 
   -- // 3.c add the trajectory from the best parent to the tree
   -- TODO: Should have an "add_candidate" function for safety
@@ -231,10 +250,14 @@ local function iterate(self)
   self.kd:insert(candidate, candidate.id)
   self.tree[candidate.id] = candidate
   -- Check if near the goal
-  if self:is_near_goal(candidate) and candidate.costFromRoot < self.lowerBoundCost then
-    -- print("Found nearby candidate!", candidate.costFromRoot, self.lowerBoundCost)
-    self.lowerBoundCost = candidate.costFromRoot
-    self.goal.parent = candidate
+  local costCandidateToGoal = self:is_near_goal(candidate)
+  if costCandidateToGoal then
+    local costFromCandidateToGoal = candidate.costFromRoot + costCandidateToGoal
+    if costFromCandidateToGoal < self.lowerBoundCost then
+      -- print("Found nearby candidate!", candidate.costFromRoot, self.lowerBoundCost)
+      self.lowerBoundCost = costFromCandidateToGoal
+      self.goal.parent = candidate
+    end
   end
 
   -- // 4. Rewire the tree
