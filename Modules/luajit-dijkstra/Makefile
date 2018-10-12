@@ -8,7 +8,8 @@ endif
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
-CFLAGS ?= -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other) -DUSE_RAYTRACE_NEIGHBOR_COSTS #-DUSE_BACKWARDS #-DUSE_SHORT_CIRCUIT
+CFLAGS ?= -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
+CXXFLAGS ?= -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
 
 ifeq ($(OSTYPE),darwin)
 TARGET=libdijkstra.dylib
@@ -33,6 +34,9 @@ $(TARGET): $(OBJS)
 
 %.o: %.c
 	$(CC) -c -o $@ $< -I$(LUA_INCDIR) $(CFLAGS)
+
+%.o: %.cc
+	$(CXX) -c -o $@ $< -I$(LUA_INCDIR) $(CXXFLAGS) -DUSE_BACKWARDS #-DUSE_RAYTRACE_NEIGHBOR_COSTS #-DUSE_SHORT_CIRCUIT
 
 install: $(TARGET)
 	@echo --- install

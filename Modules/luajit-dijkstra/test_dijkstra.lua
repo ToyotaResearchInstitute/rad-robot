@@ -22,16 +22,24 @@ local dijkstra = ffi.load('dijkstra')
 local has_ff, ff = pcall(require, 'fileformats')
 
 local USE_NON_HOLONOMIC = true
-local USE_BACKWARDS = false
+local USE_BACKWARDS = true
 -- local m, n = 320, 240
 -- j is x, i is y
-local m, n = 160, 120
+-- local m, n = 160, 120
 -- local m, n = 80, 60
--- local m, n = 40, 30
+local m, n = 40, 30
 -- local m, n = 20, 15
 
 local n_cells = m * n
-local nNeighbors = 16
+local nNeighbors = 8
+
+local istart, jstart = floor((m-1)/4), floor((n-1)/4)
+local astart = min(nNeighbors, max(0, 6))
+local igoal, jgoal = floor(3*(m-1)/4), floor(3*(n-1)/4)
+local agoal = min(nNeighbors, max(0, 0))
+
+print("Goal", igoal, jgoal, agoal)
+print("Start", istart, jstart, astart)
 
 --[[
 local function coord2ind(i, j, a)
@@ -59,14 +67,6 @@ local function ind2coord(ind)
   local i = ind % m
   return i, j
 end
-
-local istart, jstart = floor((m-1)/4), floor((n-1)/4)
-local astart = min(nNeighbors, max(0, 8))
-local igoal, jgoal = floor(3*(m-1)/4), floor(3*(n-1)/4)
-local agoal = min(nNeighbors, max(0, 0))
-
-print("Goal", igoal, jgoal, agoal)
-print("Start", istart, jstart, astart)
 
 -- Initialize the cost map
 local costmap = ffi.new('double[?]', n_cells)
@@ -239,7 +239,7 @@ if not USE_NON_HOLONOMIC then
   shift_amount = 0
 end
 local nIter = 0
-while nIter < 1e5 do
+while nIter <= n_cells do
   nIter = nIter + 1
   -- print("* Coord", i0,j0,a0)
   local ind0 = coord2ind(i0, j0, USE_NON_HOLONOMIC and a0 or 0)
@@ -271,38 +271,43 @@ while nIter < 1e5 do
     -- io.stderr:write("a1: ", a1, "\n")
     -- local dj, di = unpack(neighbors[a1+1], 1, 2)
     local dj, di = unpack(neighbors[a0+1], 1, 2)
-    if USE_BACKWARDS and ia > #iangles/2 then
-      print("check back...")
-      dj = dj * -1;
-      di = di * -1;
+    local is_backwards = USE_BACKWARDS and (ia % 2 == 0)
+    if is_backwards then
+      -- print("check back...")
+      dj = dj * -1
+      di = di * -1
+      a1 = iangles[ia - 1]
     end
     local i1 = i0 + di
     local j1 = j0 + dj
+    -- print((is_backwards and "~" or "=").." Coord",i1,j1,a1)
     if i1>=0 and i1<m and j1>=0 and j1<n then
       local ind1 = coord2ind(i1, j1, USE_NON_HOLONOMIC and a1 or 0)
-      print("= Coord",i1,j1,a1)
       -- io.stderr:write("Checking: ", ind1, " of ", n_cells, "\n")
       local c2g = cost_to_go[ind1]
-      print("= Cost", vbest, c2g)
+      -- print("= Cost", vbest, c2g)
       if c2g < vbest then
-        if USE_BACKWARDS and ia>#iangles/2 then print("Backwards!", indbest) end
         indbest = ia
         vbest = c2g
         ibest = i1
         jbest = j1
         abest = a1
+        if is_backwards then
+          print("Choosing Backwards!", indbest)
+          -- abest = iangles[ia - 1]
+        end
       end
     end
   end
-  if indbest>#iangles/2 then print("Backwards!", indbest) end
   if min_v == vbest then
     print("Nobody new", min_v)
     break
   end
-  table.insert(path, {ibest, jbest, abest, indbest})
   i0 = ibest
   j0 = jbest
   a0 = abest
+
+  table.insert(path, {i0, j0, a0, indbest})
   if vbest == 0 then
     print("Done!")
     break
@@ -319,8 +324,14 @@ print("saving")
 if has_ff then
   local path8 = ffi.new('uint8_t[?]', n_cells)
   for i, v in ipairs(path) do
-    local ind = coord2ind(unpack(v, 1, 2))
-    path8[ind] = 255
+    local ibest, jbest, abest, indbest = unpack(v)
+    local ind = coord2ind(ibest, jbest)
+    if indbest and USE_BACKWARDS and indbest % 2 == 0 then
+      print("Backwards!", indbest)
+      path8[ind] = 127
+    else
+      path8[ind] = 255
+    end
   end
   assert(ff.save_netpbm(USE_NON_HOLONOMIC and '/tmp/path1.pgm' or '/tmp/path.pgm', path8, m, n))
 end
