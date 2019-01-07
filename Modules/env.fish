@@ -1,6 +1,7 @@
 #!/usr/bin/env fish
 set -x ROBOT_HOME (realpath (dirname (status -f)))
 set -x LUA_PATH "$ROBOT_HOME/luajit-?/?.lua;$ROBOT_HOME/lua-?/?.lua;;"
+# set -x LUA_PATH "$ROBOT_HOME/?/init.lua;$ROBOT_HOME/?/ffi.lua;;"
 set -x LUA_CPATH "$ROBOT_HOME/lua-?/?.so;;"
 set -x LCM_DEFAULT_URL "udpm://239.255.65.56:6556?ttl=0"
 

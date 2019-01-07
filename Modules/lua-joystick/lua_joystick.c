@@ -115,22 +115,22 @@ int joystick_open(const char* dev) {
     name, nbutton, naxis);
 
   // allocate array data
-  buttons = (int16_t *)calloc(nbutton, sizeof(int16_t));
+  buttons = calloc(nbutton, sizeof(int16_t));
   if (!buttons) {
     fprintf(stderr, "unable to allocate button data array\n");
     return -1;
   }
-  axes = (int16_t *)calloc(naxis, sizeof(int16_t));
+  axes = calloc(naxis, sizeof(int16_t));
   if (!axes) {
     fprintf(stderr, "unable to allocate axes data array\n");
     return -1;
   }
-  tbutton = (uint32_t *)calloc(nbutton, sizeof(uint32_t));
+  tbutton = calloc(nbutton, sizeof(uint32_t));
   if (!tbutton) {
     fprintf(stderr, "unable to allocate button time array\n");
     return -1;
   }
-  taxis = (uint32_t *)calloc(naxis, sizeof(uint32_t));
+  taxis = calloc(naxis, sizeof(uint32_t));
   if (!taxis) {
     fprintf(stderr, "unable to allocate axes time array\n");
     return -1;

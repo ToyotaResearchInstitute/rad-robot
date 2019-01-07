@@ -1,13 +1,13 @@
 local lib = {}
-
+local asin = require'math'.asin
+local atan2 = require'math'.atan2 or require'math'.atan
 local cos = require'math'.cos
 local sin = require'math'.sin
-local atan2 = require'math'.atan2
-local asin = require'math'.asin
+local PI = require'math'.pi
 local sqrt = require'math'.sqrt
+
 local unpack = unpack or require'table'.unpack
 local nan = 0 / 0
-local RAD_TO_DEG = 180 / math.pi
 
 local mt = {
   __tostring = function(tr)
@@ -24,9 +24,17 @@ local mt = {
   end
 }
 
+local TWO_PI = 2 * PI
+local function mod_angle(a)
+  -- Reduce angle to [-pi, pi)
+  local b = a % TWO_PI
+  return b >= PI and (b - TWO_PI) or b
+end
+lib.mod_angle = mod_angle
+
 local function rot2D(x, y, th)
   local c, s = cos(th), sin(th)
-  return x * c + y * s, x * s - y * c
+  return x * c - y * s, x * s + y * c
 end
 lib.rot2D = rot2D
 
@@ -36,8 +44,13 @@ local function tf2D(x, y, th, tx, ty)
 end
 lib.tf2D = tf2D
 
+local function tf2D_inv(x, y, th, tx, ty)
+  return rot2D(x - tx, y - ty, -th)
+end
+lib.tf2D_inv = tf2D_inv
+
 local function rot2Dcs(x, y, c, s)
-  return x * c + y * s, x * s - y * c
+  return x * c - y * s, x * s + y * c
 end
 lib.rot2Dcs = rot2Dcs
 local function tf2Dcs(x, y, c, s, tx, ty)
@@ -45,7 +58,10 @@ local function tf2Dcs(x, y, c, s, tx, ty)
   return x1 + tx, y1 + ty
 end
 lib.tf2Dcs = tf2Dcs
-
+local function tf2Dcs_inv(x, y, c, s, tx, ty)
+  return rot2D(x - tx, y - ty, c, -s)
+end
+lib.tf2Dcs_inv = tf2Dcs_inv
 
 function lib.inv(a)
   local p = {a[1][4], a[2][4], a[3][4]}
@@ -235,9 +251,9 @@ end
 function lib.string6D(tr)
   return string.format('%.2f %.2f %.2f | %.2f %.2f %.2f',
     tr[1][4],tr[2][4],tr[3][4],
-    atan2(tr[3][2],tr[3][3]) * RAD_TO_DEG,
-    -asin(tr[3][1]) * RAD_TO_DEG,
-    atan2(tr[2][1],tr[1][1]) * RAD_TO_DEG)
+    math.deg(atan2(tr[3][2],tr[3][3])),
+    math.deg(-asin(tr[3][1])),
+    math.deg(atan2(tr[2][1],tr[1][1])))
 end
 
 function lib.position(tr)

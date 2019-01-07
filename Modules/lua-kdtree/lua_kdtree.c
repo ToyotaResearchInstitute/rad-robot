@@ -69,30 +69,30 @@ static int lua_kdtree_free(lua_State *L) {
 static int lua_kdtree_insert(lua_State *L) {
   struct kdtree *kd = *lua_checkkdtree(L, 1);
 
-  int k = kd_get_dimension(kd);
-
   if (!lua_istable(L, 2)) {
     lua_pushboolean(L, 0);
     lua_pushliteral(L, "Need a table.");
     return 2;
   }
+  // Take values in the table of the first k dimensions
+  int k = kd_get_dimension(kd);
 #if LUA_VERSION_NUM == 501
-  if (lua_objlen(L, 2) != k)
+  if (lua_objlen(L, 2) < k)
 #else
-  if (lua_rawlen(L, 2) != k)
+  if (lua_rawlen(L, 2) < k)
 #endif
   {
     lua_pushboolean(L, 0);
-    lua_pushliteral(L, "Incorrect dimensions");
+    lua_pushliteral(L, "Not enough dimensions");
     return 2;
   }
 
   // VLA for the table
   int i;
-  // TODO: Check that each value is, in fact, a number
   double vals[k];
   for (i = 0; i < k; i++) {
     lua_rawgeti(L, 2, i + 1);
+    // TODO: Check that each value is, in fact, a number
     vals[i] = lua_tonumber(L, -1);
     lua_pop(L, 1);
   }
@@ -103,7 +103,6 @@ static int lua_kdtree_insert(lua_State *L) {
     user = (void *)lua_tointeger(L, 3);
   }
 
-  // TODO: Associate data (like, the table?)
   // NOTE: http://www.lua.org/pil/27.3.2.html
   // fprintf(stderr, "Inserting... [%p] { ", user);
   // for (i = 0; i < k; i++) {
@@ -131,13 +130,13 @@ static int lua_kdtree_nearest(lua_State *L) {
     return 1;
   }
 #if LUA_VERSION_NUM == 501
-  if (lua_objlen(L, 2) != k)
+  if (lua_objlen(L, 2) < k)
 #else
-  if (lua_rawlen(L, 2) != k)
+  if (lua_rawlen(L, 2) < k)
 #endif
   {
     lua_pushboolean(L, 0);
-    lua_pushliteral(L, "Incorrect dimensions");
+    lua_pushliteral(L, "Not enough dimensions");
     return 2;
   }
   // VLA
@@ -176,7 +175,7 @@ static int lua_kdtree_nearest(lua_State *L) {
     // data = kd_res_item(set, vals);
     data = kd_res_item_dist_sq(set, vals, &dist_sq);
     // Nested table
-    lua_createtable(L, k, 1);
+    lua_createtable(L, k, 2);
     for (int ik = 0; ik < k; ik++) {
       lua_pushnumber(L, vals[ik]);
       lua_rawseti(L, -2, ik + 1);
@@ -210,14 +209,28 @@ static int lua_kdtree_size(lua_State *L) {
   return 1;
 }
 
+static int lua_kdtree_dim(lua_State *L) {
+  struct kdtree *kd = *lua_checkkdtree(L, 1);
+  lua_pushinteger(L, kd_get_dimension(kd));
+  return 1;
+}
+
 static const struct luaL_Reg kdtree_lib[] = {{"create", lua_kdtree_create},
                                              {NULL, NULL}};
 
 static const struct luaL_Reg kdtree_methods[] = {
-    {"__index", lua_kdtree_index},       {"__gc", lua_kdtree_free},
-    {"__tostring", lua_kdtree_tostring}, {"insert", lua_kdtree_insert},
-    {"size", lua_kdtree_size},           {"clear", lua_kdtree_clear},
-    {"nearest", lua_kdtree_nearest},     {NULL, NULL}};
+    {"__index", lua_kdtree_index},
+    {"__gc", lua_kdtree_free},
+    {"__tostring", lua_kdtree_tostring},
+    {"insert", lua_kdtree_insert},
+    {"dim", lua_kdtree_dim},
+    {"size", lua_kdtree_size},
+#if LUA_VERSION_NUM > 501
+    {"__len", lua_kdtree_size},
+#endif
+    {"clear", lua_kdtree_clear},
+    {"nearest", lua_kdtree_nearest},
+    {NULL, NULL}};
 
 #ifdef __cplusplus
 extern "C"

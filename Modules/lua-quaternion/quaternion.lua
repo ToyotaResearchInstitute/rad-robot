@@ -123,12 +123,6 @@ local function difference(q0,q1)
   local angle1, axis1 = quaternion.angle_axis(
     conjugate(q0) * -q1
   )
-  --[[
-  print('==')
-  print('A: ',angle0*RAD_TO_DEG, axis0)
-  print('B: ',angle1*RAD_TO_DEG, axis1)
-  print('--')
-  --]]
   -- Check the other direction
   if abs(angle1) < abs(angle0) then
     return angle1, axis1
@@ -279,20 +273,24 @@ if has_vector then
 end
 --]]
 
-local has_torch, torch = pcall(require, 'torch')
+local has_lapack, lapack = pcall(require, 'lapack')
 -- TODO: Remove the torch dependence
-if has_torch then
+if has_lapack then
+  local matrix = require'matrix'
   -- https://stackoverflow.com/questions/12374087/average-of-multiple-quaternions
   function quaternion.mean2(qs, ws)
     if type(ws)=='table' then
       local qs1 = {}
       for i,q in ipairs(qs) do qs1[i] = vector.mulnum(q, ws[i]) end
-      qs = torch.Tensor(qs1)
-    else
-      qs = torch.Tensor(qs)
+      qs = qs1
     end
-    local _, v = torch.eig(qs:t() * qs, 'V')
-    return unit(v:select(2, 1):totable())
+    qs = matrix:new(qs)
+    -- TODO: dsyrk
+    -- https://stackoverflow.com/questions/47013581/blas-matrix-by-matrix-transpose-multiply
+    local _, evecs = lapack.eigs(qs:transpose() * qs)
+    -- Eigvectors along columns...
+    evecs = matrix.transpose(evecs)
+    return unit(evecs[1])
   end
 end
 

@@ -2,10 +2,11 @@
 local lib = {}
 local kdtree = require'kdtree'
 local unpack = unpack or require'table'.unpack
+local systems = {}
 
 local function get_ball_radius(numVertices, nDim, gamma)
   gamma = gamma or 1
-  return gamma * math.pow(math.log(numVertices + 1.0)/(numVertices + 1.0), 1.0/nDim)
+  return gamma * math.log(numVertices + 1.0)/(numVertices + 1.0) ^ (1.0/nDim)
 end
 
 local function sample(self)
@@ -24,32 +25,6 @@ local function sample(self)
     end
   end
   return out
-end
-
-local function plan(self, start, goal)
-  -- Clear the tree to prepare
-  self.kd:clear()
-  self.tree = {}
-  -- Add the starting state
-  self.start = {
-    parent=nil,
-    costFromRoot = 0,
-    costFromParent = 0,
-    id=1,
-    unpack(start, 1, self.nDim)
-  }
-  -- Add the goal state
-  self.goal = {
-    parent = nil, -- lowerBoundVertex
-    costFromRoot = math.huge, -- lowerBoundCost
-    costFromParent = math.huge,
-    id=0,
-    unpack(goal, 1, self.nDim)
-  }
-  -- Add the start state to the kd-tree and rrt
-  self.kd:insert(self.start, self.start.id)
-  self.tree[self.start.id] = self.start
-  -- Do not add the goal to the kd-tree
 end
 
 local function evaluateCostToGo0(self, s)
@@ -77,6 +52,41 @@ local function is_near_goal0(self, state)
   return false
 end
 
+local function is_collision0() return false end
+
+local function trace0(self)
+  local path_xy = {reversed=true}
+  local cur = self.goal
+  while cur.parent do
+    local dist, dists = self:distState(cur.parent, cur)
+    local incrementTotal = dist / self.DISCRETIZATION_STEP
+    for j=1,#dists do dists[j] = dists[j] / incrementTotal end
+    local inter = {unpack(cur.parent)}
+    -- local t = 0
+    -- while t < dist do
+    local t = dist
+    while t > 0 do
+      -- for j, d in ipairs(dists) do inter[j] = inter[j] + d end
+      for j, d in ipairs(dists) do inter[j] = inter[j] - d end
+      table.insert(path_xy, {unpack(inter)})
+      -- t = t + self.DISCRETIZATION_STEP
+      t = t - self.DISCRETIZATION_STEP
+    end
+
+    -- local incrementTotal = cost / self.DISCRETIZATION_STEP
+    -- for j=1,#dists do dists[j] = dists[j] / incrementTotal end
+    -- local numSegments = math.floor(incrementTotal)
+    -- local inter = {unpack(cur.parent)}
+    -- for _=1,numSegments do
+    --   -- Walk a step towards the target
+    --   for j, d in ipairs(dists) do inter[j] = inter[j] + d end
+    --   table.insert(path_xy, {unpack(inter)})
+    -- end
+    cur = cur.parent
+  end
+  return path_xy
+end
+
 -- Walk from state to goal
 -- Returns boolean indicating if we got to the goal state (exactConnection)
 -- and the final state that we did get to,
@@ -102,12 +112,24 @@ local function extend0(self, state, target, extra)
   return true, target, cost
 end
 
+function systems.default(parameters)
+  local sys = {}
+  sys.extend = extend0
+  sys.trace = trace0
+  sys.is_near_goal = is_near_goal0
+  sys.is_collision = is_collision0
+  sys.distState = distState0
+  sys.evaluateCostToGo = evaluateCostToGo0
+  return sys
+end
+
+
 -- System comparison and local kinematics/dynamics paths
 local function set_system(self, funcs)
   if type(funcs)~='table' then return false end
   -- Distance between two states
-  if type(funcs.distance)=='function' then
-    self.distState = funcs.distance
+  if type(funcs.distState)=='function' then
+    self.distState = funcs.distState
   end
   -- Cost to go from one state to the next
   -- TODO: Just an output from extend?
@@ -124,6 +146,9 @@ local function set_system(self, funcs)
   end
   if type(funcs.is_near_goal)=='function' then
     self.is_near_goal = funcs.is_near_goal
+  end
+  if type(funcs.trace)=='function' then
+    self.trace = funcs.trace
   end
   return self
 end
@@ -269,6 +294,32 @@ local function iterate(self)
   return true
 end
 
+local function plan(self, start, goal)
+  -- Clear the tree to prepare
+  self.kd:clear()
+  self.tree = {}
+  -- Add the starting state
+  self.start = {
+    parent=nil,
+    costFromRoot = 0,
+    costFromParent = 0,
+    id=1,
+    unpack(start, 1, self.nDim)
+  }
+  -- Add the goal state
+  self.goal = {
+    parent = nil, -- lowerBoundVertex
+    costFromRoot = math.huge, -- lowerBoundCost
+    costFromParent = math.huge,
+    id=0,
+    unpack(goal, 1, self.nDim)
+  }
+  -- Add the start state to the kd-tree and rrt
+  self.kd:insert(self.start, self.start.id)
+  self.tree[self.start.id] = self.start
+  -- Do not add the goal to the kd-tree
+end
+
 -- Input: list of min and max for each dimension {{a,b},{c,d},...}
 function lib.new(parameters)
   local intervals = parameters.intervals
@@ -283,18 +334,13 @@ function lib.new(parameters)
   -- Rapidly-exploring Random Tree
   -- List of the vertices. Don't touch ;)
   -- Hash table of methods and properties
-  local tree = {
+  local obj = {
     nDim = nDim,
     intervals = intervals,
     centers = centers,
     ranges = ranges,
     -- Set the system functions
     set_system = set_system,
-    distState = distState0,
-    extend = extend0,
-    evaluateCostToGo = evaluateCostToGo0,
-    is_collision = function() return false end,
-    is_near_goal = is_near_goal0,
     -- Our path result
     start = nil,
     goal = nil,
@@ -313,9 +359,188 @@ function lib.new(parameters)
     DISCRETIZATION_STEP = tonumber(parameters.DISCRETIZATION_STEP) or 0.005,
     EPS_REWIRE = 0.001, --0, --0.001
   }
+  obj:set_system(systems.default())
 
   -- Return the object
-  return tree
+  return obj
 end
+
+local has_ffi, ffi = pcall(require, 'ffi')
+local dubins
+if has_ffi then
+  ffi.cdef[[
+  typedef enum
+  {
+      LSL = 0,
+      LSR = 1,
+      RSL = 2,
+      RSR = 3,
+      RLR = 4,
+      LRL = 5
+  } DubinsPathType;
+  typedef struct
+  {
+      /* the initial configuration */
+      double qi[3];
+      /* the lengths of the three segments */
+      double param[3];
+      /* model forward velocity / model angular velocity */
+      double rho;
+      /* the path type described */
+      DubinsPathType type;
+  } DubinsPath;
+  int dubins_shortest_path(DubinsPath* path, double q0[3], double q1[3], double rho);
+  double dubins_path_length(DubinsPath* path);
+  int dubins_path_sample(DubinsPath* path, double t, double q[3]);
+  ]]
+  dubins = ffi.load"dubins"
+end
+
+
+function systems.dubins(parameters)
+  parameters = parameters or {}
+  local sys = {}
+  -- circular_obstacles: {{x_center, y_center, radius}, ...}
+  local obs_circles = parameters.circular_obstacles or {}
+  function sys.is_collision(self, s)
+    for i, interval in ipairs(self.intervals) do
+      if s[i] < interval[1] or s[i] > interval[2] then return true end
+    end
+    local xs, ys = unpack(s, 1, 2)
+    for _, obs in ipairs(obs_circles) do
+      local xc, yc, r = unpack(obs)
+      local dp = math.sqrt((xs - xc)^2 + (ys - yc)^2)
+      if dp < obs[3] then return true end
+    end
+    return false
+  end
+
+  function sys.is_near_goal(self, state, goal)
+    -- Returns false or distance to goal
+    goal = goal or self.goal
+    -- Check if Dubins reaches the goal collision free
+    local reaches_goal, _, length, path = self:extend(state, goal)
+    if reaches_goal then
+      return length, path
+    end
+    -- Else, check if is close enough already
+    local dp = math.sqrt((state[1] - goal[1])^2 + (state[2] - goal[2])^2)
+    local close_position = dp < 0.25
+    -- if #goal == 2 then
+    --   return close_position and dp or false
+    -- end
+    local dth = state[3] - goal[3]
+    if dth > math.pi then
+      dth = dth - 2 * math.pi
+    elseif dth < -math.pi then
+      dth = dth + 2 * math.pi
+    end
+    local close_angle = math.abs(dth) < (10 * math.pi / 180)
+    if close_position and close_angle then
+      return dp
+    end
+    return false
+  end
+
+  local TURNING_RADIUS = parameters.TURNING_RADIUS or 1
+  function sys.distState(self, from, to)
+    -- Check if close enough to each other...?
+    local path = ffi.new"DubinsPath"
+    local q0 = ffi.new("double[3]", from)
+    local q1 = ffi.new("double[3]", to)
+    -- Should return the extra information
+    local ret = dubins.dubins_shortest_path(
+      path, q0, q1, TURNING_RADIUS)
+    if ret~=0 then return false, "Bad Dubins path" end
+    -- Give the length and the path
+    local length = dubins.dubins_path_length(path)
+    return length, path
+  end
+
+  function sys.extend(self, state, target, length, path)
+    -- Dubins path struct is our extra bits
+    if not path then
+      length, path = self:distState(state, target)
+    end
+    if not length then
+      length = dubins.dubins_path_length(path)
+    end
+    -- Walk along the path and check for collisions
+    local step_size = self.DISCRETIZATION_STEP -- meters
+    ----[[
+    local q = ffi.new("double[3]")
+    local t = 0
+    while t < length do
+      dubins.dubins_path_sample(path, t, q)
+      local xya = {q[0], q[1], q[2]}
+      -- Collision check this configuration
+      if self:is_collision(xya) then
+        return false, xya, t, path
+      end
+      t = t + step_size
+    end
+    return true, target, length, path
+    --]]
+    --[[
+    local qReached, traveled
+    local function cb(q, x, user_data)
+      local qNow = {q[0], q[1], q[2]}
+      if self:is_collision(qNow) then
+        qReached = qNow
+        traveled = x
+        return 1
+      end
+      return 0
+    end
+    local ret = dubins.dubins_path_sample_many(path, step_size, cb, nil)
+    -- Gets to target, target pose
+    if ret==0 then
+      return true, target, length, path
+    else
+      return false, qReached, traveled, path
+    end
+    --]]
+  end
+
+  function sys.trace(self)
+    local step_size = self.DISCRETIZATION_STEP -- meters
+    local dist = 0
+    local path_xy = {reversed=true, unpack(self.goal)}
+    local cur = self.goal
+    while cur.parent do
+      local length, path = self:distState(cur.parent, cur)
+      dist = dist + length
+      -- Walk along the path and check for collisions
+      ----[[
+      local q = ffi.new("double[3]")
+      -- local t = 0
+      -- while t < length do
+      local t = length
+      while t > 0 do
+        dubins.dubins_path_sample(path, t, q)
+        local xya = {q[0], q[1], q[2]}
+        table.insert(path_xy, xya)
+        -- t = t + step_size
+        t = t - step_size
+      end
+      --]]
+      --[[
+      -- TODO: Reversing of order...
+      local function cb(q, x, user_data)
+        local xya = {q[0], q[1], q[2]}
+        table.insert(path_xy, xya)
+        return 0
+      end
+      dubins.dubins_path_sample_many(path, step_size, cb, nil)
+      --]]
+      cur = cur.parent
+    end
+    return path_xy, dist
+  end
+
+  return sys
+end
+
+lib.systems = systems
 
 return lib

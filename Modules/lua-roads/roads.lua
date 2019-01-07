@@ -270,6 +270,7 @@ for ref, segment in pairs(segments) do
 end
 
 -- Show the final points
+local nLinks = 0
 for _, intersection in pairs(intersections) do
   --for k,v in pairs(intersection) do print(k) end
   -- local p = intersection.point
@@ -287,17 +288,24 @@ for _, intersection in pairs(intersections) do
   -- end
   --print(table.concat(inter,'\t'))
   intersection.ref = nil
+  nLinks = nLinks + 1
 end
 
+local nSegments = 0
 for _, s in pairs(segments2) do
   s.refs = nil
   s.intersections = nil
   --print(ref, s)
   --print(assert(s.name))
   --for k,v in pairs(s) do print(k, type(v)) end
+  nSegments = nSegments + 1
 end
 
+bounds.nSegments = nSegments
+bounds.nLinks = nLinks
+
 local has_json, json = pcall(require, 'cjson')
+local has_mp, mp = pcall(require, 'MessagePack')
 
 if has_json then
   local fname_ways = fname:gsub('%.osm','.segments.json')
@@ -315,6 +323,24 @@ if has_json then
   f_intersections:close()
   local f_bounds = io.open(fname_bounds, 'w')
   f_bounds:write(json.encode(bounds))
+  f_bounds:close()
+  io.stderr:write('Wrote to ', fname_ways, ' ', fname_intersections, ' ', fname_bounds, '\n')
+elseif has_mp then
+  local fname_ways = fname:gsub('%.osm','.segments.mp')
+  local fname_intersections = fname:gsub('%.osm','.links.mp')
+  local fname_bounds = fname:gsub('%.osm','.bounds.mp')
+  assert(fname_ways~=fname, "Cannot overwrite")
+  assert(fname_intersections~=fname, "Cannot overwrite")
+  assert(fname_bounds~=fname, "Cannot overwrite")
+  -- Save files
+  local f_ways = io.open(fname_ways, 'w')
+  f_ways:write(mp.pack(segments2))
+  f_ways:close()
+  local f_intersections = io.open(fname_intersections, 'w')
+  f_intersections:write(mp.pack(intersections))
+  f_intersections:close()
+  local f_bounds = io.open(fname_bounds, 'w')
+  f_bounds:write(mp.pack(bounds))
   f_bounds:close()
   io.stderr:write('Wrote to ', fname_ways, ' ', fname_intersections, ' ', fname_bounds, '\n')
 else

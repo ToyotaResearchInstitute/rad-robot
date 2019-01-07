@@ -1,7 +1,9 @@
 #!/usr/bin/env luajit
+local unpack = unpack or require'table'.unpack
 local unix=require'unix'
 local razor = require'razor_imu'
-local settings = {'a', 'g', 'm', 'q', 'e'}
+local settings = razor.settings
+
 local fname = arg[1] or "/dev/imu"
 print("Opening imu...")
 local f_imu = assert(io.open(fname, "w+"))
@@ -20,17 +22,15 @@ if ret==0 then
   assert(unix.poll({fd_imu}, 2e3))
 end
 
-local line = f_imu:read"*line"
-line = f_imu:read"*line"
-print(line)
-
 local function get_line(f)
-local line
-repeat
-line = f:read"*line"
-until line
-return line
+  local line
+  while not line do
+    line = f:read"*line"
+  end
+  return line
 end
+
+print("First read", get_line(f_imu))
 
 -- Adjust the rate
 print("Adjusting rate")
@@ -38,7 +38,7 @@ local rate = 0
 while rate~=100 do
   f_imu:write"r"
   repeat
-    line = get_line(f_imu)
+    local line = get_line(f_imu)
     rate = tonumber(line:match"(%d+) Hz")
   until rate
 end
@@ -46,31 +46,36 @@ print("Rate:", rate)
 
 local values
 repeat
-line = get_line(f_imu)
-values = razor.line_values(line)
-until #values>0
+  local line = get_line(f_imu)
+  values = razor.line_values(line)
+until #values > 0
 
-local values = razor.line_values(line)
+-- local values = razor.line_values(line)
 local n0 = #values
 print("Original", n0)
 print(unpack(values))
-for _, s in ipairs(settings) do
+for _, s in ipairs(razor.all_settings) do
   print("Testing", s)
-  -- Flush the buffer, first
+  -- Toggle this value
   f_imu:write(s)
-  local n
-  repeat
+  -- Wait for the toggle to take effect
+  local n = n0
+  while n==n0 do
     local line = get_line(f_imu)
     values = razor.line_values(line)
     n = #values
-  until n~=n0
-  if n < n0 then
+  end
+  -- If this made the number of values go _down_,
+  -- then we _disabled_ it, so retoggle if we want it _enabled_
+  -- If this made the number of values go up,
+  -- then we _enabled_ it, so retoggle if we want it _disabled_
+  if (n < n0 and settings[s]) or (n > n0 and not settings[s]) then
     f_imu:write(s)
-    repeat
+    while n~=n0 do
       local line = get_line(f_imu)
       values = razor.line_values(line)
       n = #values
-    until n==n0
+    end
   end
   n0 = n
 end
@@ -82,17 +87,20 @@ end
 
 print()
 print("Final", #values)
-line = f_imu:read"*line"
+local line = get_line(f_imu)
+-- Have the IMU stop writing... why???
+-- f_imu:write" \n"
+f_imu:close()
 print(line)
 print()
-print(unpack(razor.line_values(line)))
+print("Values", unpack(razor.line_values(line)))
 print()
-for k, v in pairs(razor.parse(line)) do
+local obj = assert(razor.parse(line))
+for k, v in pairs(obj) do
   if type(v)=='table' then
     print(k, unpack(v))
   else
     print(k, v)
   end
 end
-f_imu:write" \n"
-f_imu:close()
+

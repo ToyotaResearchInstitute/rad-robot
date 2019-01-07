@@ -8,7 +8,6 @@ local unpack = unpack or require'table'.unpack
 
 local pcap_entries = assert(pcap.entries(pcap_name))
 local OFFSET0 = 42
-local RAD_TO_DEG = 180/math.pi
 
 local t0
 for t, pkt_n_len in pcap_entries do
@@ -25,7 +24,7 @@ for t, pkt_n_len in pcap_entries do
     if k~='frame' then
       print(string.format("ID [%s] {%.2f, %.2f, %.2f} {%.2f°, %.2f°, %.2f°}", k,
         v.translation[1], v.translation[2], v.translation[3],
-        v.rotation[1]*RAD_TO_DEG, v.rotation[2]*RAD_TO_DEG, v.rotation[3]*RAD_TO_DEG))
+        math.deg(v.rotation[1]), math.deg(v.rotation[2]), math.deg(v.rotation[3])))
     end
   end
 end

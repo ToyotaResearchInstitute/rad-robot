@@ -296,7 +296,7 @@ local function frag3(self, channel, ch_sz, message, msg_len, msg_seq)
     return false, "Message requires too many fragments"
   end
 
-  print(self.LCM3_MAX_FRAGMENT_SZ, self.LCM_MAX_MESSAGE_SZ)
+  --print("MAX FRAG, MSG", self.LCM3_MAX_FRAGMENT_SZ, self.LCM_MAX_MESSAGE_SZ)
 
   local msg = ffi.cast("uint8_t*", message)
   -- Table-based for now...
@@ -335,7 +335,7 @@ local function frag3(self, channel, ch_sz, message, msg_len, msg_seq)
       n_msg_bytes_to_copy = min(self.LCM3_MAX_FRAGMENT_SZ, n_msg_bytes_left)
     end
     -- Check
-    print(fragment_id, 'n_msg_bytes_to_copy', n_msg_bytes_to_copy, buf_pos)
+    -- print(fragment_id, 'n_msg_bytes_to_copy', n_msg_bytes_to_copy, buf_pos)
     ffi.copy(buf + buf_pos, msg + fragment_offset, n_msg_bytes_to_copy)
     buf_pos = buf_pos + n_msg_bytes_to_copy
     tinsert(fragments, ffi.string(buf, buf_pos))

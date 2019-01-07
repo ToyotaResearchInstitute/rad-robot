@@ -416,7 +416,7 @@ static int lua_vimba_open(lua_State *L) {
       lua_pushboolean(L, 0);
       return 1;
     }
-    pCameras = (VmbCameraInfo_t *) malloc(sizeof(VmbCameraInfo_t));
+    pCameras = malloc(sizeof(VmbCameraInfo_t));
 #ifdef DEBUG
     fprintf(stderr, "Found %u cameras\n", nCamera);
 #endif
@@ -509,7 +509,7 @@ static int lua_vimba_open(lua_State *L) {
 
   // Zero-fill the buffer structs so we have NULL pointers in
   // buffer and context pointers
-  camera->cameraFrames = (VmbFrame_t *)calloc(N_BUFFERS, sizeof(VmbFrame_t));
+  camera->cameraFrames = calloc(N_BUFFERS, sizeof(VmbFrame_t));
 
   // Update our width/height
   VmbError_t ret = update_buffers(camera);

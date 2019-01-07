@@ -3,7 +3,6 @@ local lib = {}
 local ffi = require'ffi'
 local nmea = require'nmea'
 local tinsert = require'table'.insert
-local DEG_TO_RAD = math.pi/180
 local eps = 1e-23
 local fabs = require'math'.abs
 
@@ -145,7 +144,7 @@ local function parse_blocks(blocks)
     azi[i] = b
   end
   -- Convert to radians
-  for i=1, #azi do azi[i] = azi[i] * DEG_TO_RAD end
+  for i=1, #azi do azi[i] = math.rad(azi[i]) end
 
   -- Distances and intensities
   local distances, intensities = {}, {}

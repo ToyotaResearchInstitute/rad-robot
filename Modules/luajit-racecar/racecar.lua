@@ -33,13 +33,9 @@ end
 local HOSTNAME = io.popen"hostname":read"*line"
 
 local nan = 0/0
-local DEG_PER_RAD = 180/math.pi
-local RAD_PER_DEG = math.pi/180
 local ROBOT_HOME = os.getenv"ROBOT_HOME" or '.'
 local lib = {
   nan = nan,
-  RAD_TO_DEG = DEG_PER_RAD,
-  DEG_TO_RAD = RAD_PER_DEG,
   RPM_PER_MPS = 5220,
   HOSTNAME = HOSTNAME,
   ROBOT_HOME = ROBOT_HOME
@@ -84,8 +80,6 @@ local function init(options)
   return true
 end
 lib.init = init
-
-
 
 local exit_handler = false
 lib.running = true
@@ -223,16 +217,23 @@ local function parse_arg(arguments, use_dev)
   do
     local i = 1
     local n_args = #arguments
-    while i<=n_args do
+    while i <= n_args do
       local a = arguments[i]
-      i = i + 1
       local flag = a:match"^%-%-([%w_]+)"
       if flag then
-        local val = arguments[i]
+        local val = arguments[i + 1]
         if not val then break end
-        flags[flag] = tonumber(val) or val
+        if val:lower() == 'true' then
+          flags[flag] = true
+        elseif val:lower() == 'false' then
+          flags[flag] = false
+        else
+          flags[flag] = tonumber(val) or val
+        end
+        i = i + 2
       else
         tinsert(flags, a)
+        i = i + 1
       end
     end
   end
@@ -296,13 +297,14 @@ function lib.listen(options)
   end
   local loop_rate = tonumber(options.loop_rate)
   local loop_rate1
-  local loop_fn = type(options.loop_fn)=='function' and options.loop_fn
+  local fn_loop = type(options.fn_loop)=='function' and options.fn_loop
+  local fn_debug = type(options.fn_debug)=='function' and options.fn_debug
   local t_update
   local dt_poll = 4 -- 250Hz
   local t_fn = 0
   local dt_fn
   local t_debug = 0
-  local debug_rate = 1e3
+  local debug_rate = tonumber(options.debug_rate) or 1e3
   local status = true
   local err
   while lib.running do
@@ -317,17 +319,19 @@ function lib.listen(options)
     t_update = time_us()
     if not status then lib.running = false; break end
     dt_fn = tonumber(t_update - t_fn)/1e3
-    if loop_fn and dt_fn >= loop_rate then
+    if fn_loop and dt_fn >= loop_rate then
       t_fn = t_update
       -- update_jitter("lcm_loop", t_fn)
-      loop_fn(t_update)
+      fn_loop(t_fn)
     end
-    if tonumber(t_update - t_debug)/1e3 > debug_rate then
+    local dt_debug = tonumber(t_update - t_debug)
+    if dt_debug / 1e3 > debug_rate then
       t_debug = t_update
       local jt = jitter_tbl()
-      if #jt>0 then
+      if #jt > 0 then
         io.write(tconcat(jt, '\n'), '\n')
       end
+      fn_debug(t_debug)
     end
   end
   return status, err

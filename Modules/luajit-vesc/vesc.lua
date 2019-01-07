@@ -1,6 +1,8 @@
 #!/usr/bin/env luajit
 
-local lib = {}
+local lib = {
+  RPM_PER_MPS = 5220,
+}
 
 local band = require'bit'.band
 local bxor = require'bit'.bxor
@@ -8,6 +10,7 @@ local lshift = require'bit'.lshift
 local rshift = require'bit'.rshift
 local coyield = require'coroutine'.yield
 local floor = require'math'.floor
+local tinsert = require'table'.insert
 
 local function lshift16(val, amt)
   return band(lshift(val, amt or 1), 0xFFFF)
@@ -31,7 +34,7 @@ local function generate_crc16_lut()
       end
       c = lshift16(c)
     end
-    table.insert(crc16_lut, crc)
+    tinsert(crc16_lut, crc)
   end
   return crc16_lut
 end
@@ -244,8 +247,7 @@ local function parse_values(p, tbl)
   if id ~= GET_SENSORS_ID or #p ~= 56 then
     return false, "Not a values packet: "..tostring(p[1])
   end
-  if not tbl then tbl = {} end
-  -- id = p[1],
+  if type(tbl)~='table' then tbl = {} end
   -- MOSFET Temperature in Celsius
   tbl.mos_C = {
     (lshift(p[2], 8) + p[3]) / 10,
@@ -300,6 +302,99 @@ local VESC_DATA = 4
 local VESC_CHECKSUM_HIGH = 5
 local VESC_CHECKSUM_LOW = 6
 local VESC_END = 7
+local function update(str, out, pkt)
+  -- Check if we have stateful information
+  if type(pkt)~='table' then
+    pkt = {state=VESC_START, buffer = ''}
+  end
+  -- Access a previous buffer
+  local buffer = pkt.buffer or ''
+  -- Append new data to our buffer
+  if type(str)=='string' then
+    buffer = buffer..str
+  end
+  for cursor=1, #buffer do
+    local byte = buffer:byte(cursor)
+    local err
+    if pkt.state==VESC_LENGTH_LOW then
+      pkt.len = pkt.len + byte
+      if pkt.len==0 then
+        err = "Zero length packet"
+        -- pkt.state = VESC_START
+      end
+      pkt.state = VESC_ID
+    elseif pkt.state==VESC_LENGTH_HIGH then
+      pkt.len = lshift(byte, 8)
+      pkt.state = VESC_LENGTH_LOW
+    elseif pkt.state==VESC_ID then
+      if byte ~= GET_SENSORS_ID and byte ~= GET_FW_VERSION_ID then
+        err = string.format("Bad ID %d", byte)
+        -- pkt.state = VESC_START
+      end
+      -- Packet ID is first part of the payload
+      tinsert(pkt, byte)
+      pkt.state = VESC_DATA
+    elseif pkt.state==VESC_DATA then
+      -- TODO: Just read in one chunk, without iterating the for loop through all bytes
+      -- {buffer:byte(cursor, cursor+pkt.len-2)}
+      -- NOTE: Should put right in the VESC_ID state ...
+      tinsert(pkt, byte)
+      if #pkt == pkt.len then
+        pkt.state = VESC_CHECKSUM_HIGH
+      elseif #pkt > pkt.len then
+        err = "Large payload"
+        pkt.state = VESC_START
+      end
+    elseif pkt.state==VESC_CHECKSUM_HIGH then
+      pkt.crc = lshift(byte, 8)
+      pkt.state = VESC_CHECKSUM_LOW
+    elseif pkt.state==VESC_CHECKSUM_LOW then
+      pkt.crc = pkt.crc + byte
+      if pkt.crc ~= calculate_crc(pkt) then
+        err = "Bad checksum"
+      end
+      pkt.state = VESC_END
+    elseif pkt.state==VESC_END then
+      if byte ~= 0x03 then
+        err = "Bad stop byte"
+      end
+      out, err = parse_values(pkt, out)
+      pkt.state = VESC_START
+      if out then
+        pkt.buffer = buffer:sub(cursor+1)
+        return out, pkt
+      end
+    else -- elseif pkt.state==VESC_START then
+      -- Default to start state
+      if byte == 0x02 then
+        pkt.state = VESC_LENGTH_LOW
+      elseif byte==0x03 then
+        pkt.state = VESC_LENGTH_HIGH
+      else
+        err = string.format("Bad start packet [0x%02X]\n", byte)
+        pkt.state = VESC_START
+      end
+    end -- if/else
+    -- TODO: Check the return bits here
+    if err then
+      pkt.buffer = buffer:sub(cursor+1)
+      return false, pkt, err
+    end
+  end
+  -- pkt keeps the statefulness
+  -- Iterated through the whole buffer, so buffer is cleared
+  pkt.buffer = ''
+  return out, pkt
+end
+
+function lib.co_update(str)
+  local state
+  while true do
+    state = update(str, state)
+    str = coyield(state.out)
+  end
+end
+
 function lib.update(new_data)
   local str = type(new_data)=='string' and new_data or ''
   local pkt_state = VESC_START
@@ -341,10 +436,10 @@ function lib.update(new_data)
           -- pkt_state = VESC_START
         end
         -- Packet ID is first part of the payload
-        table.insert(pkt_payload, byte)
+        tinsert(pkt_payload, byte)
         pkt_state = VESC_DATA
       elseif pkt_state==VESC_DATA then
-        table.insert(pkt_payload, byte)
+        tinsert(pkt_payload, byte)
         if #pkt_payload == pkt_len then
           pkt_state = VESC_CHECKSUM_HIGH
         elseif #pkt_payload > pkt_len then

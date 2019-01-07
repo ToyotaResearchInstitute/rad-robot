@@ -17,14 +17,14 @@ local skt_vicon = assert(skt.open{
 local function exit()
   if log then log:close() end
   skt_vicon:close()
+  skt_vicon = nil
 end
 racecar.handle_shutdown(exit)
 
 local function on_vicon(e)
   if e~=1 and skt_vicon then
     print("Reading", e)
-    skt_vicon:close()
-    skt_vicon = nil
+    exit()
     return os.exit()
   end
   local pkt, status = skt_vicon:recv()
@@ -47,3 +47,4 @@ local fd_updates = {
 racecar.listen{
   fd_updates = fd_updates,
 }
+exit()

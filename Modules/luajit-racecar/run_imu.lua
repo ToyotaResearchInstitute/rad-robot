@@ -1,48 +1,57 @@
 #!/usr/bin/env luajit
 local racecar = require'racecar'
 local flags = racecar.parse_arg(arg)
+
+local razor_imu = require'razor_imu'
+local unix = require'unix'
+
+local f_imu = assert(io.open(flags.imu))
+local fd_imu = assert(unix.fileno(f_imu))
+
+local has_logger, logger = pcall(require, 'logger')
+local log = has_logger and flags.log~=0
+            and assert(logger.new('imu', racecar.ROBOT_HOME.."/logs"))
+
 local log_announce = racecar.log_announce
-
-local vicon = require'vicon'
-
-local logger = require'logger'
-local log = flags.log~=0 and assert(logger.new('vicon', racecar.HOME.."/logs"))
-
-local skt = require'skt'
-local skt_vicon = assert(skt.open{
-                         port=vicon.BASE_PORT,
-                         use_connect=false})
 
 local function exit()
   if log then log:close() end
-  skt_vicon:close()
+  f_imu:close()
+  f_imu = nil
+  fd_imu = nil
 end
 racecar.handle_shutdown(exit)
 
-local function on_vicon(e)
-  if e~=1 and skt_vicon then
+local co_imu = coroutine.create(razor_imu.co_update)
+
+local function on_imu(e)
+  if e~=1 and f_imu then
     print("Reading", e)
-    skt_vicon:close()
-    skt_vicon = nil
+    exit()
     return os.exit()
   end
-  local pkt, status = skt_vicon:recv()
+  local pkt = unix.read(fd_imu)
   if not pkt then
-    io.stderr:write(status, '\n')
+    io.stderr:write('No pkt\n')
     return
   end
-  local obj, err = vicon.parse(pkt)
+  local status, obj = coroutine.resume(co_imu, pkt)
+  -- print("status", status)
+  --[[
+  local obj, err = razor_imu.update(pkt)
   if not obj then
     io.stderr:write(err, '\n')
     return
   end
+  --]]
   log_announce(log, obj, "imu")
 end
 
 local fd_updates = {
-  [skt_vicon.fd] = on_vicon
+  [fd_imu] = on_imu
 }
 
 racecar.listen{
   fd_updates = fd_updates,
 }
+exit()

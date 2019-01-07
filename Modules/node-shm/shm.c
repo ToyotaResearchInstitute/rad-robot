@@ -173,7 +173,7 @@ napi_value Open(napi_env env, napi_callback_info info) {
   }
 
   // Add finalizer hint for proper mem management
-  shm_info *hint = (shm_info *)malloc(sizeof(shm_info));
+  shm_info *hint = malloc(sizeof(shm_info));
   hint->sz = shm_filesize;
   hint->fd = shm_fd;
   hint->is_write = is_write;

@@ -4,12 +4,6 @@
  * University of Pennsylvania
  * */
 
-/* TODO
- * Add torch support, then we can compress a sub window of the camera image
- If we can add torch support to the uvc library -
- should be a simple thing with pointers
-*/
-
 #include <lauxlib.h>
 #include <lua.h>
 
@@ -18,11 +12,6 @@
 #include <string.h>
 
 #include <jpeglib.h>
-
-#ifdef TORCH
-#include <torch/TH/TH.h>
-#include <torch/luaT.h>
-#endif
 
 /* UDP Friendly size (2^16) */
 #define BUF_SZ 65536
@@ -148,14 +137,12 @@ j_compress_ptr new_cinfo(structJPEG *ud) {
 
   // Allocate on the heap
   // TODO: Garbage collection on the structJPEG metatable
-  j_compress_ptr compress_info =
-      (j_compress_ptr)malloc(sizeof(struct jpeg_compress_struct));
+  j_compress_ptr compress_info = malloc(sizeof(struct jpeg_compress_struct));
   j_common_ptr cinfo = (j_common_ptr)compress_info;
 
   // Setup error handling
   // TODO: Why malloc this?
-  struct jpeg_error_mgr *jerr =
-      (struct jpeg_error_mgr *)malloc(sizeof(struct jpeg_error_mgr));
+  struct jpeg_error_mgr *jerr = malloc(sizeof(struct jpeg_error_mgr));
   cinfo->err = jpeg_std_error(jerr);
   cinfo->err->error_exit = error_exit_compress;
 
@@ -205,7 +192,6 @@ static int lua_jpeg_compress_crop(lua_State *L) {
   // Access the JPEG compression settings
   j_compress_ptr cinfo = (j_compress_ptr)ud->cinfo;
 
-  // TODO: Check if a torch object
   if (lua_isstring(L, 2)) {
     size_t sz = 0;
     data = (JSAMPLE *)lua_tolstring(L, 2, &sz);
@@ -217,27 +203,9 @@ static int lua_jpeg_compress_crop(lua_State *L) {
     width = luaL_checkinteger(L, 3);
     height = luaL_checkinteger(L, 4);
     stride = cinfo->input_components * width;
-  }
-#ifdef TORCH
-  else {
-    THByteTensor *b_t =
-        (THByteTensor *)luaT_checkudata(L, 2, luaT_typename(L, 2));
-    // TODO: Check continguous (or add stride support)
-    data = b_t->storage->data;
-    // Use the torch dimensions
-    width = b_t->size[1];
-    height = b_t->size[0];
-    // Must override for crop, since easier :)
-    width = luaL_checkinteger(L, 3);
-    height = luaL_checkinteger(L, 4);
-    // TODO: Double check :)
-    stride = b_t->stride[0];
-  }
-#else
-  else {
+  } else {
     return luaL_error(L, "Bad JPEG Compress 16 input");
   }
-#endif
 
   // Start and stop for crop (put into C indices)
   w0 = luaL_optint(L, 5, 1) - 1;
@@ -393,56 +361,44 @@ static int lua_jpeg_compress(lua_State *L) {
 
   // JPEG struct with buffer and cinfo is our first
   structJPEG *ud = lua_checkjpeg(L, 1);
-  // Access the JPEG compression settings
-  j_compress_ptr cinfo = (j_compress_ptr)ud->cinfo;
 
   // We will not modify the data
   // Use the JPEG typedef notations
   JSAMPLE *data;
   JDIMENSION width, height;
-  size_t stride;
-
   size_t len = 0;
 
   switch (lua_type(L, 2)) {
-
   case LUA_TLIGHTUSERDATA:
     data = (JSAMPLE *)lua_touserdata(L, 2);
     len = luaL_checkinteger(L, 3);
     width = luaL_checkinteger(L, 4);
     height = luaL_checkinteger(L, 5);
     break;
-
   case LUA_TSTRING:
     data = (JSAMPLE *)lua_tolstring(L, 2, &len);
     width = luaL_checkinteger(L, 3);
     height = luaL_checkinteger(L, 4);
     break;
-
   case LUA_TNUMBER:
     data = (JSAMPLE *)lua_tointeger(L, 2);
     len = luaL_checkinteger(L, 3);
     width = luaL_checkinteger(L, 4);
     height = luaL_checkinteger(L, 5);
     break;
-
   default:
     lua_pushboolean(L, 0);
     lua_pushliteral(L, "Input type is not supported");
     return 2;
   }
 
+  // Access the JPEG compression settings
+  j_compress_ptr cinfo = (j_compress_ptr)ud->cinfo;
   // Set the width and height for compression
   cinfo->image_width = width >> ud->subsample;
   cinfo->image_height = height >> ud->subsample;
   // TODO: Does stride require subsample?
-  stride = cinfo->input_components * width;
-
-#ifdef DEBUG
-  fprintf(stderr, "w: %d, h: %d | %d %d\n", width, height, cinfo->image_width,
-          cinfo->image_height);
-  fprintf(stderr, "Data: %p\n", (void *)data);
-#endif
+  size_t stride = cinfo->input_components * width;
 
   // Colorspace of the OUTPUTTED jpeg same is input (save space/speed?)
   // YCbCr and Grayscale are JFIF. RGB and others are Adobe
@@ -453,23 +409,101 @@ static int lua_jpeg_compress(lua_State *L) {
   JSAMPROW row_pointer[1];
   JSAMPLE *img_ptr = data;
 
-#ifdef DEBUG
-  int line = 0;
-#endif
-
   // Begin compression
   jpeg_start_compress(cinfo, TRUE);
 
   // YUYV is special
-  if (ud->fmt == 3 || ud->fmt == 4) {
-    int w = cinfo->image_width;
-    int h = cinfo->image_height;
+  int w = cinfo->image_width;
+  int h = cinfo->image_height;
+  if (ud->fmt == 3 && ud->subsample == 0) {
+    JSAMPLE *yuv_row = malloc(3 * w * sizeof(JSAMPLE));
+    if ((*row_pointer = yuv_row) == NULL) {
+      return luaL_error(L, "Bad malloc of yuv_row");
+    }
+    uint8_t y0, u, y1, v;
+    while (cinfo->next_scanline < h) {
+      JSAMPLE *yuv_pixel = yuv_row;
+      // Set two pixels each loop
+      for (int iw = 0; iw < w; iw += 2) {
+        y0 = *img_ptr++;
+        u = *img_ptr++;
+        y1 = *img_ptr++;
+        v = *img_ptr++;
+        *yuv_pixel++ = y0;
+        *yuv_pixel++ = u;
+        *yuv_pixel++ = v;
+        *yuv_pixel++ = y1;
+        *yuv_pixel++ = u;
+        *yuv_pixel++ = v;
+      }
+      nlines = jpeg_write_scanlines(cinfo, row_pointer, 1);
+    }
+    free(yuv_row);
+  } else if (ud->fmt == 4 && ud->subsample == 0) {
+    JSAMPLE *yuv_row = malloc(w * sizeof(JSAMPLE));
+    if ((*row_pointer = yuv_row) == NULL) {
+      return luaL_error(L, "Bad malloc of yuv_row");
+    }
+    while (cinfo->next_scanline < h) {
+      JSAMPLE *yuv_pixel = yuv_row;
+      // Set two pixels each loop
+      for (int iw = 0; iw < w; iw += 2) {
+        *yuv_pixel++ = *img_ptr;   // y0
+        *yuv_pixel++ = img_ptr[2]; // y1
+        img_ptr += 4;
+      }
+      nlines = jpeg_write_scanlines(cinfo, row_pointer, 1);
+    }
+    free(yuv_row);
+  } else if (ud->fmt == 3 && ud->subsample == 1) {
+    JSAMPLE *yuv_row = malloc(3 * w * sizeof(JSAMPLE));
+    if ((*row_pointer = yuv_row) == NULL) {
+      return luaL_error(L, "Bad malloc of yuv_row");
+    }
+    size_t img_stride = 2 * width;
+    uint8_t y0, u, y1, v;
+    while (cinfo->next_scanline < h) {
+      JSAMPLE *yuv_pixel = yuv_row;
+      // If subsampling, then we add only one pixel each loop
+      for (int iw = 0; iw < w; iw += 1) {
+        // fprintf(stderr, "iw: %d\n", iw);
+        y0 = *img_ptr++;
+        u = *img_ptr++;
+        y1 = *img_ptr++;
+        v = *img_ptr++;
+        // TODO: img_ptr at the next row has yuyv values, too, for averaging
+        *yuv_pixel++ = ((int)y0 + y1) / 2; // Avoid Overflow
+        *yuv_pixel++ = u;
+        *yuv_pixel++ = v;
+      }
+      nlines = jpeg_write_scanlines(cinfo, row_pointer, 1);
+      img_ptr += img_stride;
+    }
+    free(yuv_row);
+  } else if (ud->fmt == 4 && ud->subsample == 1) {
+    JSAMPLE *yuv_row = malloc(w * sizeof(JSAMPLE));
+    if ((*row_pointer = yuv_row) == NULL) {
+      return luaL_error(L, "Bad malloc of yuv_row");
+    }
+    size_t img_stride = 2 * width;
+    while (cinfo->next_scanline < h) {
+      JSAMPLE *yuv_pixel = yuv_row;
+      // If subsampling, then we add only one pixel each loop
+      for (int iw = 0; iw < w; iw += 1) {
+        *yuv_pixel++ = ((int)img_ptr[0] + img_ptr[2]) / 2; // mean(y0, y1)
+        img_ptr += 4;
+      }
+      nlines = jpeg_write_scanlines(cinfo, row_pointer, 1);
+      img_ptr += img_stride;
+    }
+    free(yuv_row);
+  } else if (ud->fmt == 3 || ud->fmt == 4) {
     size_t img_stride = 2 * width * ud->subsample;
     JSAMPLE *yuv_row;
     if (ud->fmt == 3) {
-      yuv_row = (JSAMPLE *)malloc(3 * w * sizeof(JSAMPLE));
+      yuv_row = malloc(3 * w * sizeof(JSAMPLE));
     } else {
-      yuv_row = (JSAMPLE *)malloc(w * sizeof(JSAMPLE));
+      yuv_row = malloc(w * sizeof(JSAMPLE));
     }
     if (yuv_row == NULL) {
       return luaL_error(L, "Bad malloc of yuv_row");
@@ -479,9 +513,6 @@ static int lua_jpeg_compress(lua_State *L) {
     uint8_t y0, u, y1, v;
     while (cinfo->next_scanline < h) {
       JSAMPLE *yuv_pixel = yuv_row;
-#ifdef DEBUG
-      line++;
-#endif
       i = 0;
       while (i < w) {
         y0 = *img_ptr++;
@@ -493,39 +524,22 @@ static int lua_jpeg_compress(lua_State *L) {
           img_ptr += 4;
         }
         //
-        *yuv_pixel = y0;
-        yuv_pixel++;
+        *yuv_pixel++ = y0;
         if (ud->fmt == 3) {
-          *yuv_pixel = u;
-          yuv_pixel++;
-          *yuv_pixel = v;
-          yuv_pixel++;
+          *yuv_pixel++ = u;
+          *yuv_pixel++ = v;
         }
         if (ud->subsample) {
           // If subsampling, then we add only one pixel
           i++;
-        } else {
-          // 2 pixels
+        } else { // Add two pixels when not subsampling
           i += 2;
-          *yuv_pixel = y1;
-          yuv_pixel++;
-
+          *yuv_pixel++ = y1;
           if (ud->fmt == 3) {
-            *yuv_pixel = u;
-            yuv_pixel++;
-            *yuv_pixel = v;
-            yuv_pixel++;
+            *yuv_pixel++ = u;
+            *yuv_pixel++ = v;
           }
         }
-
-#ifdef DEBUG
-/*
-if(line<5){
-  printf("line: (%d,%d): Y: %d, U: %d, Y: %d, V: %d, %d\n",line,
-i,y0,u,y1,v,yuv_row[0]);
-}
-*/
-#endif
       }
       nlines = jpeg_write_scanlines(cinfo, row_pointer, 1);
       if (ud->subsample) {
@@ -535,19 +549,12 @@ i,y0,u,y1,v,yuv_row[0]);
     }
     free(yuv_row);
   } else {
-    int h = cinfo->image_height;
     while (cinfo->next_scanline < h) {
       *row_pointer = img_ptr;
       nlines = jpeg_write_scanlines(cinfo, row_pointer, 1);
       img_ptr += stride;
     }
   }
-
-#ifdef DEBUG
-  fprintf(stderr, "len: %zu %zu %p\n", cinfo->dest->free_in_buffer,
-          ud->buffer_sz, ud->buffer);
-
-#endif
 
   jpeg_finish_compress(cinfo);
   lua_pushlstring(L, (const char *)ud->buffer, ud->buffer_sz);
@@ -557,10 +564,9 @@ i,y0,u,y1,v,yuv_row[0]);
 static int lua_jpeg_new_compressor(lua_State *L) {
   // Form the struct of metadata
   // The function also pushes it to the stack
-  structJPEG *ud = (structJPEG *)lua_newuserdata(L, sizeof(structJPEG));
+  structJPEG *ud = lua_newuserdata(L, sizeof(structJPEG));
   // Compressor format
-  size_t len;
-  const char *fmt = luaL_checklstring(L, 1, &len);
+  const char *fmt = luaL_checkstring(L, 1);
   // Form the compressor
   j_compress_ptr cinfo = new_cinfo(ud);
   ud->subsample = 0;
@@ -577,7 +583,7 @@ static int lua_jpeg_new_compressor(lua_State *L) {
     cinfo->in_color_space = JCS_YCbCr;
     cinfo->input_components = 3;
     ud->fmt = 2;
-  } else if (strncmp(fmt, "yuyv", 3) == 0) {
+  } else if (strncmp(fmt, "yuyv", 4) == 0) {
     cinfo->in_color_space = JCS_YCbCr;
     cinfo->input_components = 3;
     ud->fmt = 3;

@@ -56,7 +56,7 @@ static int lua_spnav_init(lua_State *L) {
   }
 
   /* init buffer */
-  ud->buf = (unsigned char *)malloc(MAX_BUF * sizeof(unsigned char));
+  ud->buf = malloc(MAX_BUF * sizeof(unsigned char));
 
   /* Read the Manufacturer String */
   wchar_t wstr[MAX_STR];
@@ -150,7 +150,7 @@ static int lua_spnav_get_raw(lua_State *L) {
   if (res==0)
     return 0;
 
-  char * buffer = (char *)malloc(MAX_BUF * 2 * sizeof(char));
+  char * buffer = malloc(MAX_BUF * 2 * sizeof(char));
   char * bufferp = buffer;
 
   int i = 0, size = 0;
