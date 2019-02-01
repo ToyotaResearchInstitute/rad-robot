@@ -207,7 +207,8 @@ local env = {
   speed = speed,
   -- Show the knots for better printing
   lanes = {route_knots.inner, route_knots.outer},
-  trajectory_turn = {route_knots.outerA, route_knots.outerB},
+  -- This isn't quite right...?
+  trajectory_turn = {{unpack(paths.inner)}, {unpack(paths.outer)}},
 }
 
 

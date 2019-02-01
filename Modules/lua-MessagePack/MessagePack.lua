@@ -62,7 +62,10 @@ end
 local packers = setmetatable({}, {
     __index = function (t, k)
         if k == 1 then return end   -- allows ipairs
-        error("pack '" .. k .. "' is unimplemented")
+        local err_msg = "pack '" .. k .. "' is unimplemented"
+        -- TODO: Safer table packing
+        -- return false, err_msg
+        error(err_msg)
     end
 })
 m.packers = packers
@@ -198,8 +201,11 @@ packers['map'] = function (buffer, tbl, n)
         error"overflow in pack 'map'"
     end
     for k, v in pairs(tbl) do
-        packers[type(k)](buffer, k)
-        packers[type(v)](buffer, v)
+        local pk, pv = packers[type(k)], packers[type(v)]
+        if pk and pv then
+            pk(buffer, k)
+            pv(buffer, v)
+        end
     end
 end
 

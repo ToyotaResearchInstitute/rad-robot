@@ -672,7 +672,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     }
 
     const trajectory_turn = msg.trajectory_turn;
-    if (trajectory_turn && false) {
+    if (trajectory_turn) {
       var trajectory_turn_els = lanes_svg.getElementsByClassName('trajectory');
       trajectory_turn.forEach((l, i) => {
         if (i > 0) {
