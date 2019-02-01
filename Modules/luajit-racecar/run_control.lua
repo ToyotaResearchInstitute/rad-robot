@@ -2,10 +2,11 @@
 local unpack = unpack or require'table'.unpack
 
 local racecar = require'racecar'
+racecar.init()
 local flags = racecar.parse_arg(arg)
 local log_announce = racecar.log_announce
 
-local DEBUG_ANNOUNCE = false
+local DEBUG_ANNOUNCE = os.getenv("ANNOUNCE") or flags.announce
 local RUN_SIMULATION = os.getenv("SIMULATE") or flags.simulate
 print("RUN_SIMULATION", RUN_SIMULATION)
 math.randomseed(123)
@@ -200,7 +201,7 @@ local pp = control.pure_pursuit(pp_params)
 
 -- Set the environment for displaying in-browser
 local env = {
-  viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax, g_holo.ymax},
+  viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
   observer = pose_rbt,
   time_interval = dt,
   speed = speed,
@@ -266,7 +267,9 @@ local function cb_loop(t_us)
   local steering = atan(result.kappa * wheel_base)
   -- local rpm = vel_lane * racecar.RPM_PER_MPS
   local control_inp = {steering = steering, speed = vel_lane}
-  log_announce(log, control_inp, "control")
+  -- if DEBUG_ANNOUNCE then
+  --   log_announce(log, control_inp, "control")
+  -- end
   --
   if RUN_SIMULATION then
     local state = assert(simulate_vehicle({pose=pose_rbt}, control_inp))
@@ -275,10 +278,10 @@ local function cb_loop(t_us)
     -- Should we broadcast?
   if DEBUG_ANNOUNCE then
     env.observer = pose_rbt
-    racecar.announce("risk", env)
+    assert(racecar.announce("risk", env))
     result.steering = steering
     result.velocity = speed
-    racecar.announce("control", result)
+    assert(racecar.announce("control", result))
     -- Wait a touch if simulating
     if RUN_SIMULATION then usleep(1e4) end
   end

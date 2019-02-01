@@ -48,33 +48,32 @@ local skt_mcl, skt_lcm, msg_partitioner
 local function init(options)
   if type(options)~='table' then options = {} end
   -- MCL: localhost with ttl of 0, LCM: subnet with ttl of 1
-  if has_lcm then
-    local err
-    local has_skt, skt = pcall(require, 'skt')
-    if has_skt then
-      local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
-      skt_mcl, err = skt.open{
-        address = MCL_ADDRESS,
-        port = MCL_PORT,
-        ttl = IS_MAIN and 1 or 0
-      }
-      if skt_mcl then
-        local mtu = options.mtu or 'localhost'
-        msg_partitioner = lcm_packet.new_partitioning(mtu)
-      else
-        io.stderr:write(string.format("MCL not available: %s\n",
-                                      tostring(err)))
-      end
-      local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
-      skt_lcm, err = skt.open{
-        address = LCM_ADDRESS,
-        port = LCM_PORT,
-        -- ttl = 1
-      }
-      if not skt_lcm then
-        io.stderr:write(string.format("LCM not available: %s\n",
-                                      tostring(err)))
-      end
+  if not has_lcm then return false, "No MCL" end
+  local err
+  local has_skt, skt = pcall(require, 'skt')
+  if has_skt then
+    local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
+    skt_mcl, err = skt.open{
+      address = MCL_ADDRESS,
+      port = MCL_PORT,
+      ttl = IS_MAIN and 1 or 0
+    }
+    if skt_mcl then
+      local mtu = options.mtu or 'localhost'
+      msg_partitioner = lcm_packet.new_partitioning(mtu)
+    else
+      io.stderr:write(string.format("MCL not available: %s\n",
+                                    tostring(err)))
+    end
+    local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
+    skt_lcm, err = skt.open{
+      address = LCM_ADDRESS,
+      port = LCM_PORT,
+      -- ttl = 1
+    }
+    if not skt_lcm then
+      io.stderr:write(string.format("LCM not available: %s\n",
+                                    tostring(err)))
     end
   end
   return true
@@ -119,8 +118,10 @@ local function update_jitter(channel, t_us)
 end
 
 local function announce(channel, str, cnt, t_us)
-  if not (skt_mcl and channel) then
-    return false, "No channel/socket"
+  if not skt_mcl then
+    return false, "No socket"
+  elseif type(channel)~='string' then
+    return false, "No channel"
   elseif type(str)=='table' then
     str = has_logger and logger.encode(str)
   end

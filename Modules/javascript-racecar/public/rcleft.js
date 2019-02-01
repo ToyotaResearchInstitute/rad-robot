@@ -53,7 +53,6 @@ const n_timesteps = 100; // 75; // 100;
 var risk_over_time = [], risk_times = [];
 
 document.addEventListener("DOMContentLoaded", function(event) {
-
   var cur = {};
 
   const munpack = msgpack5().decode;
@@ -223,7 +222,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const update_road = (msg) => {
     if (has_road) {
       return;
-      }
+    }
     const lanes = msg.lanes;
     if (!lanes) {
       return;
@@ -285,11 +284,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const update_obstacles = (msg) => {
     if (has_obstacles) {
       return;
-      }
+    }
     const obstacles = msg.obstacles;
     if (!obstacles) {
       return;
-      }
+    }
     let obs_els = obstacles_svg.getElementsByClassName('obstacle');
     obstacles.forEach((obs, i) => {
       const points =
@@ -336,7 +335,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const vehicles = msg.vehicles;
     if (!vehicles) {
       return;
-      }
+    }
     var vehicle_els = vehicles_svg.getElementsByClassName('vehicle');
     vehicles.map(coord2svg).forEach((v, i) => {
       var el = vehicle_els.item(i);
@@ -352,7 +351,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         // el.style.fill = "#F00";
         // el.style.stroke = "none";
         vehicles_svg.appendChild(el);
-        }
+      }
       // el.setAttributeNS(null, 'cx', v[0] || 0);
       // el.setAttributeNS(null, 'cy', v[1] || 0);
       const x = v[0] || 0, y = v[1] || 0, a = v[2] || 0;
@@ -366,7 +365,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       const veh = veh_mesh.clone();
       scene.add(veh);
       veh_boxes.push(veh);
-      }
+    }
     while (vehicles.length < veh_boxes.length) {
       scene.remove(veh_boxes.pop());
     }
@@ -377,14 +376,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
       veh.position.y = v[1];
       veh.rotation.z = v[2];
     });
-
   };
 
   const update_observer = (msg) => {
     const observer = msg.observer;
     if (!observer) {
       return;
-      }
+    }
     var obs_el = document.getElementById('observer');
     if (!obs_el) {
       obs_el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
@@ -393,7 +391,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
                             '#sweetvehicle');
       obs_el.setAttributeNS(null, 'id', 'observer');
       observer_svg.appendChild(obs_el);
-      }
+    }
     const o = coord2svg(observer);
     const x = o[0] || 0, y = o[1] || 0, a = o[2] || 0;
     obs_el.setAttributeNS(null, 'x', x);
@@ -405,26 +403,25 @@ document.addEventListener("DOMContentLoaded", function(event) {
     observer_mesh.position.x = observer[0];
     observer_mesh.position.y = observer[1];
     observer_mesh.rotation.z = observer[2];
-
   };
 
   const update_3D = (msg) => {
     const beliefs = msg[likelihood_selection];
     if (!beliefs) {
       return;
-      }
+    }
     const waypoints = msg.waypoints;
 
     // Ensure we have the same lanes
     while (beliefs.length > bel_boxes.length) {
       bel_boxes.push([]);
-      }
+    }
     while (beliefs.length < bel_boxes.length) {
       bel_boxes.pop();
-      }
+    }
     while (beliefs.length > risk_boxes.length) {
       risk_boxes.push([]);
-      }
+    }
     while (beliefs.length < risk_boxes.length) {
       risk_boxes.pop();
     }
@@ -436,7 +433,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         rm.position.x = (lrisk_boxes.length - lr.length / 2) * sz_box_path;
         scene.add(rm);
         lrisk_boxes.push(rm);
-        }
+      }
       while (lr.length < lrisk_boxes.length) {
         scene.remove(lrisk_boxes.pop());
       }
@@ -457,7 +454,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         bm.position.x = (lbel_boxes.length - lb.length / 2) * sz_box_path;
         scene.add(bm);
         lbel_boxes.push(bm);
-        }
+      }
       while (lb.length < lbel_boxes.length) {
         let bm = lbel_boxes.pop();
         scene.remove(bm);
@@ -495,14 +492,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const time = msg.t, risks = msg.risks;
     if (time === undefined || risks === undefined) {
       return;
-      }
+    }
 
     if (time < risk_times[risk_times.length - 1]) {
       // risk_times = [];
       // risk_over_time = [];
       return;
-      }
-    else if (risk_times.length >= n_timesteps) {
+    } else if (risk_times.length >= n_timesteps) {
       risk_times.shift();
       risk_over_time.forEach((r) => { r.shift(); });
     }
@@ -584,7 +580,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       });
       data[data.length - 1].name = 'total';
       data[data.length - 1].line.color = d3colors(9);
-      }
+    }
 
     var layout = {
       title : 'Intersection Risk to Go',
@@ -617,15 +613,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
       datarevision : time
     };
     Plotly.react(graph_div, data, layout);
-
   };
 
   ws.onmessage = (e) => {
-    // console.log(e.data);
     var msg = munpack(new Uint8Array(e.data));
     Object.assign(cur, msg);
 
-    // console.log(msg);
+    console.log(msg);
     if (msg.risk !== undefined) {
       msg = msg.risk;
     }
@@ -650,12 +644,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
           pla_el.style.fill = "red";
           pla_el.style.stroke = "none";
           observer_svg.appendChild(pla_el);
-          }
+        }
         const pla = coord2svg(p_lookahead);
         const xla = pla[0] || 0, yla = pla[1] || 0;
         pla_el.setAttributeNS(null, 'cx', xla);
         pla_el.setAttributeNS(null, 'cy', yla);
-        }
+      }
 
       // Near
       const p_near = msg.control.p_nearby;
@@ -669,24 +663,24 @@ document.addEventListener("DOMContentLoaded", function(event) {
           pn_el.style.fill = "yellow";
           pn_el.style.stroke = "none";
           observer_svg.appendChild(pn_el);
-          }
+        }
         const pn = coord2svg(p_near);
         const xn = pn[0] || 0, yn = pn[1] || 0;
         pn_el.setAttributeNS(null, 'cx', xn);
         pn_el.setAttributeNS(null, 'cy', yn);
       }
-      }
+    }
 
     const trajectory_turn = msg.trajectory_turn;
-    if (trajectory_turn) {
+    if (trajectory_turn && false) {
       var trajectory_turn_els = lanes_svg.getElementsByClassName('trajectory');
       trajectory_turn.forEach((l, i) => {
         if (i > 0) {
           return;
-          }
-        const points = l.map((coord, i) => {
-                          return coord2svg(coord).slice(0, 2).join();
-                        }).join(' ');
+        }
+        const points =
+            l.map((coord, i) => { return coord2svg(coord).slice(0, 2).join(); })
+                .join(' ');
         var el = trajectory_turn_els.item(i);
         if (!el) {
           el = document.createElementNS("http://www.w3.org/2000/svg",
@@ -700,7 +694,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         }
         el.setAttributeNS(null, 'points', points);
       });
-      }
+    }
 
     const beliefs = msg[likelihood_selection];
     const waypoints = msg.waypoints;
@@ -724,13 +718,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
           counter += 1;
         });
       });
-      }
+    }
 
     const time = msg.t;
     if (time !== undefined) {
       info_div.innerHTML =
           [ time.toFixed(2), msg.go ? "Go" : "No Go" ].join('<br/>');
-      }
+    }
     const risks = msg.risks;
 
     if ('viewBox' in msg) {
@@ -747,7 +741,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
         update_canvas();
       }
     }
-
   };
   // Handle the radio change
   var rad = document.likelihoodSelection.likelihood;
@@ -762,7 +755,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   for (var i = 0; i < rad.length; i++) {
     // rad[i].onchange = radioHandler;
     rad[i].addEventListener('change', radioHandler);
-    }
+  }
 
   var img_video1 = document.getElementById('video1');
   var img_video2 = document.getElementById('video2');
@@ -777,7 +770,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       window.URL.revokeObjectURL(img_video1.src);
       img_video1.src = window.URL.createObjectURL(blobJ);
       // img_camera.onload = (e) => { console.log("done") };
-      }
+    }
     const video2 = cur.video2;
     if (video2) {
       cur.video2 = false;
@@ -785,7 +778,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       window.URL.revokeObjectURL(img_video2.src);
       img_video2.src = window.URL.createObjectURL(blobJ);
       // img_camera.onload = (e) => { console.log("done") };
-      }
+    }
     const video3 = cur.video3;
     if (video3) {
       cur.video3 = false;
@@ -797,5 +790,4 @@ document.addEventListener("DOMContentLoaded", function(event) {
   };
 
   draw();
-
 });
