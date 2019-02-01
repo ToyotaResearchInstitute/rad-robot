@@ -323,7 +323,7 @@ local function pure_pursuit(params)
     local result = {
       id_path = id_path,
       p_path = p_path,
-      d_path = d_path,
+      d_path = id_path and d_path,
       id_last = id_last,
       p_lookahead = p_lookahead,
       id_lookahead_last = id_lookahead_last,

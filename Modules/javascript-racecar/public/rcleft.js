@@ -127,7 +127,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
       Y_CANVAS_SZ * (p[1] - Y_SVG_MIN) / Y_SVG_SZ + X_CANVAS_MIN, p[2]
     ];
   };
-  const coord2svg = (p) => { return [ p[0], -p[1], -p[2] ]; };
+  // const coord2svg = (p) => { return [ p[0], -p[1], -p[2] ]; };
+  const coord2svg = (p) => { return [ p[0], p[1], p[2] ]; };
 
   const observer_svg = document.getElementById('observers');
   const vehicles_svg = document.getElementById('vehicles');
@@ -227,12 +228,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!lanes) {
       return;
     }
-    /*
+
     var lanes_els = lanes_svg.getElementsByClassName('lane');
     lanes.forEach((l, i, arr) => {
-      const points = l.map((coord, i) => {
-                        return coord2svg(coord).slice(0, 2).join();
-                      }).join(' ');
+      const points =
+          l.map((coord, i) => { return coord2svg(coord).slice(0, 2).join(); })
+              .join(' ');
       var el = lanes_els.item(i);
       if (!el) {
         el = document.createElementNS("http://www.w3.org/2000/svg", 'polyline');
@@ -245,7 +246,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
       }
       el.setAttributeNS(null, 'points', points);
     });
-    */
 
     // // Road shape
     // const lane_width = 0.1, lane_height = 0.025;
@@ -619,7 +619,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     var msg = munpack(new Uint8Array(e.data));
     Object.assign(cur, msg);
 
-    console.log(msg);
+    // console.log(msg);
     if (msg.risk !== undefined) {
       msg = msg.risk;
     }

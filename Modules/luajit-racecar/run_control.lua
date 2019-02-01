@@ -206,9 +206,14 @@ local env = {
   time_interval = dt,
   speed = speed,
   -- Show the knots for better printing
-  lanes = {route_knots.inner, route_knots.outer},
+  lanes = {
+    -- {unpack(route_knots.inner)}, {unpack(route_knots.outer)}
+    {unpack(paths.inner)}, {unpack(paths.outer)}
+  },
   -- This isn't quite right...?
-  trajectory_turn = {{unpack(paths.inner)}, {unpack(paths.outer)}},
+  trajectory_turn = {
+    -- {unpack(paths.inner)}, {unpack(paths.outer)}
+  },
 }
 
 
@@ -265,6 +270,12 @@ local function cb_loop(t_us)
   -- Find our control policy
   local result, err = pp(pose_rbt)
   if not result then return false, err end
+  -- for k, v in pairs(result) do
+  --   print(k, v)
+  -- end
+  if result.err then
+    return false, result.err
+  end
   local steering = atan(result.kappa * wheel_base)
   -- local rpm = vel_lane * racecar.RPM_PER_MPS
   local control_inp = {steering = steering, speed = vel_lane}
