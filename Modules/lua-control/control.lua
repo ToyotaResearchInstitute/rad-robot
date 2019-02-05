@@ -227,7 +227,6 @@ local function generate_path(knots, params)
       return false, "No points added to the kd-tree"
     end
     path.tree = tree
-    -- Nearby function
   end
 
   return path, length
@@ -279,14 +278,20 @@ lib.find_in_path = find_in_path
 -- Returns: id_nearby, dist_nearby
 local function get_nearest(p_lookahead, path, threshold_close, id_last)
   -- NOTE: nearby must be sorted by increasing distance
+  -- If not id_last, then simply go to the nearest point?
   local nearby, err = path.tree:nearest(p_lookahead, threshold_close)
-  if not nearby then
-    -- print("Route | threshold_close", threshold_close)
+  if id_last and not nearby then
     return false, err
+  elseif not id_last then
+    -- Search for the closest points...
+    nearby, err = path.tree:nearest(p_lookahead)
+    if not nearby then return false, err end
+    -- error("Not implemented")
   end
   -- Examine in sorted order, by distance
   for _, nby in ipairs(nearby) do
-    if (not id_last) or (nby.user >= id_last) then
+    -- TODO: Enforce ordering: (nby.user >= id_last)
+    if not id_last then
       return nby.user, sqrt(nby.dist_sq)
     end
   end
@@ -301,7 +306,7 @@ local function pure_pursuit(params)
   if type(params) ~= 'table' then return false, "No parameters" end
   local threshold_close = tonumber(params.threshold_close) or 0.25
   local lookahead = tonumber(params.lookahead) or 1
-  local id_last, id_lookahead_last = false, false
+  local id_lookahead_last = false
   local fn_nearby = params.fn_nearby
   if type(fn_nearby) ~= "function" then fn_nearby = get_nearest end
   local path = params.path
@@ -311,9 +316,12 @@ local function pure_pursuit(params)
     return false, "No path points"
   end
   -- Give a function to be created/wrapped by coroutine
-  local function controller(pose_rbt)
+  -- Input: pose_rbt
+  -- State: result_prev
+  local function controller(pose_rbt, result_prev)
     -- Find ourselves on the path
-    local id_path, d_path = get_nearest(pose_rbt, path, threshold_close)
+    local id_last = result_prev and result_prev.id_path
+    local id_path, d_path = fn_nearby(pose_rbt, path, threshold_close, id_last)
     local p_path = id_path and path[id_path]
     -- Prepare the lookahead point
     local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
@@ -336,7 +344,6 @@ local function pure_pursuit(params)
     -- Ensure there is a lookahead point nearby
     if not id_lookahead then
       result.err = d_lookahead
-      id_last = id_path
       -- We do not have a last point, now
       id_lookahead_last = nil
       return result
@@ -360,7 +367,6 @@ local function pure_pursuit(params)
     result.alpha = alpha
     result.err = nil
     -- Save the nearby point for next time
-    id_last = id_path
     id_lookahead_last = id_lookahead
     return result
   end

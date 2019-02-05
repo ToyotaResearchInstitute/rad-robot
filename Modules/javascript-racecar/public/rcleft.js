@@ -124,11 +124,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const svg2canvas = (p) => {
     return [
       X_CANVAS_SZ * (p[0] - X_SVG_MIN) / X_SVG_SZ + X_CANVAS_MIN,
-      Y_CANVAS_SZ * (p[1] - Y_SVG_MIN) / Y_SVG_SZ + X_CANVAS_MIN, p[2]
+      Y_CANVAS_SZ * (p[1] - Y_SVG_MIN) / Y_SVG_SZ + Y_CANVAS_MIN, p[2]
     ];
   };
   // const coord2svg = (p) => { return [ p[0], -p[1], -p[2] ]; };
-  const coord2svg = (p) => { return [ p[0], p[1], p[2] ]; };
+  // Flip X and Y
+  const coord2svg = (p) => { return [ p[1], p[0], Math.PI / 2 - p[2] ]; };
 
   const observer_svg = document.getElementById('observers');
   const vehicles_svg = document.getElementById('vehicles');
@@ -201,7 +202,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   // Left turn RC
   camera.position.set(X_SVG_MIN + 0 * X_SVG_SZ / 2,
                       Y_SVG_MIN + 3 * Y_SVG_SZ / 4, 1.25);
-  camera.lookAt(-1, 1.6, 0);
+  camera.lookAt(1, 1, 0);
 
   var light0 = new THREE.AmbientLight(0x404040); // soft white light
   scene.add(light0);
@@ -406,6 +407,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
   };
 
   const update_3D = (msg) => {
+    console.log("3d msg")
+    console.log(msg)
     const beliefs = msg[likelihood_selection];
     if (!beliefs) {
       return;
@@ -733,11 +736,14 @@ document.addEventListener("DOMContentLoaded", function(event) {
       if (changed) {
         // console.log("Changed viewBox", msg.viewBox, viewBox);
         viewBox = msg.viewBox;
-        environment_svg.setAttribute('viewBox', viewBox.join(' '));
-        X_SVG_MIN = parseFloat(viewBox[0]);
-        Y_SVG_MIN = parseFloat(viewBox[1]);
-        X_SVG_SZ = parseFloat(viewBox[2]);
-        Y_SVG_SZ = parseFloat(viewBox[3]);
+        // Must flip the coordinates...
+        X_SVG_MIN = parseFloat(viewBox[1]);
+        Y_SVG_MIN = parseFloat(viewBox[0]);
+        X_SVG_SZ = parseFloat(viewBox[3]);
+        Y_SVG_SZ = parseFloat(viewBox[2]);
+        environment_svg.setAttribute('viewBox', X_SVG_MIN + ' ' + Y_SVG_MIN +
+                                                    ' ' + X_SVG_SZ + ' ' +
+                                                    Y_SVG_SZ);
         update_canvas();
       }
     }
