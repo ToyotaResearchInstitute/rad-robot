@@ -68,8 +68,8 @@ mcl_transport.on('error', (err) => {
 
 mcl_transport.on('message', (msg, rinfo) => {
   const t = Date.now();
-  console.log(`server got message from ${rinfo.address}:${rinfo.port}`,
-              msg.length);
+  // console.log(`server got message from ${rinfo.address}:${rinfo.port}`,
+  // msg.length);
   switch (msg.readUInt16BE(0)) {
   case 0x81d9: // msgpack header
     wss.broadcast(msg);

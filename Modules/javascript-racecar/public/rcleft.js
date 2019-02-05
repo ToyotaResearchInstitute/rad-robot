@@ -411,17 +411,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!ctrl) {
       return;
     }
-    console.log("ctrl", ctrl);
+    const id_robot = ctrl.id;
     // Lookahead
     const p_lookahead = ctrl.p_lookahead;
-    console.log("p_lookahead", p_lookahead);
     if (p_lookahead) {
-      var pla_el = document.getElementById('lookahead');
+      var pla_el = document.getElementById('lookahead_' + id_robot);
       if (!pla_el) {
         pla_el =
             document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-        pla_el.setAttributeNS(null, 'id', 'lookahead');
+        pla_el.setAttributeNS(null, 'id', 'lookahead_' + id_robot);
         pla_el.setAttributeNS(null, 'r', 0.05);
+        pla_el.setAttributeNS(null, 'class', 'lookahead');
         pla_el.style.fill = "red";
         pla_el.style.stroke = "none";
         observer_svg.appendChild(pla_el);
@@ -434,12 +434,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
     // Near
     const p_near = ctrl.p_path;
     if (p_near) {
-      var pn_el = document.getElementById('near');
+      var pn_el = document.getElementById('near_' + id_robot);
       if (!pn_el) {
         pn_el =
             document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-        pn_el.setAttributeNS(null, 'id', 'near');
+        pn_el.setAttributeNS(null, 'id', 'near_' + id_robot);
         pn_el.setAttributeNS(null, 'r', 0.05);
+        pla_el.setAttributeNS(null, 'class', 'near');
         pn_el.style.fill = "yellow";
         pn_el.style.stroke = "none";
         observer_svg.appendChild(pn_el);
@@ -448,6 +449,26 @@ document.addEventListener("DOMContentLoaded", function(event) {
       const xn = pn[0] || 0, yn = pn[1] || 0;
       pn_el.setAttributeNS(null, 'cx', xn);
       pn_el.setAttributeNS(null, 'cy', yn);
+    }
+
+    // Pose
+    const pose = ctrl.pose;
+    if (pose) {
+      var pose_el = document.getElementById('pose_' + id_robot);
+      if (!pose_el) {
+        pose_el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
+        pose_el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href',
+                               '#sweetvehicle');
+        pose_el.setAttributeNS(null, 'id', 'pose_' + id_robot);
+        observer_svg.appendChild(pose_el);
+      }
+      const p = coord2svg(pose);
+      pose_el.setAttributeNS(null, 'x', p[0]);
+      pose_el.setAttributeNS(null, 'y', p[1]);
+      pose_el.setAttributeNS(
+          null, 'transform',
+          "rotate(" + [ p[2] * RAD_TO_DEG, p[0], p[1] ].join() + ")");
+      // TODO: Add 3D mesh
     }
   };
 

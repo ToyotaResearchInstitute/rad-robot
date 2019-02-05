@@ -32,16 +32,14 @@ local generate_path = require'control'.generate_path
 
 -- Globally accessible variables
 local veh_poses = {}
-local desired_path = 'outer'
+local desired_path = flags.path or 'outer'
 local vel_h = false
 local vel_lane = 0.5
 local vel_max = 0.75 -- 1 --0.75
 local vel_min = 0.2
 -- Simulation parameters
-local dheading_max = math.rad(45) -- radians of front wheels
 local wheel_base = 0.3
 -- Parameters for trajectory following
-local speed = 0.1 -- meters per second
 local dt = 0.1
 local lookahead = 0.33
 -- local lookahead = 0.6
@@ -62,10 +60,6 @@ end
 
 -- Path increments: one inch
 local ds = 0.10
--- Which path to simulate
--- local desired_path = 'polygon'
--- local desired_path = 'outerA'
--- local desired_path = 'outer'
 
 -- For grid drawing
 local function set_mid(map, idx) map[idx] = 127 end
@@ -172,7 +166,7 @@ for name, knots in pairs(route_knots) do
 end
 
 -- TODO: Paths should come from a separate program
-my_path = paths[desired_path]
+my_path = assert(paths[desired_path], "Path not found!")
 local pp_params = {
   path = my_path,
   lookahead = lookahead,
@@ -185,7 +179,7 @@ local env = {
   viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
   observer = pose_rbt,
   time_interval = dt,
-  speed = speed,
+  speed = vel_lane,
   -- Show the knots for better printing
   lanes = {
     -- {unpack(route_knots.inner)}, {unpack(route_knots.outer)}
@@ -248,11 +242,13 @@ local function cb_loop(t_us)
   end
   -- Ensure we add our ID to the result
   result.id = id_robot
+  -- Save the pose, just because
+  result.pose = pose_rbt
   -- Set the steering based on the car dimensions
   local steering = atan(result.kappa * wheel_base)
   result.steering = steering
   -- TODO: Set the speed based on curvature? Lookahead point's curvature?
-  result.velocity = speed
+  result.velocity = vel_lane
 
   -- TODO
   if RUN_SIMULATION then
@@ -264,7 +260,7 @@ local function cb_loop(t_us)
   if DEBUG_ANNOUNCE then
     log_announce(log, result, "control")
     -- TODO: Environment should be in a different Lua file, as it listen to the path
-    env.observer = pose_rbt
+    -- env.observer = pose_rbt
     assert(racecar.announce("risk", env))
     -- Wait a touch if simulating
     if RUN_SIMULATION then usleep(1e4) end

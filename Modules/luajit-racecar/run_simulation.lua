@@ -27,14 +27,17 @@ local wheel_base = 0.3
 
 --
 local function cb_debug(t_us)
+  local info = {
+  string.format("Simulation time: %.2f", tonumber(t_us)/1e6)
+  }
   for id_rbt, state_rbt in pairs(veh_states) do
     local px, py, pa = unpack(state_rbt.pose)
-    local info = {
-      string.format("%.2f | Robot: %s", tonumber(t_us)/1e6, id_rbt),
-      string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa))
-    }
-    io.write(table.concat(info, "\n"), '\n')
+    table.insert(info,
+      string.format("Robot: %s | x=%.2fm, y=%.2fm, a=%.2f°",
+        id_rbt, px, py, math.deg(pa))
+    )
   end
+  io.write(table.concat(info, "\n"), '\n')
   io.flush()
 end
 
@@ -100,9 +103,6 @@ local function cb_loop(t_us)
     -- Simulate a timestep
     local state_now = veh_states[id_rbt]
     local state_new = simulate_vehicle(state_now, ctrl_inp_rbt, dt)
-    print("dt", dt)
-    print("State now", unpack(state_now.pose))
-    print("State new", unpack(state_new.pose))
     -- Update the internal state
     veh_states[id_rbt] = state_new
     -- Set the publishing message
