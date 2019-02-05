@@ -31,7 +31,6 @@ local generate_control_points = require'control'.generate_control_points
 local generate_path = require'control'.generate_path
 
 -- Globally accessible variables
-local pose_rbt = {}
 local veh_poses = {}
 local desired_path = 'outerB'
 local vel_h = false
@@ -50,6 +49,8 @@ local threshold_close = 0.25
 --
 local my_path = false
 local function cb_debug(t_us)
+  local pose_rbt = veh_poses[id_robot]
+  if not pose_rbt then return end
   local px, py, pa = unpack(pose_rbt)
   local info = {
     string.format("Path: %s", my_path),
@@ -169,36 +170,15 @@ for name, knots in pairs(route_knots) do
   print(string.format("Route [%s] Length [%.2f meters] Points [%d]",
   name, path.length, #path))
 end
--- Initialize our path and pose on that path
--- TODO: Place this in some "entry" function?
+
+-- TODO: Paths should come from a separate program
 my_path = paths[desired_path]
-pose_rbt = {unpack(my_path[1])}
-if type(pose_rbt[3]) ~= 'number' then
-  print("Taking direction for the next point...")
-  local px, py = unpack(pose_rbt, 1, 2)
-  pose_rbt[3] = atan2(my_path[2][2] - py, my_path[2][1] - px)
-end
-
--- Purely Debugging
---[[
--- Draw the desired path with tolerences and print the coordinates
-g_holo:fill(0)
--- Draw each point in the path as a circle
-for _, pt in ipairs(my_path) do print(pt[1], pt[2], math.deg(pt[3])) end
--- Show the closeness for the nearby lookup
-for _, pt in ipairs(my_path) do g_holo:circle(pt, threshold_close, set_quarter) end
--- Show the path waypoint intervals
-for _, pt in ipairs(my_path) do g_holo:circle(pt, ds / 2, set_mid) end
-g_holo:path(my_path)
-assert(g_holo:save"/tmp/path.pgm")
---]]
-
 local pp_params = {
   path = my_path,
   lookahead = lookahead,
   threshold_close = threshold_close
 }
-local pp = control.pure_pursuit(pp_params)
+local pp = assert(control.pure_pursuit(pp_params))
 
 -- Set the environment for displaying in-browser
 local env = {
@@ -232,47 +212,56 @@ local function cb_loop(t_us)
       end
     end
   end
-  print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
-  local p_x, p_y, p_a = unpack(pose_rbt)
-  for _, name_veh in ipairs(in_my_lane) do
-    local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
-    local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
-    if dx_rel < 0.5 and dx_rel > 0 then
-      print("Lane leader | ", name_veh, dx_rel, dy_rel)
-    else
-      print("Not leader | ", name_veh, dx_rel, dy_rel)
+  local pose_rbt = veh_poses[id_robot]
+  if not pose_rbt then
+    -- Stop if no pose...
+    local control_inp = {steering = 0, velocity = 0, id = id_robot}
+    log_announce(log, control_inp, "control")
+    return
+  end
+  if #in_my_lane > 0 then
+    print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
+    local p_x, p_y, p_a = unpack(pose_rbt)
+    for _, name_veh in ipairs(in_my_lane) do
+      local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
+      local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
+      if dx_rel < 0.5 and dx_rel > 0 then
+        print("Lane leader | ", name_veh, dx_rel, dy_rel)
+      else
+        print("Not leader | ", name_veh, dx_rel, dy_rel)
+      end
     end
   end
 
   -- Find our control policy
   local result, err = pp(pose_rbt)
   if not result then return false, err end
-  -- for k, v in pairs(result) do
-  --   print(k, v)
-  -- end
+  for k, v in pairs(result) do
+    print(k, v)
+  end
   if result.err then
     return false, result.err
   end
+  -- Ensure we add our ID to the result
+  result.id = id_robot
+  -- Set the steering based on the car dimensions
   local steering = atan(result.kappa * wheel_base)
-  -- local rpm = vel_lane * racecar.RPM_PER_MPS
-  local control_inp = {steering = steering, velocity = vel_lane}
-  -- if DEBUG_ANNOUNCE then
-  --   log_announce(log, control_inp, "control")
-  -- end
+  result.steering = steering
+  -- TODO: Set the speed based on curvature? Lookahead point's curvature?
+  result.velocity = speed
 
   -- TODO
   if RUN_SIMULATION then
+    local control_inp = {steering = steering, velocity = vel_lane}
     local state = assert(simulate_vehicle({pose=pose_rbt}, control_inp))
     pose_rbt = state.pose
   end
     -- Should we broadcast?
   if DEBUG_ANNOUNCE then
+    log_announce(log, result, "control")
+    -- TODO: Environment should be in a different Lua file, as it listen to the path
     env.observer = pose_rbt
     assert(racecar.announce("risk", env))
-    result.steering = steering
-    result.velocity = speed
-    result.id = id_robot
-    assert(racecar.announce("control", result))
     -- Wait a touch if simulating
     if RUN_SIMULATION then usleep(1e4) end
   end
@@ -294,15 +283,13 @@ local function parse_vicon(msg)
   -- Check that the data is not stale
   -- TODO: Stale for each ID...
   local frame = msg.frame
-  if frame < last_frame then
+  msg.frame = nil
+  if frame <= last_frame then
     return false, "Stale data"
-  else
-    last_frame = frame
-    msg.frame = nil
   end
+  last_frame = frame
   -- Find the pose for each robot
   for id, vp in pairs(msg) do
-    print("ID", unpack(vp))
     veh_poses[id] = vicon2pose(vp)
   end
 end

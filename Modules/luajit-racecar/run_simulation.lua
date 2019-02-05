@@ -78,7 +78,7 @@ end
 local function pose2vicon(p)
   -- Just on the z=0 plane
   return {
-    rotation = {0, 0, 1e3 * p[3]},
+    rotation = {0, 0, p[3]},
     translation = {1e3 * p[1], 1e3 * p[2], 0},
   }
 end
@@ -91,12 +91,18 @@ local function cb_loop(t_us)
   -- Simulate and publish this timestep
   local dt_us = t_us - (t_last_us or t_us)
   t_last_us = t_us
+  local dt = tonumber(dt_us) / 1e6
   local msg_vicon = {
     frame = count_frame
   }
-  for id_rbt, state_rbt in pairs(veh_states) do
+  count_frame = count_frame + 1
+  for id_rbt, ctrl_inp_rbt in pairs(veh_controls) do
     -- Simulate a timestep
-    local state_new = simulate_vehicle(state_rbt, veh_controls[id_rbt], tonumber(dt_us) / 1e6)
+    local state_now = veh_states[id_rbt]
+    local state_new = simulate_vehicle(state_now, ctrl_inp_rbt, dt)
+    print("dt", dt)
+    print("State now", unpack(state_now.pose))
+    print("State new", unpack(state_new.pose))
     -- Update the internal state
     veh_states[id_rbt] = state_new
     -- Set the publishing message
