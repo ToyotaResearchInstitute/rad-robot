@@ -154,12 +154,15 @@ end
 lib.path_arc = path_arc
 
 local function generate_path(knots, params)
-  local ds, path, grid_raster = params.ds, params.path, params.grid_raster
-  -- ds: discrete distance between each waypoint
-  if type(grid_raster) ~= 'table' then grid_raster = false end
+  local path = params.path
   if type(path) ~= 'table' then path = {} end
+  local grid_raster = params.grid_raster
+  if type(grid_raster) ~= 'table' then grid_raster = false end
   local closed = params.closed and true or false
   path.closed = closed
+  -- ds: discrete distance between each waypoint
+  local ds = params.ds
+  path.ds = ds
   -- Save the path length from this call
   local length = 0
   local n_knots = #knots
@@ -237,11 +240,35 @@ local function sort_candidates(a, b)
   return a.dist < b.dist
 end
 
+-- Given: Point
+-- Returns: id_nearby, is_within_threshold
+local function get_nearest(pt, path, threshold_close, id_last)
+  -- NOTE: nearby must be sorted by increasing distance
+  -- If not id_last, then simply go to the nearest point?
+  local nearby, err = path.tree:nearest(pt, threshold_close)
+  if id_last and not nearby then
+    return false, err
+  elseif not id_last then
+    -- Search for the closest points...
+    nearby, err = path.tree:nearest(pt)
+    if not nearby then return false, err end
+    return nearby[1].user, false
+  end
+  -- Examine in sorted order, by distance
+  for _, nby in ipairs(nearby) do
+    -- TODO: Enforce ordering: (nby.user >= id_last)
+    if not id_last then
+      return nby.user, true
+    end
+  end
+  return false, "No unvisited points"
+end
+
 -- Given a pose and a table of paths
 local function find_in_path(p_vehicle, paths, closeness, skip_angle)
   closeness = tonumber(closeness) or 1
   -- Grab the pose angle
-  local pose_a = p_vehicle[3]
+  local p_x, p_y, p_a = unpack(p_vehicle)
   -- Generate the best candidate per path
   local candidates = {}
   for k, path in pairs(paths) do
@@ -249,12 +276,14 @@ local function find_in_path(p_vehicle, paths, closeness, skip_angle)
     if nearby then
       for _, nby in ipairs(nearby) do
         local id_in_path = nby.user
-        local path_a = path[id_in_path][3]
-        local da = mod_angle(pose_a - path_a)
+        local path_x, path_y, path_a = unpack(path[id_in_path])
+        local dx, dy = p_x - path_x, p_y - path_y
+        -- Only if the path _has_ an angle at that point
+        local da = path_a and mod_angle(p_a - path_a)
         tinsert(candidates, {
           path_name=k,
           id_in_path=nby.user,
-          dist=sqrt(nby.dist_sq),
+          dist=sqrt(dx*dx + dy*dy),
           da=da})
       end
     end
@@ -265,9 +294,12 @@ local function find_in_path(p_vehicle, paths, closeness, skip_angle)
   -- Sort all candidates by distance - across paths
   table.sort(candidates, sort_candidates)
   -- Now check on the angle
-  if skip_angle then return candidates[1] end
+  if skip_angle then
+    return candidates[1]
+  end
   for _, candidate in ipairs(candidates) do
-    if fabs(candidate.da) < math.rad(45) then
+    local da = assert(candidate.da, "No path angle information")
+    if fabs(da) < math.rad(45) then
       return candidate
     end
   end
@@ -275,81 +307,82 @@ local function find_in_path(p_vehicle, paths, closeness, skip_angle)
 end
 lib.find_in_path = find_in_path
 
--- Returns: id_nearby, dist_nearby
-local function get_nearest(p_lookahead, path, threshold_close, id_last)
-  -- NOTE: nearby must be sorted by increasing distance
-  -- If not id_last, then simply go to the nearest point?
-  local nearby, err = path.tree:nearest(p_lookahead, threshold_close)
-  if id_last and not nearby then
-    return false, err
-  elseif not id_last then
-    -- Search for the closest points...
-    nearby, err = path.tree:nearest(p_lookahead)
-    if not nearby then return false, err end
-    -- error("Not implemented")
-  end
-  -- Examine in sorted order, by distance
-  for _, nby in ipairs(nearby) do
-    -- TODO: Enforce ordering: (nby.user >= id_last)
-    if not id_last then
-      return nby.user, sqrt(nby.dist_sq)
-    end
-  end
-  return false, "No unvisited points"
-end
-
 -- Usage:
 -- lookahead distance
 -- threshold_close is how far away from the path before we give up
 local function pure_pursuit(params)
   -- Initialization bits
   if type(params) ~= 'table' then return false, "No parameters" end
-  local threshold_close = tonumber(params.threshold_close) or 0.25
-  local lookahead = tonumber(params.lookahead) or 1
-  local id_lookahead_last = false
-  local fn_nearby = params.fn_nearby
-  if type(fn_nearby) ~= "function" then fn_nearby = get_nearest end
   local path = params.path
   if type(path)~='table' then
     return false, "Bad path"
   elseif #path==0 then
     return false, "No path points"
   end
+  local threshold_close = tonumber(params.threshold_close) or 0.25
+  local lookahead = tonumber(params.lookahead) or 1
+  local steps_lookahead = math.ceil(lookahead / path.ds)
+  local id_lookahead_last = false
+  local fn_nearby = params.fn_nearby
+  if type(fn_nearby) ~= "function" then fn_nearby = get_nearest end
   -- Give a function to be created/wrapped by coroutine
   -- Input: pose_rbt
   -- State: result_prev
   local function controller(pose_rbt, result_prev)
     -- Find ourselves on the path
     local id_last = result_prev and result_prev.id_path
-    local id_path, d_path = fn_nearby(pose_rbt, path, threshold_close, id_last)
-    local p_path = id_path and path[id_path]
-    -- Prepare the lookahead point
+    local id_path, is_nearby = fn_nearby(pose_rbt, path, threshold_close, id_last)
+    -- If we can't find anywhere on the path to go... Bad news :(
+    if not id_path then
+      return false, is_nearby
+    end
+    local p_path = path[id_path]
+    local d_path = false
     local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
-    local x_ahead, y_ahead = tf2D(lookahead, 0, th_rbt, x_rbt, y_rbt)
-    local p_lookahead = {x_ahead, y_ahead}
+    if p_path then
+      local x_path, y_path = unpack(p_path, 1, 2)
+      local dx, dy = x_rbt - x_path, y_rbt - y_path
+      -- Distance to the path
+      d_path = sqrt(dx * dx + dy * dy)
+    end
     -- Prepare the result
     local result = {
       id_path = id_path,
       p_path = p_path,
       d_path = id_path and d_path,
       id_last = id_last,
-      p_lookahead = p_lookahead,
       id_lookahead_last = id_lookahead_last,
       lookahead = lookahead,
     }
-    -- Find the nearest path point to the lookahead point
-    local id_lookahead, d_lookahead = fn_nearby(p_lookahead, path, threshold_close, id_lookahead_last)
-    -- TODO: Don't skip too far in a single timestep?
-    -- if id_lookahead > id_lookahead_last + 1 then id_lookahead = id_lookahead_last + 1 end
-    -- Ensure there is a lookahead point nearby
-    if not id_lookahead then
-      result.err = d_lookahead
-      -- We do not have a last point, now
-      id_lookahead_last = nil
-      return result
+    -- Check if we are nearby the path _and_ we are well oriented
+    local id_lookahead, p_lookahead
+    if is_nearby then
+      -- Prepare the lookahead point
+      local x_ahead, y_ahead = tf2D(lookahead, 0, th_rbt, x_rbt, y_rbt)
+      p_lookahead = {x_ahead, y_ahead}
+      -- Find the nearest path point to the lookahead point
+      -- TODO: Don't skip too far in a single timestep?
+      id_lookahead = fn_nearby(p_lookahead, path, threshold_close, id_lookahead_last)
     end
+    -- Default to one point ahead
+    if not id_lookahead then
+      -- Keep in a loop using the modulo
+      -- print("steps_lookahead", steps_lookahead)
+      id_lookahead = (id_path + steps_lookahead) % #path + 1
+      -- print("id_path", id_path)
+      -- print("id_lookahead", id_lookahead)
+      p_lookahead = path[id_lookahead]
+      -- print("p_path", unpack(p_path))
+      -- print("p_lookahead", unpack(p_lookahead))
+      -- error("OOPS")
+    end
+    result.p_lookahead = p_lookahead
     -- Find delta between robot and lookahead path point
-    local p_lookahead_path = path[id_lookahead]
+    local p_lookahead_path = assert(path[id_lookahead], "No lookahead point on the path")
+    -- Ensure that we set this variable for debugging
+    if not id_lookahead then
+      result.p_lookahead = p_lookahead_path
+    end
     local x_ref, y_ref = unpack(p_lookahead_path)
     -- Relative angle towards the lookahead reference point
     local alpha = atan2(y_ref - y_rbt, x_ref - x_rbt)
@@ -363,7 +396,7 @@ local function pure_pursuit(params)
     result.radius_of_curvature = radius_of_curvature
     result.id_lookahead = id_lookahead
     result.p_lookahead_path = p_lookahead_path
-    result.d_lookahead = d_lookahead
+    -- result.d_lookahead = d_lookahead
     result.alpha = alpha
     result.err = nil
     -- Save the nearby point for next time

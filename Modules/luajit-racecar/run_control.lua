@@ -32,7 +32,7 @@ local generate_path = require'control'.generate_path
 
 -- Globally accessible variables
 local veh_poses = {}
-local desired_path = 'outerB'
+local desired_path = 'outer'
 local vel_h = false
 local vel_lane = 0.5
 local vel_max = 0.75 -- 1 --0.75
@@ -189,7 +189,7 @@ local env = {
   -- Show the knots for better printing
   lanes = {
     -- {unpack(route_knots.inner)}, {unpack(route_knots.outer)}
-    {unpack(paths.inner)}, {unpack(paths.outer)}
+    {unpack(paths.inner)}, {unpack(paths.outer)}, {unpack(paths.outerB)}
   },
   -- This isn't quite right...?
   trajectory_turn = {
@@ -237,7 +237,11 @@ local function cb_loop(t_us)
   local result, err = pp(pose_rbt)
   if not result then return false, err end
   for k, v in pairs(result) do
-    print(k, v)
+    if type(v)=='table' then
+      print(k, table.concat(v, ', '))
+    else
+      print(k, v)
+    end
   end
   if result.err then
     return false, result.err

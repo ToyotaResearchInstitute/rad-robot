@@ -406,9 +406,52 @@ document.addEventListener("DOMContentLoaded", function(event) {
     observer_mesh.rotation.z = observer[2];
   };
 
+  const update_control = (msg) => {
+    const ctrl = msg.control;
+    if (!ctrl) {
+      return;
+    }
+    console.log("ctrl", ctrl);
+    // Lookahead
+    const p_lookahead = ctrl.p_lookahead;
+    console.log("p_lookahead", p_lookahead);
+    if (p_lookahead) {
+      var pla_el = document.getElementById('lookahead');
+      if (!pla_el) {
+        pla_el =
+            document.createElementNS("http://www.w3.org/2000/svg", 'circle');
+        pla_el.setAttributeNS(null, 'id', 'lookahead');
+        pla_el.setAttributeNS(null, 'r', 0.05);
+        pla_el.style.fill = "red";
+        pla_el.style.stroke = "none";
+        observer_svg.appendChild(pla_el);
+      }
+      const pla = coord2svg(p_lookahead);
+      pla_el.setAttributeNS(null, 'cx', pla[0]);
+      pla_el.setAttributeNS(null, 'cy', pla[1]);
+    }
+
+    // Near
+    const p_near = ctrl.p_path;
+    if (p_near) {
+      var pn_el = document.getElementById('near');
+      if (!pn_el) {
+        pn_el =
+            document.createElementNS("http://www.w3.org/2000/svg", 'circle');
+        pn_el.setAttributeNS(null, 'id', 'near');
+        pn_el.setAttributeNS(null, 'r', 0.05);
+        pn_el.style.fill = "yellow";
+        pn_el.style.stroke = "none";
+        observer_svg.appendChild(pn_el);
+      }
+      const pn = coord2svg(p_near);
+      const xn = pn[0] || 0, yn = pn[1] || 0;
+      pn_el.setAttributeNS(null, 'cx', xn);
+      pn_el.setAttributeNS(null, 'cy', yn);
+    }
+  };
+
   const update_3D = (msg) => {
-    console.log("3d msg")
-    console.log(msg)
     const beliefs = msg[likelihood_selection];
     if (!beliefs) {
       return;
@@ -633,46 +676,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     update_vehicles(msg);
     update_observer(msg);
     update_plot(msg);
-
-    if (msg.control !== undefined) {
-      // Lookahead
-      const p_lookahead = msg.control.p_lookahead;
-      if (p_lookahead) {
-        var pla_el = document.getElementById('lookahead');
-        if (!pla_el) {
-          pla_el =
-              document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-          pla_el.setAttributeNS(null, 'id', 'lookahead');
-          pla_el.setAttributeNS(null, 'r', 0.05);
-          pla_el.style.fill = "red";
-          pla_el.style.stroke = "none";
-          observer_svg.appendChild(pla_el);
-        }
-        const pla = coord2svg(p_lookahead);
-        const xla = pla[0] || 0, yla = pla[1] || 0;
-        pla_el.setAttributeNS(null, 'cx', xla);
-        pla_el.setAttributeNS(null, 'cy', yla);
-      }
-
-      // Near
-      const p_near = msg.control.p_nearby;
-      if (p_near) {
-        var pn_el = document.getElementById('near');
-        if (!pn_el) {
-          pn_el =
-              document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-          pn_el.setAttributeNS(null, 'id', 'near');
-          pn_el.setAttributeNS(null, 'r', 0.05);
-          pn_el.style.fill = "yellow";
-          pn_el.style.stroke = "none";
-          observer_svg.appendChild(pn_el);
-        }
-        const pn = coord2svg(p_near);
-        const xn = pn[0] || 0, yn = pn[1] || 0;
-        pn_el.setAttributeNS(null, 'cx', xn);
-        pn_el.setAttributeNS(null, 'cy', yn);
-      }
-    }
+    update_control(msg);
 
     const trajectory_turn = msg.trajectory_turn;
     if (trajectory_turn) {
