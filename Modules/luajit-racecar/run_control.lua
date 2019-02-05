@@ -45,17 +45,15 @@ local lookahead = 0.33
 -- local lookahead = 0.6
 local threshold_close = 0.25
 --
-local my_path = false
 local function cb_debug(t_us)
   local pose_rbt = veh_poses[id_robot]
   if not pose_rbt then return end
   local px, py, pa = unpack(pose_rbt)
   local info = {
-    string.format("Path: %s", my_path),
+    string.format("Path: %s", desired_path),
     string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa))
   }
-  io.write(table.concat(info, "\n"), '\n')
-  io.flush()
+  return table.concat(info, "\n")
 end
 
 -- Path increments: one inch
@@ -82,9 +80,9 @@ local routes = {}
 -- Inner and outer are merely two different lanes
 -- On the same road
 routes.inner = {
-  {1.5, -0.25, math.rad(90)},
-  {1.5, 4.5, math.rad(0)},
-  {3.5, 4.5, math.rad(270)},
+  {1.25, -0.25, math.rad(90)},
+  {1.25, 5.25, math.rad(0)},
+  {3.5, 5.25, math.rad(270)},
   {3.5, -0.25, math.rad(180)},
   turning_radius = 0.3,
   closed = true
@@ -183,7 +181,8 @@ local env = {
   -- Show the knots for better printing
   lanes = {
     -- {unpack(route_knots.inner)}, {unpack(route_knots.outer)}
-    {unpack(paths.inner)}, {unpack(paths.outer)}, {unpack(paths.outerB)}
+    {unpack(paths.inner)}, {unpack(paths.outer)},
+    {unpack(paths.outerA)}, {unpack(paths.outerB)}
   },
   -- This isn't quite right...?
   trajectory_turn = {
@@ -230,13 +229,13 @@ local function cb_loop(t_us)
   -- Find our control policy
   local result, err = pp(pose_rbt)
   if not result then return false, err end
-  for k, v in pairs(result) do
-    if type(v)=='table' then
-      print(k, table.concat(v, ', '))
-    else
-      print(k, v)
-    end
-  end
+  -- for k, v in pairs(result) do
+  --   if type(v)=='table' then
+  --     print(k, table.concat(v, ', '))
+  --   else
+  --     print(k, v)
+  --   end
+  -- end
   if result.err then
     return false, result.err
   end

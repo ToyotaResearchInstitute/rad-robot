@@ -37,8 +37,7 @@ local function cb_debug(t_us)
         id_rbt, px, py, math.deg(pa))
     )
   end
-  io.write(table.concat(info, "\n"), '\n')
-  io.flush()
+  return table.concat(info, "\n")
 end
 
 local function simulate_vehicle(state, control_inp, dt)

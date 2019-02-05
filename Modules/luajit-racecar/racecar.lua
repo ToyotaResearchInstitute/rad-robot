@@ -329,10 +329,16 @@ function lib.listen(options)
     if dt_debug / 1e3 > debug_rate then
       t_debug = t_update
       local jt = jitter_tbl()
-      if #jt > 0 then
-        io.write(tconcat(jt, '\n'), '\n')
+      if fn_debug then
+        local msg_debug = fn_debug(t_debug)
+        if type(msg_debug)=='string' then
+          tinsert(jt, msg_debug)
+        end
       end
-      fn_debug(t_debug)
+      if #jt > 0 then
+        io.write('\n', tconcat(jt, '\n'), '\n')
+        io.flush()
+      end
     end
   end
   return status, err
