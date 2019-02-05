@@ -8,7 +8,7 @@ local log_announce = racecar.log_announce
 
 local DEBUG_ANNOUNCE = os.getenv("ANNOUNCE") or flags.announce
 local RUN_SIMULATION = os.getenv("SIMULATE") or flags.simulate
-local id_robot = flags.simulate or racecar.HOSTNAME
+local id_robot = flags.id or racecar.HOSTNAME
 assert(id_robot, "No name provided!")
 print("RUN_SIMULATION", RUN_SIMULATION)
 math.randomseed(123)
@@ -20,7 +20,6 @@ local transform = require'transform'
 local tf2D_inv = require'transform'.tf2D_inv
 local usleep = require'unix'.usleep
 local vector = require'vector'
-local vpose = require'vector'.pose
 
 local has_logger, logger = pcall(require, 'logger')
 
@@ -32,7 +31,7 @@ local generate_control_points = require'control'.generate_control_points
 local generate_path = require'control'.generate_path
 
 -- Globally accessible variables
-local pose_rbt = vector.pose()
+local pose_rbt = {}
 local veh_poses = {}
 local desired_path = 'outerB'
 local vel_h = false
@@ -88,38 +87,38 @@ local routes = {}
 -- Inner and outer are merely two different lanes
 -- On the same road
 routes.inner = {
-  vpose{1.5, -0.25, math.rad(90)},
-  vpose{1.5, 4.5, math.rad(0)},
-  vpose{3.5, 4.5, math.rad(270)},
-  vpose{3.5, -0.25, math.rad(180)},
+  {1.5, -0.25, math.rad(90)},
+  {1.5, 4.5, math.rad(0)},
+  {3.5, 4.5, math.rad(270)},
+  {3.5, -0.25, math.rad(180)},
   turning_radius = 0.3,
   closed = true
 }
 routes.outer = {
-  vpose{0.75, -0.75, math.rad(0)},
-  vpose{4, -0.75, math.rad(90)},
-  vpose{4, 5.75, math.rad(180)},
-  vpose{0.75, 5.75, math.rad(270)},
+  {0.75, -0.75, math.rad(0)},
+  {4, -0.75, math.rad(90)},
+  {4, 5.75, math.rad(180)},
+  {0.75, 5.75, math.rad(270)},
   turning_radius = 0.3,
   closed = true
 }
 -- Smaller loops
 ----[[
 routes.outerA = {
-  vpose{0.75, -0.75, math.rad(0)},
-  vpose{4, -0.75, math.rad(90)},
-  vpose{4, 2.5, math.rad(180)},
-  vpose{0.75, 2.5, math.rad(270)},
+  {0.75, -0.75, math.rad(0)},
+  {4, -0.75, math.rad(90)},
+  {4, 2.5, math.rad(180)},
+  {0.75, 2.5, math.rad(270)},
   turning_radius = 0.3,
   closed = true
 }
 --]]
 ----[[
 routes.outerB = {
-  vpose{4, 5.75, math.rad(180)},
-  vpose{0.75, 5.75, math.rad(270)},
-  vpose{0.75, 2.5, math.rad(0)},
-  vpose{4, 2.5, math.rad(90)},
+  {4, 5.75, math.rad(180)},
+  {0.75, 5.75, math.rad(270)},
+  {0.75, 2.5, math.rad(0)},
+  {4, 2.5, math.rad(90)},
   turning_radius = 0.3,
   closed = true
 }
@@ -173,10 +172,11 @@ end
 -- Initialize our path and pose on that path
 -- TODO: Place this in some "entry" function?
 my_path = paths[desired_path]
-pose_rbt.x, pose_rbt.y, pose_rbt.a = unpack(my_path[1])
-if type(pose_rbt.a) ~= 'number' then
+pose_rbt = {unpack(my_path[1])}
+if type(pose_rbt[3]) ~= 'number' then
   print("Taking direction for the next point...")
-  pose_rbt.a = atan2(my_path[2][2] - pose_rbt.y, my_path[2][1] - pose_rbt.x)
+  local px, py = unpack(pose_rbt, 1, 2)
+  pose_rbt[3] = atan2(my_path[2][2] - py, my_path[2][1] - px)
 end
 
 -- Purely Debugging
@@ -216,30 +216,6 @@ local env = {
     -- {unpack(paths.inner)}, {unpack(paths.outer)}
   },
 }
-
-
-
-local function simulate_vehicle(state, control_inp)
-  local steering = control_inp.steering
-  local speed = control_inp.speed
-  local pose_x, pose_y, pose_a = unpack(state.pose)
-  -- Kinematic model propagation
-  steering = math.min(math.max(-dheading_max, steering), dheading_max)
-  local dpose_a = (speed * dt) / wheel_base * math.tan(steering)
-  local dpose_x, dpose_y = transform.rot2D(speed * dt, 0, pose_a)
-  -- Add some noise
-  local dnoise_x, dnoise_y = unpack(vector.randn(2, 0.01 * dt, 0))
-  local dnoise_a = unpack(vector.randn(1, math.rad(1) * dt, 0))
-  -- Give the new pose
-  local pose1 = {
-    pose_x + dpose_x + dnoise_x,
-    pose_y + dpose_y + dnoise_y,
-  transform.mod_angle(pose_a + dpose_a + dnoise_a)}
-  -- Return the state
-  return {
-    pose = pose1
-  }
-end
 
 --------------------------
 -- Update the pure pursuit
@@ -283,7 +259,8 @@ local function cb_loop(t_us)
   -- if DEBUG_ANNOUNCE then
   --   log_announce(log, control_inp, "control")
   -- end
-  --
+
+  -- TODO
   if RUN_SIMULATION then
     local state = assert(simulate_vehicle({pose=pose_rbt}, control_inp))
     pose_rbt = state.pose
@@ -306,7 +283,7 @@ end
 -------------------
 -- Update the vehicle poses
 local function vicon2pose(vp)
-  return vpose{
+  return {
     vp.translation[1] / 1e3,
     vp.translation[2] / 1e3,
     vp.rotation[3]
@@ -325,7 +302,8 @@ local function parse_vicon(msg)
   end
   -- Find the pose for each robot
   for id, vp in pairs(msg) do
-    veh_poses[id] = vector.pose{vicon2pose(vp)}
+    print("ID", unpack(vp))
+    veh_poses[id] = vicon2pose(vp)
   end
 end
 -- Update the poses
@@ -338,7 +316,7 @@ local cb_tbl = {
 local function exit()
   if log then log:close() end
   if DEBUG_ANNOUNCE then
-    racecar.announce("control", {steering = 0, velocity = 0})
+    racecar.announce("control", {id = id_robot, steering = 0, velocity = 0})
   end
   -- assert(g_holo:save"/tmp/simulated.pgm")
   -- assert(g_loop:save(string.format("/tmp/loop%02d.pgm", loop_counter)))

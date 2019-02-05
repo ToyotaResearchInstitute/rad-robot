@@ -63,7 +63,14 @@ end
 -- Simulate per the robot
 local function cb_control(inp)
   local id_robot = inp.id
+  if not id_robot then return false, "No ID to simulate" end
   veh_controls[id_robot] = inp
+  -- Add this car
+  -- TODO: Smarter way to initialize the state?
+  -- TODO: Maybe randomly select until the pose is collision free, w.r.t to other poses?
+  if not veh_states[id_robot] then
+    veh_states[id_robot] = {pose={0,0,0}}
+  end
 end
 
 -- Input: pose
