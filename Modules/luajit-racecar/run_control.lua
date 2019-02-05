@@ -8,6 +8,8 @@ local log_announce = racecar.log_announce
 
 local DEBUG_ANNOUNCE = os.getenv("ANNOUNCE") or flags.announce
 local RUN_SIMULATION = os.getenv("SIMULATE") or flags.simulate
+local id_robot = flags.simulate or racecar.HOSTNAME
+assert(id_robot, "No name provided!")
 print("RUN_SIMULATION", RUN_SIMULATION)
 math.randomseed(123)
 
@@ -33,7 +35,6 @@ local generate_path = require'control'.generate_path
 local pose_rbt = vector.pose()
 local veh_poses = {}
 local desired_path = 'outerB'
-local name_rbt = assert(racecar.HOSTNAME)
 local vel_h = false
 local vel_lane = 0.5
 local vel_max = 0.75 -- 1 --0.75
@@ -247,10 +248,10 @@ local function cb_loop(t_us)
   -- Check in which lanes all of the cars are
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
-    if name_veh ~= name_rbt then
+    if name_veh ~= id_robot then
       local info = control.find_in_path(pose_veh, paths, 0.5)
       -- Check if they are in our lane
-      if info and info.path_name==name_rbt then
+      if info and info.path_name==id_robot then
         table.insert(in_my_lane, name_veh)
       end
     end
@@ -278,7 +279,7 @@ local function cb_loop(t_us)
   end
   local steering = atan(result.kappa * wheel_base)
   -- local rpm = vel_lane * racecar.RPM_PER_MPS
-  local control_inp = {steering = steering, speed = vel_lane}
+  local control_inp = {steering = steering, velocity = vel_lane}
   -- if DEBUG_ANNOUNCE then
   --   log_announce(log, control_inp, "control")
   -- end
@@ -293,6 +294,7 @@ local function cb_loop(t_us)
     assert(racecar.announce("risk", env))
     result.steering = steering
     result.velocity = speed
+    result.id = id_robot
     assert(racecar.announce("control", result))
     -- Wait a touch if simulating
     if RUN_SIMULATION then usleep(1e4) end

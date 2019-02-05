@@ -54,11 +54,11 @@ local function steering2servo(steering)
   -- Put into range of [0, 1] with 0.5 center (sign flipped, too)
   return steering / (-2 * steer_max) + 0.5
 end
-local function cb_control(obj)
-  cmds.servo = steering2servo(tonumber(obj.steering) or 0)
-  cmds.duty = tonumber(obj.duty)
-  cmds.rpm = tonumber(obj.rpm)
-  -- print("cb control")
+local function cb_control(inp)
+  local rpm = tonumber(inp.velocity)
+  local duty = tonumber(inp.duty)
+  cmds.rpm = tonumber(rpm * vesc.RPM_PER_MPS)
+  cmds.servo = steering2servo(tonumber(inp.steering) or 0)
 end
 
 local vel_min = 0.2
