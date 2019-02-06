@@ -40,6 +40,18 @@ local function cb_debug(t_us)
   return table.concat(info, "\n")
 end
 
+local function noisy_pose(pose, dt)
+  local pose_x, pose_y, pose_a = unpack(pose)
+  -- Add some noise
+  local dnoise_x, dnoise_y = unpack(vector.randn(2, 0.01 * dt, 0))
+  local dnoise_a = unpack(vector.randn(1, math.rad(1) * dt, 0))
+  return {
+    pose_x + dnoise_x,
+    pose_y + dnoise_y,
+    transform.mod_angle(pose_a + dnoise_a)
+  }
+end
+
 local function simulate_vehicle(state, control_inp, dt)
   local steering = control_inp.steering
   local velocity = control_inp.velocity
@@ -48,17 +60,17 @@ local function simulate_vehicle(state, control_inp, dt)
   steering = math.min(math.max(-dheading_max, steering), dheading_max)
   local dpose_a = (velocity * dt) / wheel_base * math.tan(steering)
   local dpose_x, dpose_y = transform.rot2D(velocity * dt, 0, pose_a)
-  -- Add some noise
-  local dnoise_x, dnoise_y = unpack(vector.randn(2, 0.01 * dt, 0))
-  local dnoise_a = unpack(vector.randn(1, math.rad(1) * dt, 0))
-  -- Give the new pose
-  local pose1 = {
-    pose_x + dpose_x + dnoise_x,
-    pose_y + dpose_y + dnoise_y,
-  transform.mod_angle(pose_a + dpose_a + dnoise_a)}
+  -- Give the new pose, deterministically
+  local pose_process = {
+    pose_x + dpose_x,
+    pose_y + dpose_y,
+    transform.mod_angle(pose_a + dpose_a)
+  }
+  -- Add noise to the process
+  local pose_noisy = noisy_pose(pose_process, dt)
   -- Return the state
   return {
-    pose = pose1
+    pose = pose_noisy
   }
 end
 
@@ -104,8 +116,10 @@ local function cb_loop(t_us)
     local state_new = simulate_vehicle(state_now, ctrl_inp_rbt, dt)
     -- Update the internal state
     veh_states[id_rbt] = state_new
+    -- Give noisy measurements
+    local pose_noisy = noisy_pose(state_new.pose, dt)
     -- Set the publishing message
-    msg_vicon[id_rbt] = pose2vicon(state_new.pose)
+    msg_vicon[id_rbt] = pose2vicon(pose_noisy)
   end
   -- Publish or return the vicon message
   if DEBUG_ANNOUNCE then

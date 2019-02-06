@@ -96,7 +96,7 @@ routes.outer = {
   closed = true
 }
 -- Smaller loops
-----[[
+--[[
 routes.outerA = {
   {0.75, -0.75, math.rad(0)},
   {4, -0.75, math.rad(90)},
@@ -106,7 +106,7 @@ routes.outerA = {
   closed = true
 }
 --]]
-----[[
+--[[
 routes.outerB = {
   {4, 5.75, math.rad(180)},
   {0.75, 5.75, math.rad(270)},
@@ -182,7 +182,7 @@ local env = {
   lanes = {
     -- {unpack(route_knots.inner)}, {unpack(route_knots.outer)}
     {unpack(paths.inner)}, {unpack(paths.outer)},
-    {unpack(paths.outerA)}, {unpack(paths.outerB)}
+    -- {unpack(paths.outerA)}, {unpack(paths.outerB)}
   },
   -- This isn't quite right...?
   trajectory_turn = {
@@ -200,15 +200,17 @@ local function cb_loop(t_us)
     if name_veh ~= id_robot then
       local info = control.find_in_path(pose_veh, paths, 0.5)
       -- Check if they are in our lane
-      if info and info.path_name==id_robot then
-        table.insert(in_my_lane, name_veh)
+      if info then
+        if info.path_name==desired_path then
+          table.insert(in_my_lane, name_veh)
+        end
       end
     end
   end
   local pose_rbt = veh_poses[id_robot]
   if not pose_rbt then
     -- Stop if no pose...
-    local control_inp = {steering = 0, velocity = 0, id = id_robot}
+    local control_inp = {id = id_robot, steering = 0, velocity = 0}
     log_announce(log, control_inp, "control")
     return
   end
@@ -217,8 +219,10 @@ local function cb_loop(t_us)
     local p_x, p_y, p_a = unpack(pose_rbt)
     for _, name_veh in ipairs(in_my_lane) do
       local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
+      -- TODO: Relative w.r.t. to lane geometry, not the car
       local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
-      if dx_rel < 0.5 and dx_rel > 0 then
+      print("dx_rel", dx_rel)
+      if dx_rel < 5 * wheel_base and dx_rel > 0 then
         print("Lane leader | ", name_veh, dx_rel, dy_rel)
       else
         print("Not leader | ", name_veh, dx_rel, dy_rel)
@@ -249,13 +253,13 @@ local function cb_loop(t_us)
   -- TODO: Set the speed based on curvature? Lookahead point's curvature?
   result.velocity = vel_lane
 
-  -- TODO
-  if RUN_SIMULATION then
-    local control_inp = {steering = steering, velocity = vel_lane}
-    local state = assert(simulate_vehicle({pose=pose_rbt}, control_inp))
-    pose_rbt = state.pose
-  end
-    -- Should we broadcast?
+  -- TODO: Call our simulation within here? Speed/Dropped packets
+  -- if RUN_SIMULATION then
+  --   local control_inp = {steering = steering, velocity = vel_lane}
+  --   local state = assert(simulate_vehicle({pose=pose_rbt}, control_inp))
+  --   pose_rbt = state.pose
+  -- end
+  -- Should we broadcast?
   if DEBUG_ANNOUNCE then
     log_announce(log, result, "control")
     -- TODO: Environment should be in a different Lua file, as it listen to the path
