@@ -190,10 +190,9 @@ local env = {
   },
 }
 
---------------------------
--- Update the pure pursuit
-local function cb_loop(t_us)
+local function find_lead()
   -- Check which lane my vehicle is in
+  local pose_rbt = veh_poses[id_robot]
   -- Check in which lanes all of the cars are
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
@@ -207,27 +206,48 @@ local function cb_loop(t_us)
       end
     end
   end
+  if #in_my_lane == 0 then
+    return false, "Nobody in my lane"
+  end
+  local d_lead, name_lead = 0
+  local p_x, p_y, p_a = unpack(pose_rbt)
+  print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
+  for _, name_veh in ipairs(in_my_lane) do
+    local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
+    -- TODO: Relative w.r.t. to lane geometry, not the car
+    local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
+    print("dx_rel", dx_rel)
+    if dx_rel < 5 * wheel_base and dx_rel > 0 then
+      if dx_rel < d_lead then
+        d_lead = dx_rel
+        name_lead = name_veh
+      end
+    end
+  end
+
+  return name_lead, d_lead
+end
+
+--------------------------
+-- Update the pure pursuit
+local function cb_loop(t_us)
   local pose_rbt = veh_poses[id_robot]
+  -- Stop if no pose
   if not pose_rbt then
-    -- Stop if no pose...
     local control_inp = {id = id_robot, steering = 0, velocity = 0}
     log_announce(log, control_inp, "control")
     return
   end
-  if #in_my_lane > 0 then
-    print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
-    local p_x, p_y, p_a = unpack(pose_rbt)
-    for _, name_veh in ipairs(in_my_lane) do
-      local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
-      -- TODO: Relative w.r.t. to lane geometry, not the car
-      local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
-      print("dx_rel", dx_rel)
-      if dx_rel < 5 * wheel_base and dx_rel > 0 then
-        print("Lane leader | ", name_veh, dx_rel, dy_rel)
-      else
-        print("Not leader | ", name_veh, dx_rel, dy_rel)
-      end
-    end
+
+  local name_lead, d_lead = find_lead()
+  -- Slow for a lead vehicle
+  if name_lead then
+    print("Lane leader | ", name_lead, d_lead)
+    local d_stop = 2 * wheel_base
+    local d_near = 3 * wheel_base
+    local ratio = (d_lead - d_stop) / (d_near - d_stop)
+    -- Bound the ratio
+    ratio = math.max(0, math.min(ratio, 1))
   end
 
   -- Find our control policy

@@ -283,15 +283,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
   let has_obstacles = false;
   const update_obstacles = (msg) => {
-    if (has_obstacles) {
-      return;
-    }
     const obstacles = msg.obstacles;
     if (!obstacles) {
       return;
     }
+    // if (has_obstacles) {
+    //   return;
+    // }
+    // has_obstacles = true;
     let obs_els = obstacles_svg.getElementsByClassName('obstacle');
     obstacles.forEach((obs, i) => {
+      // SVG
       const points =
           obs.map((coord) => { return coord2svg(coord).slice(0, 2).join(); })
               .join(' ');
@@ -302,41 +304,38 @@ document.addEventListener("DOMContentLoaded", function(event) {
         obstacles_svg.appendChild(el);
       }
       el.setAttributeNS(null, 'points', points);
-    });
-
-    obstacles.forEach((obs, i) => {
-      // Obstacle shape
+      // THREE.js
+      // TODO: Check if this obstacle exists already
       let obs_shape = new THREE.Shape();
       obs_shape.moveTo(obs[0][0], obs[0][1]);
       obs.forEach((v, i) => {
-        if (i == 0) {
-          return;
+        if (i > 0) {
+          obs_shape.lineTo(v[0], v[1]);
         }
-        obs_shape.lineTo(v[0], v[1]);
       });
       obs_shape.lineTo(obs[0][0], obs[0][1]);
-
+      // Geometry from the underlying shape
+      // TODO: Can we update just the shape, and the Extrude gets updated?
       let obs_geometry = new THREE.ExtrudeBufferGeometry(obs_shape, {
         steps : 1,
         depth : 0.5,
         bevelEnabled : false,
       });
-
+      // Should only perform this once per obstacle
       const obs_mesh = new THREE.Mesh(
           obs_geometry,
           new THREE.MeshLambertMaterial(
               {color : 0xFF8080, transparent : true, opacity : 0.75}));
       scene.add(obs_mesh);
     });
-
-    has_obstacles = true;
-  };
+  }; // end update_obstacles
 
   const update_vehicles = (msg) => {
     const vehicles = msg.vehicles;
     if (!vehicles) {
       return;
     }
+    // SVG
     var vehicle_els = vehicles_svg.getElementsByClassName('vehicle');
     vehicles.map(coord2svg).forEach((v, i) => {
       var el = vehicle_els.item(i);
@@ -355,13 +354,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
       }
       // el.setAttributeNS(null, 'cx', v[0] || 0);
       // el.setAttributeNS(null, 'cy', v[1] || 0);
-      const x = v[0] || 0, y = v[1] || 0, a = v[2] || 0;
-      el.setAttributeNS(null, 'x', x);
-      el.setAttributeNS(null, 'y', y);
-      el.setAttributeNS(null, 'transform',
-                        "rotate(" + [ a * RAD_TO_DEG, x, y ].join() + ")");
+      el.setAttributeNS(null, 'x', v[0]);
+      el.setAttributeNS(null, 'y', v[1]);
+      const tfm_vel =
+          "rotate(" + [ v[2] * RAD_TO_DEG, v[0], v[1] ].join() + ")";
+      el.setAttributeNS(null, 'transform', tfm_vel);
     });
-
+    // THREE.js
     while (vehicles.length > veh_boxes.length) {
       const veh = veh_mesh.clone();
       scene.add(veh);
@@ -370,7 +369,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     while (vehicles.length < veh_boxes.length) {
       scene.remove(veh_boxes.pop());
     }
-
     vehicles.forEach((v, i) => {
       let veh = veh_boxes[i];
       veh.position.x = v[0];
@@ -379,6 +377,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     });
   };
 
+  /*
   const update_observer = (msg) => {
     const observer = msg.observer;
     if (!observer) {
@@ -405,6 +404,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     observer_mesh.position.y = observer[1];
     observer_mesh.rotation.z = observer[2];
   };
+  */
 
   const update_control = (msg) => {
     const ctrl = msg.control;
