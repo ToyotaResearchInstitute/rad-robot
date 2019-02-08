@@ -83,7 +83,12 @@ local function cb_control(inp)
   -- TODO: Smarter way to initialize the state?
   -- TODO: Maybe randomly select until the pose is collision free, w.r.t to other poses?
   if not veh_states[id_robot] then
-    veh_states[id_robot] = {pose={0,0,0}}
+    if id_robot=='tri1' then
+      veh_states[id_robot] = {pose={-0.5, 2.5, 0}}
+    else
+      veh_states[id_robot] = {pose={0, 0, 0}}
+    end
+
   end
 end
 

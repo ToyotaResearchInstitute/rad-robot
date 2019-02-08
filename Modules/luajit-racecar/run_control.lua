@@ -95,6 +95,13 @@ routes.outer = {
   turning_radius = 0.3,
   closed = true
 }
+routes.driveway = {
+  {-0.25, 2.5, math.rad(0)},
+  {0.25, 2.5, math.rad(0)},
+  turning_radius = 0.3,
+  closed = false
+}
+
 -- Smaller loops
 --[[
 routes.outerA = {
@@ -164,7 +171,7 @@ for name, knots in pairs(route_knots) do
 end
 
 -- TODO: Paths should come from a separate program
-my_path = assert(paths[desired_path], "Path not found!")
+local my_path = assert(paths[desired_path], "Path not found!")
 local pp_params = {
   path = my_path,
   lookahead = lookahead,
@@ -175,14 +182,14 @@ local pp = assert(control.pure_pursuit(pp_params))
 -- Set the environment for displaying in-browser
 local env = {
   viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
-  observer = pose_rbt,
+  observer = false,
   time_interval = dt,
   speed = vel_lane,
   -- Show the knots for better printing
   lanes = {
-    -- {unpack(route_knots.inner)}, {unpack(route_knots.outer)}
     {unpack(paths.inner)}, {unpack(paths.outer)},
     -- {unpack(paths.outerA)}, {unpack(paths.outerB)}
+    {unpack(paths.driveway)},
   },
   -- This isn't quite right...?
   trajectory_turn = {
@@ -190,19 +197,15 @@ local env = {
   },
 }
 
-local function find_lead()
-  -- Check which lane my vehicle is in
-  local pose_rbt = veh_poses[id_robot]
-  -- Check in which lanes all of the cars are
+local function find_lead(path)
+  -- Check if in my lane
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
     if name_veh ~= id_robot then
-      local info = control.find_in_path(pose_veh, paths, 0.5)
+      local info = control.find_in_path(pose_veh, path, 0.25)
       -- Check if they are in our lane
       if info then
-        if info.path_name==desired_path then
-          table.insert(in_my_lane, name_veh)
-        end
+        table.insert(in_my_lane, name_veh)
       end
     end
   end
@@ -210,6 +213,7 @@ local function find_lead()
     return false, "Nobody in my lane"
   end
   local d_lead, name_lead = 0
+  local pose_rbt = veh_poses[id_robot]
   local p_x, p_y, p_a = unpack(pose_rbt)
   print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
   for _, name_veh in ipairs(in_my_lane) do
@@ -239,7 +243,7 @@ local function cb_loop(t_us)
     return
   end
 
-  local name_lead, d_lead = find_lead()
+  local name_lead, d_lead = find_lead(my_path)
   -- Slow for a lead vehicle
   if name_lead then
     print("Lane leader | ", name_lead, d_lead)
@@ -267,11 +271,17 @@ local function cb_loop(t_us)
   result.id = id_robot
   -- Save the pose, just because
   result.pose = pose_rbt
-  -- Set the steering based on the car dimensions
-  local steering = atan(result.kappa * wheel_base)
-  result.steering = steering
-  -- TODO: Set the speed based on curvature? Lookahead point's curvature?
-  result.velocity = vel_lane
+  if result.done then
+    result.steering = 0
+    result.velocity = 0
+  else
+    -- Set the steering based on the car dimensions
+    local steering = atan(result.kappa * wheel_base)
+    result.steering = steering
+    -- TODO: Set the speed based on curvature? Lookahead point's curvature?
+    result.velocity = vel_lane
+  end
+
 
   -- TODO: Call our simulation within here? Speed/Dropped packets
   -- if RUN_SIMULATION then
