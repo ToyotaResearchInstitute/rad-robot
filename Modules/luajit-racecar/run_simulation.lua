@@ -52,7 +52,7 @@ local function noisy_pose(pose, dt)
   }
 end
 
-local function simulate_vehicle(state, control_inp, dt)
+local function simulate_vehicle(state, control_inp, dt, use_noise)
   local steering = control_inp.steering
   local velocity = control_inp.velocity
   local pose_x, pose_y, pose_a = unpack(state.pose)
@@ -67,11 +67,11 @@ local function simulate_vehicle(state, control_inp, dt)
     transform.mod_angle(pose_a + dpose_a)
   }
   -- Add noise to the process
-  local pose_noisy = noisy_pose(pose_process, dt)
-  -- Return the state
+  local pose_noisy = use_noise and noisy_pose(pose_process, dt) or pose_process
   return {
     pose = pose_noisy
   }
+
 end
 
 -- Simulate per the robot
@@ -118,7 +118,8 @@ local function cb_loop(t_us)
   for id_rbt, ctrl_inp_rbt in pairs(veh_controls) do
     -- Simulate a timestep
     local state_now = veh_states[id_rbt]
-    local state_new = simulate_vehicle(state_now, ctrl_inp_rbt, dt)
+    local use_noise = ctrl_inp_rbt.pathname ~= 'driveway'
+    local state_new = simulate_vehicle(state_now, ctrl_inp_rbt, dt, use_noise)
     -- Update the internal state
     veh_states[id_rbt] = state_new
     -- Give noisy measurements

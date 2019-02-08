@@ -34,7 +34,7 @@ local generate_path = require'control'.generate_path
 local veh_poses = {}
 local desired_path = flags.path or 'outer'
 local vel_h = false
-local vel_lane = 0.5
+local vel_lane = tonumber(flags.vel_lane) or 0.5
 local vel_max = 0.75 -- 1 --0.75
 local vel_min = 0.2
 -- Simulation parameters
@@ -197,7 +197,7 @@ local env = {
   },
 }
 
-local function find_lead(path)
+local function find_lead(path, id_path)
   -- Check if in my lane
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
@@ -205,28 +205,49 @@ local function find_lead(path)
       local info = control.find_in_path(pose_veh, path, 0.25)
       -- Check if they are in our lane
       if info then
-        table.insert(in_my_lane, name_veh)
+        table.insert(in_my_lane, {name_veh, info})
       end
     end
   end
   if #in_my_lane == 0 then
     return false, "Nobody in my lane"
   end
-  local d_lead, name_lead = 0
+  local name_lead, d_lead = false, math.huge
   local pose_rbt = veh_poses[id_robot]
   local p_x, p_y, p_a = unpack(pose_rbt)
-  print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
-  for _, name_veh in ipairs(in_my_lane) do
+  -- print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
+  for _, name_info in ipairs(in_my_lane) do
+    local name_veh, info_veh = unpack(name_info)
+    local id_path_other = info_veh.id_in_path
+    local d_id = id_path_other - id_path
+    local d_rel = d_id * path.ds
+    -- Loop around if closed
+    if path.closed then
+      if id_path_other < id_path then
+        id_path_other = id_path_other + #path
+      else
+        id_path_other = id_path_other - #path
+      end
+      local d_id2 = id_path_other - id_path
+      local d_rel2 = d_id2 * path.ds
+      if math.abs(d_rel2) < math.abs(d_rel) then
+        d_rel = d_rel2
+      end
+    end
+    if d_rel > 0 and d_rel < d_lead then
+      d_lead = d_rel
+      name_lead = name_veh
+    end
+    --[[
     local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
     -- TODO: Relative w.r.t. to lane geometry, not the car
     local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
-    print("dx_rel", dx_rel)
-    if dx_rel < 5 * wheel_base and dx_rel > 0 then
-      if dx_rel < d_lead then
-        d_lead = dx_rel
-        name_lead = name_veh
-      end
+    -- print("dx_rel", dx_rel)
+    if dx_rel > 0 and dx_rel < d_lead then
+      d_lead = dx_rel
+      name_lead = name_veh
     end
+    --]]
   end
 
   return name_lead, d_lead
@@ -242,18 +263,6 @@ local function cb_loop(t_us)
     log_announce(log, control_inp, "control")
     return
   end
-
-  local name_lead, d_lead = find_lead(my_path)
-  -- Slow for a lead vehicle
-  if name_lead then
-    print("Lane leader | ", name_lead, d_lead)
-    local d_stop = 2 * wheel_base
-    local d_near = 3 * wheel_base
-    local ratio = (d_lead - d_stop) / (d_near - d_stop)
-    -- Bound the ratio
-    ratio = math.max(0, math.min(ratio, 1))
-  end
-
   -- Find our control policy
   local result, err = pp(pose_rbt)
   if not result then return false, err end
@@ -269,8 +278,31 @@ local function cb_loop(t_us)
   end
   -- Ensure we add our ID to the result
   result.id = id_robot
+  result.pathname = desired_path
   -- Save the pose, just because
   result.pose = pose_rbt
+  local ratio = 1
+  --------------------------------
+  -- Check the obstacles around us
+  local name_lead, d_lead = find_lead(my_path, result.id_path)
+  -- Slow for a lead vehicle
+  if name_lead then
+    print("Lane leader | ", name_lead, d_lead)
+    local d_stop = 1.5 * wheel_base
+    local d_near = 3 * wheel_base
+    print("Distances", d_stop, d_near, d_lead)
+    if d_lead < d_near then
+      ratio = (d_lead - d_stop) / (d_near - d_stop)
+      print("Ratio", ratio)
+      -- Bound the ratio
+      ratio = math.max(0, math.min(ratio, 1))
+
+    end
+  else
+    print("No leader", d_lead)
+  end
+  --------------------------------
+
   if result.done then
     result.steering = 0
     result.velocity = 0
@@ -279,7 +311,7 @@ local function cb_loop(t_us)
     local steering = atan(result.kappa * wheel_base)
     result.steering = steering
     -- TODO: Set the speed based on curvature? Lookahead point's curvature?
-    result.velocity = vel_lane
+    result.velocity = vel_lane * ratio
   end
 
 
