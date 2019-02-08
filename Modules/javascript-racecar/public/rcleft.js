@@ -101,7 +101,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const X_CANVAS_MIN = 0, Y_CANVAS_MIN = 0;
   var canvas_ready = false;
   const update_canvas = () => {
-    var rect = environment_svg.getBoundingClientRect();
+    const rect = environment_svg.getBoundingClientRect();
     X_CANVAS_SZ = graph_canvas.width = rect.width;
     Y_CANVAS_SZ = graph_canvas.height = rect.height;
     graph_ctx = graph_canvas.getContext('2d');
@@ -243,6 +243,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         // el.style.stroke = "#0F0";
         el.style.stroke = d3colors(i);
         el.style.strokeWidth = "0.1";
+        el.style.opacity = "0.25";
         lanes_svg.appendChild(el);
       }
       el.setAttributeNS(null, 'points', points);
@@ -477,7 +478,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!beliefs) {
       return;
     }
-    const waypoints = msg.waypoints;
 
     // Ensure we have the same lanes
     while (beliefs.length > bel_boxes.length) {
@@ -492,25 +492,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     while (beliefs.length < risk_boxes.length) {
       risk_boxes.pop();
     }
-    // Iterate through the lanes
-    msg.conditioned_risk.forEach((lr, il) => {
-      let lrisk_boxes = risk_boxes[il];
-      while (lr.length > lrisk_boxes.length) {
-        let rm = risk_mesh.clone();
-        rm.position.x = (lrisk_boxes.length - lr.length / 2) * sz_box_path;
-        scene.add(rm);
-        lrisk_boxes.push(rm);
-      }
-      while (lr.length < lrisk_boxes.length) {
-        scene.remove(lrisk_boxes.pop());
-      }
-
-      lr.map((b) => max(eps, 1 / (1 - Math.log(b)))).forEach((b, i) => {
-        let rm = lrisk_boxes[i];
-        rm.scale.z = b / sz_box_width;
-        rm.position.z = (b / 2) + sz_box_width / 2;
-      });
-    });
 
     // Iterate through the lanes
     beliefs.forEach((lb, il) => {
@@ -533,14 +514,41 @@ document.addEventListener("DOMContentLoaded", function(event) {
         bm.position.y = (b / 2) + sz_box_width / 2;
       });
     });
+
+    // Iterate through the lanes
+    if ('conditioned_risk' in msg) {
+      msg.conditioned_risk.forEach((lr, il) => {
+        let lrisk_boxes = risk_boxes[il];
+        while (lr.length > lrisk_boxes.length) {
+          let rm = risk_mesh.clone();
+          rm.position.x = (lrisk_boxes.length - lr.length / 2) * sz_box_path;
+          scene.add(rm);
+          lrisk_boxes.push(rm);
+        }
+        while (lr.length < lrisk_boxes.length) {
+          scene.remove(lrisk_boxes.pop());
+        }
+
+        lr.map((b) => max(eps, 1 / (1 - Math.log(b)))).forEach((b, i) => {
+          let rm = lrisk_boxes[i];
+          rm.scale.z = b / sz_box_width;
+          rm.position.z = (b / 2) + sz_box_width / 2;
+        });
+      });
+    }
+
     // Apply a transform
-    if (waypoints) {
-      waypoints.forEach((lwp, il) => {
+    if ('waypoints' in msg) {
+      msg.waypoints.forEach((lwp, il) => {
         lwp.forEach((wp, i, arr) => {
           let bm = bel_boxes[il][i];
           let rm = risk_boxes[il][i];
+          if (rm === undefined || bm === undefined) {
+            return;
+          }
           bm.position.x = wp[0];
           bm.position.y = wp[1];
+
           if (i == 0) {
           } else if (i == arr.length - 1) {
           } else {
@@ -548,6 +556,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
             bm.rotation.z = rm.rotation.z =
                 Math.atan2(b[1] - a[1], b[0] - a[0]);
           }
+          // Risk
           rm.position.x = wp[0];
           rm.position.y = wp[1];
         });
@@ -555,11 +564,39 @@ document.addEventListener("DOMContentLoaded", function(event) {
     }
   };
 
+  const update_beliefs = (msg) => {
+    const beliefs = msg[likelihood_selection];
+    const waypoints = msg.waypoints;
+    if (!beliefs || !waypoints) {
+      return;
+    }
+    graph_ctx.clearRect(X_CANVAS_MIN, Y_CANVAS_MIN, X_CANVAS_SZ, Y_CANVAS_SZ);
+    // Size of squares
+    const s = svg2canvas_sz([ 0.075, 0.075 ]);
+    var beliefs_els = lanes_svg.getElementsByClassName('belief');
+    var counter = 0;
+    beliefs.forEach((lb, il) => {
+      const lwp = waypoints[il];
+      lb = lb.map((b) => 1 / (1 - Math.log(b)));
+
+      lb.forEach((b, i) => {
+        // lb.forEach((b, i) => {
+        const wp = coord2svg(lwp[i]);
+        const p = svg2canvas([ wp[0], wp[1] ]);
+        graph_ctx.fillStyle = to_jet(b, 0.75);
+        // graph_ctx.fillStyle = to_rainbow(b, 0.75);
+        graph_ctx.fillRect(p[0] - s[0] / 2, p[1] - s[0] / 2, s[0], s[1]);
+        counter += 1;
+      });
+    });
+  };
+
   const update_plot = (msg) => {
     const time = msg.t, risks = msg.risks;
     if (time === undefined || risks === undefined) {
       return;
     }
+    // console.log("Plot Msg", msg);
 
     if (time < risk_times[risk_times.length - 1]) {
       // risk_times = [];
@@ -695,9 +732,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
     update_road(msg);
     update_obstacles(msg);
     update_vehicles(msg);
-    update_observer(msg);
+    // update_observer(msg);
     update_plot(msg);
     update_control(msg);
+    update_beliefs(msg);
 
     const trajectory_turn = msg.trajectory_turn;
     if (trajectory_turn) {
@@ -721,30 +759,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
           lanes_svg.appendChild(el);
         }
         el.setAttributeNS(null, 'points', points);
-      });
-    }
-
-    const beliefs = msg[likelihood_selection];
-    const waypoints = msg.waypoints;
-    if (beliefs && waypoints) {
-      graph_ctx.clearRect(X_CANVAS_MIN, Y_CANVAS_MIN, X_CANVAS_SZ, Y_CANVAS_SZ);
-      // Size of squares
-      const s = svg2canvas_sz([ 0.075, 0.075 ]);
-      var beliefs_els = lanes_svg.getElementsByClassName('belief');
-      var counter = 0;
-      beliefs.forEach((lb, il) => {
-        const lwp = waypoints[il];
-        lb = lb.map((b) => 1 / (1 - Math.log(b)));
-
-        lb.forEach((b, i) => {
-          // lb.forEach((b, i) => {
-          const wp = coord2svg(lwp[i]);
-          const p = svg2canvas([ wp[0], wp[1] ]);
-          graph_ctx.fillStyle = to_jet(b, 0.75);
-          // graph_ctx.fillStyle = to_rainbow(b, 0.75);
-          graph_ctx.fillRect(p[0] - s[0] / 2, p[1] - s[0] / 2, s[0], s[1]);
-          counter += 1;
-        });
       });
     }
 
