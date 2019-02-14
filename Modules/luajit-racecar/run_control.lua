@@ -238,18 +238,7 @@ local function find_lead(path, id_path)
       d_lead = d_rel
       name_lead = name_veh
     end
-    --[[
-    local x_veh, y_veh, a_veh = unpack(veh_poses[name_veh])
-    -- TODO: Relative w.r.t. to lane geometry, not the car
-    local dx_rel, dy_rel = tf2D_inv(x_veh, y_veh, p_a, p_x, p_y)
-    -- print("dx_rel", dx_rel)
-    if dx_rel > 0 and dx_rel < d_lead then
-      d_lead = dx_rel
-      name_lead = name_veh
-    end
-    --]]
   end
-
   return name_lead, d_lead
 end
 
@@ -287,16 +276,13 @@ local function cb_loop(t_us)
   local name_lead, d_lead = find_lead(my_path, result.id_path)
   -- Slow for a lead vehicle
   if name_lead then
-    print("Lane leader | ", name_lead, d_lead)
+    -- print("Lane leader | ", name_lead, d_lead)
     local d_stop = 1.5 * wheel_base
     local d_near = 3 * wheel_base
-    print("Distances", d_stop, d_near, d_lead)
     if d_lead < d_near then
       ratio = (d_lead - d_stop) / (d_near - d_stop)
-      print("Ratio", ratio)
       -- Bound the ratio
       ratio = math.max(0, math.min(ratio, 1))
-
     end
   else
     print("No leader", d_lead)

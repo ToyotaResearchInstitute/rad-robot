@@ -441,7 +441,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
             document.createElementNS("http://www.w3.org/2000/svg", 'circle');
         pn_el.setAttributeNS(null, 'id', 'near_' + id_robot);
         pn_el.setAttributeNS(null, 'r', 0.05);
-        pla_el.setAttributeNS(null, 'class', 'near');
+        pn_el.setAttributeNS(null, 'class', 'near');
         pn_el.style.fill = "yellow";
         pn_el.style.stroke = "none";
         observer_svg.appendChild(pn_el);
@@ -612,6 +612,126 @@ document.addEventListener("DOMContentLoaded", function(event) {
     n_risk_times = risk_times.length;
 
     var data;
+    const tclear_checks = msg.tclear_checks;
+    const risk_checks = msg.risk_checks;
+    if (tclear_checks && risk_checks) {
+      // console.log(msg.tclear_checks, msg.risk_checks);
+      // msg.risk_checks.map((r) => 1 / (1 - Math.log(r))).forEach((risks, i) =>
+      // {
+      msg.risk_checks.forEach((risks, i) => {
+        var r = risks[risks.length - 1];
+        // r = Math.log(r);
+        // r = 1 / (1 - Math.log(r));
+        if (i >= risk_over_time.length) {
+          risk_over_time[i] = [ r ];
+        } else {
+          risk_over_time[i].push(r);
+        }
+      });
+
+      const n_tclear = tclear_checks.length;
+      const linings = [ 'solid', 'dot', 'dashdot' ];
+      data = risk_over_time.map((r, i, arr) => {
+        const idx_lining = i % linings.length;
+        const tc = tclear_checks[i];
+        const my_tclear = r.map(() => tc);
+        // console.log(risk_times, r, my_tclear);
+        return {
+          x : risk_times,
+          y : r,
+          type : 'scatter',
+          mode : 'lines',
+          name : 't_clear=' + tc.toFixed(2),
+          line : {
+            dash : linings[idx_lining],
+            width : 2 + 3 * (i - idx_lining) / linings.length,
+            color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+          }
+        };
+      });
+      const risk_acceptable = 0.1;
+      data.push({
+        showscale : false,
+        x : [ risk_times[0], risk_times[n_risk_times - 1] ],
+        y : [ risk_acceptable, risk_acceptable ],
+        type : 'scatter',
+        mode : 'lines',
+        name : 'r_go=' + risk_acceptable.toFixed(2),
+        opacity : 0.75,
+        line : {
+          dash : 'solid',
+          width : 1,
+          color : 'black',
+        }
+      });
+    } else {
+      // risk.map((b) => 1 / (1 - Math.log(b))).forEach((r, i) => {
+      risks.forEach((r, i) => {
+        if (i >= risk_over_time.length) {
+          risk_over_time[i] = [ r ];
+        } else {
+          risk_over_time[i].push(r);
+        }
+      });
+
+      data = risk_over_time.map((r, i, arr) => {
+        return {
+          x : risk_times,
+          y : r,
+          line : {color : to_jet(i / arr.length) || d3colors(i)},
+          mode : 'lines',
+          name : 'lane' + i,
+          type : 'scatter',
+        };
+      });
+      data[data.length - 1].name = 'total';
+      data[data.length - 1].line.color = d3colors(9);
+    }
+
+    var layout = {
+      title : 'Intersection Risk to Go',
+      showlegend : false,
+      scene : {
+        xaxis : {
+          title : 'time (s)',
+          titlefont : {size : 32},
+          showgrid : false,
+          zeroline : false
+        },
+        yaxis : {
+          title : 'Conditioned Risk',
+          titlefont : {size : 32},
+          range : [ 0, 2.5 ]
+        },
+      },
+      width : 720,
+      height : 480,
+      datarevision : time
+    };
+    Plotly.react(graph_div, data, layout);
+  };
+  /*
+  const update_plot = (msg) => {
+    const time = msg.t, risks = msg.risks;
+    if (time === undefined || risks === undefined) {
+      return;
+    }
+    // console.log("Plot Msg", msg);
+
+    if (time < risk_times[risk_times.length - 1]) {
+      // risk_times = [];
+      // risk_over_time = [];
+      return;
+    } else if (risk_times.length >= n_timesteps) {
+      risk_times.shift();
+      risk_over_time.forEach((r) => { r.shift(); });
+    }
+
+    // Add the time indicator
+    risk_times.push(time);
+    n_risk_times = risk_times.length;
+
+    var data;
     if (msg.risk_checks) {
       // console.log(msg.tclear_checks, msg.risk_checks);
       // msg.risk_checks.map((r) => 1 / (1 - Math.log(r))).forEach((risks, i) =>
@@ -639,7 +759,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
           y : my_tclear,
           type : 'scatter3d',
           mode : 'lines',
-          // type : 'surface',
           name : 't_clear=' + tc.toFixed(2),
           line : {
             width : 12,
@@ -709,8 +828,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
           titlefont : {size : 32},
           range : [ 2, 4.5 ]
         },
-        zaxis :
-            {range : [ 0, 2.5 ], /*title : 'Risk', titlefont : {size : 32},*/},
+        zaxis : {
+            range : [ 0, 2.5 ],
+            // title : 'Risk', titlefont : {size : 32},
+          },
       },
       width : 720,
       height : 720,
@@ -718,6 +839,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     };
     Plotly.react(graph_div, data, layout);
   };
+  */
 
   ws.onmessage = (e) => {
     var msg = munpack(new Uint8Array(e.data));
