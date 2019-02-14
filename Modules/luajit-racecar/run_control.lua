@@ -347,6 +347,10 @@ end
 -- Update the poses
 -------------------
 
+-- TODO: Houston stop/pause of simulation
+-- TODO: Check that no risk is accumulated when veoxels beyond t_clear
+
+
 local cb_tbl = {
   vicon = parse_vicon,
 }
