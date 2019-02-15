@@ -51,6 +51,7 @@ const to_rainbow =
 
 const n_timesteps = 75; // 100; // 75; // 100;
 var risk_over_time = [], risk_times = [];
+var gap_over_time = [];
 
 document.addEventListener("DOMContentLoaded", function(event) {
   var cur = {};
@@ -596,6 +597,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (time === undefined || risks === undefined) {
       return;
     }
+
+    // console.log("Gap", has_gap);
     // console.log("Plot Msg", msg);
 
     if (time < risk_times[risk_times.length - 1]) {
@@ -605,11 +608,16 @@ document.addEventListener("DOMContentLoaded", function(event) {
     } else if (risk_times.length >= n_timesteps) {
       risk_times.shift();
       risk_over_time.forEach((r) => { r.shift(); });
+      gap_over_time.shift();
     }
 
     // Add the time indicator
     risk_times.push(time);
     n_risk_times = risk_times.length;
+
+    // Invert to mimic risk
+    const has_gap = msg.gap ? 0 : 1;
+    gap_over_time.push(has_gap);
 
     var data;
     const tclear_checks = msg.tclear_checks;
@@ -655,13 +663,28 @@ document.addEventListener("DOMContentLoaded", function(event) {
         x : [ risk_times[0], risk_times[n_risk_times - 1] ],
         y : [ risk_acceptable, risk_acceptable ],
         type : 'scatter',
-        mode : 'lines',
+        mode : 'lines+markers',
         name : 'r_go of ' + risk_acceptable.toFixed(2),
         opacity : 0.5,
         line : {
           dash : 'solid',
           width : 3,
           color : 'green',
+        },
+        marker : {line : {color : 'black', width : 6}}
+      });
+      data.push({
+        showscale : false,
+        x : risk_times,
+        y : gap_over_time,
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'Gap',
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'pink',
         }
       });
     } else {
