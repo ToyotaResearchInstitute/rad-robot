@@ -21,7 +21,7 @@ local veh_states = {}
 local veh_controls = {}
 
 -- Simulation parameters
-local dt_ms = 100 -- 100ms loop
+local dt_ms = 100 -- 50 -- ms loop
 local dheading_max = math.rad(45) -- radians of front wheels
 local wheel_base = 0.3
 

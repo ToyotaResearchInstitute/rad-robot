@@ -49,7 +49,7 @@ const eps = 1e-4;
 const to_rainbow =
     (v, a) => { return 'hsla(' + floor(360 * v) + ', 100%, 50%, ' + a + ')'; };
 
-const n_timesteps = 100; // 75; // 100;
+const n_timesteps = 75; // 100; // 75; // 100;
 var risk_over_time = [], risk_times = [];
 
 document.addEventListener("DOMContentLoaded", function(event) {
@@ -630,7 +630,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       });
 
       const n_tclear = tclear_checks.length;
-      const linings = [ 'solid', 'dot', 'dashdot' ];
+      const linings = [ 'solid', 'dash', 'dot', 'dashdot' ];
       data = risk_over_time.map((r, i, arr) => {
         const idx_lining = i % linings.length;
         const tc = tclear_checks[i];
@@ -641,7 +641,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
           y : r,
           type : 'scatter',
           mode : 'lines',
-          name : 't_clear=' + tc.toFixed(2),
+          name : 't_clear=' + tc.toFixed(1) + 's',
           line : {
             dash : linings[idx_lining],
             width : 2 + 3 * (i - idx_lining) / linings.length,
@@ -656,12 +656,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
         y : [ risk_acceptable, risk_acceptable ],
         type : 'scatter',
         mode : 'lines',
-        name : 'r_go=' + risk_acceptable.toFixed(2),
-        opacity : 0.75,
+        name : 'r_go of ' + risk_acceptable.toFixed(2),
+        opacity : 0.5,
         line : {
           dash : 'solid',
-          width : 1,
-          color : 'black',
+          width : 3,
+          color : 'green',
         }
       });
     } else {
@@ -690,7 +690,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
     var layout = {
       title : 'Intersection Risk to Go',
-      showlegend : false,
+      showlegend : true,
       scene : {
         xaxis : {
           title : 'time (s)',
@@ -704,7 +704,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
           range : [ 0, 2.5 ]
         },
       },
-      width : 720,
+      width : 780,
+      // width : 720,
       height : 480,
       datarevision : time
     };
