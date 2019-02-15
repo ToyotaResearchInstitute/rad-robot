@@ -649,7 +649,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
           y : r,
           type : 'scatter',
           mode : 'lines',
-          name : 't_clear=' + tc.toFixed(1) + 's',
+          name : 't_c = ' + tc.toFixed(1) + 's',
           line : {
             dash : linings[idx_lining],
             width : 2 + 3 * (i - idx_lining) / linings.length,
@@ -657,14 +657,14 @@ document.addEventListener("DOMContentLoaded", function(event) {
           }
         };
       });
-      const risk_acceptable = 0.1;
+      const risk_acceptable = 0.075;
       data.push({
         showscale : false,
         x : [ risk_times[0], risk_times[n_risk_times - 1] ],
         y : [ risk_acceptable, risk_acceptable ],
         type : 'scatter',
         mode : 'lines+markers',
-        name : 'r_go of ' + risk_acceptable.toFixed(2),
+        name : 'r_go = ' + risk_acceptable.toFixed(3),
         opacity : 0.5,
         line : {
           dash : 'solid',
@@ -713,23 +713,32 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
     var layout = {
       title : 'Intersection Risk to Go',
-      showlegend : true,
-      scene : {
-        xaxis : {
-          title : 'time (s)',
-          titlefont : {size : 32},
-          showgrid : false,
-          zeroline : false
-        },
-        yaxis : {
-          title : 'Conditioned Risk',
-          titlefont : {size : 32},
-          range : [ 0, 2.5 ]
-        },
+      font : {
+        family : 'Times',
+        // family: 'Courier New, monospace',
+        size : 18,
+        // color: '#7f7f7f'
       },
-      width : 780,
+      showlegend : true,
+      legend : {borderwidth : 1},
+      xaxis : {
+        title : 'time (s)',
+        titlefont : {size : 16},
+        showgrid : false,
+        zeroline : false
+      },
+      yaxis : {
+        title : 'Conditioned Risk',
+        titlefont : {size : 16},
+        showgrid : false,
+        zeroline : false,
+        // range : [ 0, 2.5 ]
+        range : [ 0, 2 ]
+      },
+      width : 840,
+      height : 560,
       // width : 720,
-      height : 480,
+      // height : 480,
       datarevision : time
     };
     Plotly.react(graph_div, data, layout);
