@@ -34,7 +34,8 @@ local generate_path = require'control'.generate_path
 local veh_poses = {}
 local desired_path = flags.path or 'outer'
 local vel_h = false
-local vel_lane = tonumber(flags.vel_lane) or 0.5
+local vel_lane0 = tonumber(flags.vel_lane) or 0.5
+local vel_lane = vel_lane0
 local vel_max = 0.75 -- 1 --0.75
 local vel_min = 0.2
 -- Simulation parameters
@@ -96,8 +97,13 @@ routes.outer = {
   closed = true
 }
 routes.driveway = {
-  {-0.25, 2.5, math.rad(0)},
-  {0.25, 2.5, math.rad(0)},
+  -- Starting point
+  {-0.6, 2.5, math.rad(0)},
+  -- {-0.25, 2.5, math.rad(0)},
+  -- {0.15, 2.5, math.rad(0)},
+  -- {0.25, 2.5, math.rad(0)},
+  {0.35, 2.5, math.rad(0)}, -- Just before entering
+  -- {0.4, 2.5, math.rad(0)},
   turning_radius = 0.3,
   closed = false
 }
@@ -298,6 +304,15 @@ local function cb_loop(t_us)
     result.steering = steering
     -- TODO: Set the speed based on curvature? Lookahead point's curvature?
     result.velocity = vel_lane * ratio
+  end
+
+  -- When looping, update the velocity
+  if result.id_path == 1 then
+    print("vel_lane0", vel_lane0)
+    vel_lane = unpack(vector.randn(1, vel_lane0 * 0.1, vel_lane0))
+    print("vel_lane", vel_lane)
+    assert (type(vel_lane)=='number')
+
   end
 
 

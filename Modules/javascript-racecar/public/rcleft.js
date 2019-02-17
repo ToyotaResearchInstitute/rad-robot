@@ -52,6 +52,7 @@ const to_rainbow =
 const n_timesteps = 75; // 100; // 75; // 100;
 var risk_over_time = [], risk_times = [];
 var gap_over_time = [];
+var dj_over_time = [];
 
 document.addEventListener("DOMContentLoaded", function(event) {
   var cur = {};
@@ -609,7 +610,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
       risk_times.shift();
       risk_over_time.forEach((r) => { r.shift(); });
       gap_over_time.shift();
+      dj_over_time.shift();
     }
+    const risk_acceptable = 0.075;
 
     // Add the time indicator
     risk_times.push(time);
@@ -619,10 +622,108 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const has_gap = msg.gap ? 0 : 1;
     gap_over_time.push(has_gap);
 
+    // As the car approaches the intersection: Shows nudging behavior
+    const d_j = msg.d_j;
+    dj_over_time.push(d_j);
+
     var data;
     const tclear_checks = msg.tclear_checks;
     const risk_checks = msg.risk_checks;
-    if (tclear_checks && risk_checks) {
+
+    // Default plot layout
+    var layout = {
+      title : 'Intersection Risk to Go',
+      font : {
+        family : 'Times',
+        // family: 'Courier New, monospace',
+        size : 18,
+        // color: '#7f7f7f'
+      },
+      showlegend : true,
+      legend : {borderwidth : 1},
+      xaxis : {
+        title : 'time (s)',
+        titlefont : {size : 16},
+        showgrid : false,
+        zeroline : false
+      },
+      yaxis : {
+        title : 'Conditioned Risk',
+        titlefont : {size : 16},
+        showgrid : false,
+        zeroline : false,
+        // range : [ 0, 2.5 ]
+        range : [ 0, 2 ]
+      },
+      width : 840,
+      height : 560,
+      // width : 720,
+      // height : 480,
+      datarevision : time
+    };
+
+    const linings = [ 'solid', 'dash', 'dot', 'dashdot' ];
+
+    if (d_j) {
+      layout.xaxis.title = 'd<sub>e</sub>';
+      layout.datarevision = d_j;
+      msg.risk_checks.forEach((risks, i) => {
+        var r = risks[risks.length - 1];
+        // r = Math.log(r);
+        // r = 1 / (1 - Math.log(r));
+        if (i >= risk_over_time.length) {
+          risk_over_time[i] = [ r ];
+        } else {
+          risk_over_time[i].push(r);
+        }
+      });
+      data = risk_over_time.map((r, i, arr) => {
+        const idx_lining = i % linings.length;
+        const tc = tclear_checks[i];
+        const my_tclear = r.map(() => tc);
+        return {
+          x : dj_over_time,
+          y : r,
+          type : 'scatter',
+          mode : 'lines',
+          name : 't<sub>c</sub> = ' + tc.toFixed(1) + 's',
+          line : {
+            dash : linings[idx_lining],
+            width : 2 + 3 * (i - idx_lining) / linings.length,
+            color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+          }
+        };
+      });
+      data.push({
+        showscale : false,
+        x : [ dj_over_time[0], dj_over_time[n_risk_times - 1] ],
+        y : [ risk_acceptable, risk_acceptable ],
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'r<sub>go</sub> = ' + risk_acceptable.toFixed(3),
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'green',
+        },
+        marker : {line : {color : 'black', width : 6}}
+      });
+      data.push({
+        showscale : false,
+        x : dj_over_time,
+        y : gap_over_time,
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'Gap',
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'pink',
+        }
+      });
+    } else if (tclear_checks && risk_checks) {
       // console.log(msg.tclear_checks, msg.risk_checks);
       // msg.risk_checks.map((r) => 1 / (1 - Math.log(r))).forEach((risks, i) =>
       // {
@@ -637,8 +738,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
         }
       });
 
-      const n_tclear = tclear_checks.length;
-      const linings = [ 'solid', 'dash', 'dot', 'dashdot' ];
       data = risk_over_time.map((r, i, arr) => {
         const idx_lining = i % linings.length;
         const tc = tclear_checks[i];
@@ -649,7 +748,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
           y : r,
           type : 'scatter',
           mode : 'lines',
-          name : 't_c = ' + tc.toFixed(1) + 's',
+          name : 't<sub>c</sub> = ' + tc.toFixed(1) + 's',
           line : {
             dash : linings[idx_lining],
             width : 2 + 3 * (i - idx_lining) / linings.length,
@@ -657,7 +756,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
           }
         };
       });
-      const risk_acceptable = 0.075;
       data.push({
         showscale : false,
         x : [ risk_times[0], risk_times[n_risk_times - 1] ],
@@ -711,36 +809,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
       data[data.length - 1].line.color = d3colors(9);
     }
 
-    var layout = {
-      title : 'Intersection Risk to Go',
-      font : {
-        family : 'Times',
-        // family: 'Courier New, monospace',
-        size : 18,
-        // color: '#7f7f7f'
-      },
-      showlegend : true,
-      legend : {borderwidth : 1},
-      xaxis : {
-        title : 'time (s)',
-        titlefont : {size : 16},
-        showgrid : false,
-        zeroline : false
-      },
-      yaxis : {
-        title : 'Conditioned Risk',
-        titlefont : {size : 16},
-        showgrid : false,
-        zeroline : false,
-        // range : [ 0, 2.5 ]
-        range : [ 0, 2 ]
-      },
-      width : 840,
-      height : 560,
-      // width : 720,
-      // height : 480,
-      datarevision : time
-    };
     Plotly.react(graph_div, data, layout);
   };
   /*
