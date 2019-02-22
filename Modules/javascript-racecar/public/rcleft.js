@@ -664,7 +664,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
     const linings = [ 'solid', 'dash', 'dot', 'dashdot' ];
 
-    if (d_j) {
+    if (d_j && false) {
       layout.xaxis.title = 'd<sub>e</sub>';
       layout.datarevision = d_j;
       msg.risk_checks.forEach((risks, i) => {

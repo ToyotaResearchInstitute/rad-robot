@@ -100,10 +100,31 @@ routes.driveway = {
   -- Starting point
   {-0.6, 2.5, math.rad(0)},
   -- {-0.25, 2.5, math.rad(0)},
+  {0.05, 2.5, math.rad(0)},
   -- {0.15, 2.5, math.rad(0)},
   -- {0.25, 2.5, math.rad(0)},
-  {0.35, 2.5, math.rad(0)}, -- Just before entering
+  -- {0.35, 2.5, math.rad(0)}, -- Just before entering
   -- {0.4, 2.5, math.rad(0)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+routes.merge = {
+  -- Starting point
+  -- {-1.0, 2.5, math.rad(0)},
+  {-1.0, 2.0, math.rad(15)},
+  {2.0, 3.0, math.rad(30)},
+  -- {3.0, 3.0, math.rad(15)}, -- Just before merging
+  {3.5, 3.5, math.rad(15)}, -- Merged
+  {5.0, 3.5, math.rad(0)}, -- Merged
+  turning_radius = 0.3,
+  closed = false
+}
+
+routes.highway = {
+  -- Starting point
+  {-1.0, 3.5, math.rad(0)},
+  {4.0, 3.5, math.rad(0)}, -- Merged
   turning_radius = 0.3,
   closed = false
 }
@@ -193,9 +214,11 @@ local env = {
   speed = vel_lane,
   -- Show the knots for better printing
   lanes = {
-    {unpack(paths.inner)}, {unpack(paths.outer)},
+    -- {unpack(paths.inner)}, {unpack(paths.outer)},
+    -- {unpack(paths.driveway)},
+    -- {unpack(paths.highway)}
+    {unpack(paths.merge)},
     -- {unpack(paths.outerA)}, {unpack(paths.outerB)}
-    {unpack(paths.driveway)},
   },
   -- This isn't quite right...?
   trajectory_turn = {
