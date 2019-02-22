@@ -603,10 +603,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
     // console.log("Plot Msg", msg);
 
     if (time < risk_times[risk_times.length - 1]) {
-      // risk_times = [];
-      // risk_over_time = [];
-      return;
-    } else if (risk_times.length >= n_timesteps) {
+      risk_times = [];
+      risk_over_time = [];
+      gap_over_time = [];
+      dj_over_time = [];
+    }
+    if (risk_times.length >= n_timesteps) {
       risk_times.shift();
       risk_over_time.forEach((r) => { r.shift(); });
       gap_over_time.shift();

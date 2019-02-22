@@ -84,9 +84,10 @@ local function cb_control(inp)
   -- TODO: Maybe randomly select until the pose is collision free, w.r.t to other poses?
   if not veh_states[id_robot] then
     if id_robot=='tri1' then
-      veh_states[id_robot] = {pose={-0.5, 2.5, 0}}
+      veh_states[id_robot] = {pose={-1.0, 2.75, 0}}
     else
-      veh_states[id_robot] = {pose={0, 0, 0}}
+      -- veh_states[id_robot] = {pose={0, 0, 0}}
+      veh_states[id_robot] = {pose={-1.0, 3.5, 0}}
     end
 
   end

@@ -111,8 +111,8 @@ routes.driveway = {
 
 routes.merge = {
   -- Starting point
-  -- {-1.0, 2.5, math.rad(0)},
-  {-1.0, 2.0, math.rad(15)},
+  {-1.0, 2.75, math.rad(0)},
+  {1.5, 2.75, math.rad(15)},
   {2.0, 3.0, math.rad(30)},
   -- {3.0, 3.0, math.rad(15)}, -- Just before merging
   {3.5, 3.5, math.rad(15)}, -- Merged
@@ -124,7 +124,7 @@ routes.merge = {
 routes.highway = {
   -- Starting point
   {-1.0, 3.5, math.rad(0)},
-  {4.0, 3.5, math.rad(0)}, -- Merged
+  {5.0, 3.5, math.rad(0)}, -- Merged
   turning_radius = 0.3,
   closed = false
 }
