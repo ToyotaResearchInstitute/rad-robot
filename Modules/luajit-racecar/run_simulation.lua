@@ -83,7 +83,7 @@ local function start_states(id_robot)
     -- return {pose={-1.0, 2.75, 0}}
   else
     -- Roundabout
-    return {pose={4.0, 2.5, math.rad(90)}}
+    return {pose={4.125, 2.5, math.rad(90)}}
     -- Merge
     -- return {pose={-1.0, 3.5, 0}}
     -- Left

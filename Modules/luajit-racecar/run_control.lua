@@ -109,13 +109,14 @@ routes.driveway = {
   closed = false
 }
 
-local radius_roundabout = 1.5
+-- local radius_roundabout1 = 1.5
+-- local radius_roundabout2 = 2.5
 -- routes.roundabout1 = {
 --   {2.5 + radius_roundabout, 2.5, math.rad(90)},
 --   {2.5, 2.5 + radius_roundabout, math.rad(180)},
 --   {2.5 - radius_roundabout, 2.5, math.rad(270)},
 --   {2.5, 2.5 - radius_roundabout, math.rad(0)},
---   turning_radius = radius_roundabout,
+--   turning_radius = radius_roundabout1,
 --   closed = true
 -- }
 
@@ -222,14 +223,25 @@ for name, knots in pairs(route_knots) do
 end
 
 -- For the roundabouts
+local radius_roundabout1 = 1.5
+local radius_roundabout2 = 1.75
 do
   local path, length = control.path_arc(
-  {2.5, 2.5}, radius_roundabout, 0, 2 * math.pi, ds)
+  {2.5, 2.5}, radius_roundabout1, 0, 2 * math.pi, ds)
   path.length = length
   path.ds = ds
   path.closed = true
   control.generate_kdtree(path)
   paths.roundabout1 = path
+end
+do
+  local path, length = control.path_arc(
+  {2.5, 2.5}, radius_roundabout2, 0, 2 * math.pi, ds)
+  path.length = length
+  path.ds = ds
+  path.closed = true
+  control.generate_kdtree(path)
+  paths.roundabout2 = path
 end
 
 -- TODO: Paths should come from a separate program
@@ -253,7 +265,7 @@ local env = {
     -- {unpack(paths.driveway)},
     -- {unpack(paths.highway)}
     -- {unpack(paths.merge)},
-    {unpack(paths.roundabout1)}, {unpack(paths.driveway)},
+    {unpack(paths.roundabout1)}, {unpack(paths.roundabout2)}, {unpack(paths.driveway)},
     -- {unpack(paths.outerA)}, {unpack(paths.outerB)}
   },
   -- This isn't quite right...?
