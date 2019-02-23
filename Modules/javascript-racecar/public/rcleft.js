@@ -661,7 +661,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
       height : 560,
       // width : 720,
       // height : 480,
-      datarevision : time
+      datarevision : time,
+      // plot_bgcolor : "lightgray",
+      plot_bgcolor : "#EEEEEE",
+      // paper_bgcolor : "#FFF3"
     };
 
     const linings = [ 'solid', 'dash', 'dot', 'dashdot' ];
@@ -692,7 +695,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
           line : {
             dash : linings[idx_lining],
             width : 2 + 3 * (i - idx_lining) / linings.length,
-            color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+            // color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+            color : d3colors(i),
           }
         };
       });
@@ -753,8 +757,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
           name : 't<sub>c</sub> = ' + tc.toFixed(1) + 's',
           line : {
             dash : linings[idx_lining],
-            width : 2 + 3 * (i - idx_lining) / linings.length,
-            color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+            width : 3 + 3 * (i - idx_lining) / linings.length,
+            // color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+            color : d3colors(i),
           }
         };
       });
@@ -764,12 +769,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
         y : [ risk_acceptable, risk_acceptable ],
         type : 'scatter',
         mode : 'lines+markers',
-        name : 'r_go = ' + risk_acceptable.toFixed(3),
+        name : 'r<sub>go</sub> = ' + risk_acceptable.toFixed(3),
         opacity : 0.5,
         line : {
           dash : 'solid',
           width : 3,
-          color : 'green',
+          color : 'violet',
         },
         marker : {line : {color : 'black', width : 6}}
       });

@@ -75,6 +75,15 @@ local function simulate_vehicle(state, control_inp, dt, use_noise)
 end
 
 -- Simulate per the robot
+local function start_states(id_robot)
+  if id_robot=='tri1' then
+      return {pose={-1.0, 2.5, 0}}
+      -- return {pose={-1.0, 2.75, 0}}
+    else
+      -- veh_states[id_robot] = {pose={0, 0, 0}}
+      return {pose={-1.0, 3.5, 0}}
+    end
+end
 local function cb_control(inp)
   local id_robot = inp.id
   if not id_robot then return false, "No ID to simulate" end
@@ -82,14 +91,11 @@ local function cb_control(inp)
   -- Add this car
   -- TODO: Smarter way to initialize the state?
   -- TODO: Maybe randomly select until the pose is collision free, w.r.t to other poses?
-  if not veh_states[id_robot] then
-    if id_robot=='tri1' then
-      veh_states[id_robot] = {pose={-1.0, 2.75, 0}}
-    else
-      -- veh_states[id_robot] = {pose={0, 0, 0}}
-      veh_states[id_robot] = {pose={-1.0, 3.5, 0}}
-    end
-
+  local veh_state = veh_states[id_robot]
+  if not veh_state then
+    veh_states[id_robot] = start_states(id_robot)
+  elseif veh_state.pose[1] > 4.5 then
+    veh_states[id_robot] = start_states(id_robot)
   end
 end
 

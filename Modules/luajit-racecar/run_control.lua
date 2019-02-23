@@ -100,8 +100,8 @@ routes.driveway = {
   -- Starting point
   {-0.6, 2.5, math.rad(0)},
   -- {-0.25, 2.5, math.rad(0)},
-  {0.05, 2.5, math.rad(0)},
-  -- {0.15, 2.5, math.rad(0)},
+  -- {0.05, 2.5, math.rad(0)},
+  {0.15, 2.5, math.rad(0)},
   -- {0.25, 2.5, math.rad(0)},
   -- {0.35, 2.5, math.rad(0)}, -- Just before entering
   -- {0.4, 2.5, math.rad(0)},
@@ -125,8 +125,12 @@ routes.highway = {
   -- Starting point
   {-1.0, 3.5, math.rad(0)},
   {5.0, 3.5, math.rad(0)}, -- Merged
+  {6.0, 4.5, math.rad(90)},
+  {5.0, 5.5, math.rad(180)},
+  {0.0, 5.5, math.rad(180)},
+  {-1.0, 4.5, math.rad(270)},
   turning_radius = 0.3,
-  closed = false
+  closed = true
 }
 
 -- Smaller loops

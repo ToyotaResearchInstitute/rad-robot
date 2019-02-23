@@ -24,10 +24,10 @@ html {
   flex: 50%;
 }
 #left{
-  flex: 33%;
+  flex: 50%;
 }
 #right{
-  flex: 67%;
+  flex: 50%;
 }
 /*#left{
   flex: 67%;
@@ -45,7 +45,7 @@ html {
 #stage {
   /*border: 1px solid blue;*/
   /* For overlaying */
-  position:absolute;
+  position:relative;
   top:0px;
   left:0px;
 }
@@ -57,7 +57,7 @@ html {
   top:0px;
   left:0px;*/
   /* Need resize handling for this one */
-  display:flex; 
+  display:flex;
 }
 
 polyline {
