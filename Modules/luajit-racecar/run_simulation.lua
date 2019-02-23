@@ -77,12 +77,18 @@ end
 -- Simulate per the robot
 local function start_states(id_robot)
   if id_robot=='tri1' then
-      return {pose={-1.0, 2.5, 0}}
-      -- return {pose={-1.0, 2.75, 0}}
-    else
-      -- veh_states[id_robot] = {pose={0, 0, 0}}
-      return {pose={-1.0, 3.5, 0}}
-    end
+    -- Merge
+    return {pose={-1.0, 2.5, 0}}
+    -- Left
+    -- return {pose={-1.0, 2.75, 0}}
+  else
+    -- Roundabout
+    return {pose={4.0, 2.5, math.rad(90)}}
+    -- Merge
+    -- return {pose={-1.0, 3.5, 0}}
+    -- Left
+    -- veh_states[id_robot] = {pose={0, 0, 0}}
+  end
 end
 local function cb_control(inp)
   local id_robot = inp.id

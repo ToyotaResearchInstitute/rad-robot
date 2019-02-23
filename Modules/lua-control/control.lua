@@ -217,24 +217,30 @@ local function generate_path(knots, params)
     end
   end
 
+  return path, length
+end
+lib.generate_path = generate_path
+
+local function generate_kdtree(path)
   -- Add the kd-tree for quick access
   local tree = path.tree
   if type(tree) ~= 'userdata' and has_kdtree then
     -- 2D points
     local k_dim = 2
-    tree = kdtree.create(k_dim)
+    tree = assert(kdtree.create(k_dim))
   end
-  if tree then
-    for i, pt in ipairs(path) do tree:insert(pt, i) end
-    if tree:size() ~= #path then
-      return false, "No points added to the kd-tree"
-    end
-    path.tree = tree
+  if not kdtree then
+    return false, "No kdtree available"
   end
-
-  return path, length
+  for i, pt in ipairs(path) do tree:insert(pt, i) end
+  if tree:size() ~= #path then
+    return false, "No points added to the kd-tree"
+  end
+  -- Add to the
+  path.tree = tree
+  return tree
 end
-lib.generate_path = generate_path
+lib.generate_kdtree = generate_kdtree
 
 local function sort_candidates(a, b)
   return a.dist < b.dist

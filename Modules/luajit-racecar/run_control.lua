@@ -109,6 +109,25 @@ routes.driveway = {
   closed = false
 }
 
+local radius_roundabout = 1.5
+-- routes.roundabout1 = {
+--   {2.5 + radius_roundabout, 2.5, math.rad(90)},
+--   {2.5, 2.5 + radius_roundabout, math.rad(180)},
+--   {2.5 - radius_roundabout, 2.5, math.rad(270)},
+--   {2.5, 2.5 - radius_roundabout, math.rad(0)},
+--   turning_radius = radius_roundabout,
+--   closed = true
+-- }
+
+-- routes.roundabout2 = {
+--   {4, -0.75, math.rad(90)},
+--   {4, 5.75, math.rad(180)},
+--   {0.75, 5.75, math.rad(270)},
+--   {0.75, -0.75, math.rad(0)},
+--   turning_radius = 0.3,
+--   closed = true
+-- }
+
 routes.merge = {
   -- Starting point
   {-1.0, 2.5, math.rad(0)},
@@ -164,7 +183,7 @@ for name, route in pairs(routes) do
 end
 -- Print the knots
 for name, knots in pairs(route_knots) do
-  print("Route knots", name)
+  -- print("Route knots", name)
   for i, kn in ipairs(knots) do print(i, unpack(kn)) end
 end
 
@@ -192,6 +211,7 @@ for name, knots in pairs(route_knots) do
   assert(path, length)
   assert(#path > 0, "No points in path")
   assert(length > 0, "No path length")
+  control.generate_kdtree(path)
   -- Since we are drawing, save the drawing of the path(s)
   assert(g_holo:save("/tmp/path_"..name..".pgm"))
   -- Add to the table of paths
@@ -199,6 +219,17 @@ for name, knots in pairs(route_knots) do
   paths[name] = path
   print(string.format("Route [%s] Length [%.2f meters] Points [%d]",
   name, path.length, #path))
+end
+
+-- For the roundabouts
+do
+  local path, length = control.path_arc(
+  {2.5, 2.5}, radius_roundabout, 0, 2 * math.pi, ds)
+  path.length = length
+  path.ds = ds
+  path.closed = true
+  control.generate_kdtree(path)
+  paths.roundabout1 = path
 end
 
 -- TODO: Paths should come from a separate program
@@ -221,7 +252,8 @@ local env = {
     -- {unpack(paths.inner)}, {unpack(paths.outer)},
     -- {unpack(paths.driveway)},
     -- {unpack(paths.highway)}
-    {unpack(paths.merge)},
+    -- {unpack(paths.merge)},
+    {unpack(paths.roundabout1)}, {unpack(paths.driveway)},
     -- {unpack(paths.outerA)}, {unpack(paths.outerB)}
   },
   -- This isn't quite right...?

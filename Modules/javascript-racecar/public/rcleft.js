@@ -207,10 +207,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
   // camera.lookAt(1, 1, 0);
 
   // New Holodeck (IROS)
+  // TODO: Based on the message from LCM
+  // Roundabout
+  camera.position.set(-1, 2.5, 1.25);
+  camera.lookAt(4 - 1.5, 2.5, 0);
   // Merge
-  // camera.position.set(-0.5, 3.0, 1.25);
-  camera.position.set(-0.5, 2.0, 1.25);
-  camera.lookAt(2.5, 3.25, 0);
+  // camera.position.set(-0.5, 2.0, 1.25);
+  // camera.lookAt(2.5, 3.25, 0);
   // Left turn
   // camera.position.set(-1, 2.5, 1.25);
   // camera.lookAt(3, 2.5, 0);
