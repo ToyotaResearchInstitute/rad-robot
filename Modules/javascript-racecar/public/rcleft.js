@@ -202,9 +202,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
   //                     1);
   // camera.lookAt(-1, -1, 0);
   // Left turn RC
-  camera.position.set(X_SVG_MIN + 0 * X_SVG_SZ / 2,
-                      Y_SVG_MIN + 3 * Y_SVG_SZ / 4, 1.25);
-  camera.lookAt(1, 1, 0);
+  // camera.position.set(X_SVG_MIN + 0 * X_SVG_SZ / 2,
+  //                     Y_SVG_MIN + 3 * Y_SVG_SZ / 4, 1.25);
+  // camera.lookAt(1, 1, 0);
+
+  // New Holodeck (IROS)
+  camera.position.set(-2, 2.5, 1.25);
+  camera.lookAt(3, 2.5, 0);
 
   var light0 = new THREE.AmbientLight(0x404040); // soft white light
   scene.add(light0);
@@ -471,7 +475,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
       pose_el.setAttributeNS(
           null, 'transform',
           "rotate(" + [ p[2] * RAD_TO_DEG, p[0], p[1] ].join() + ")");
-      // TODO: Add 3D mesh
+      // Add 3D mesh
+      console.log("id_robot", id_robot);
+      if (id_robot == 'tri1') {
+        observer_mesh.position.x = pose[0];
+        observer_mesh.position.y = pose[1];
+        observer_mesh.rotation.z = pose[2];
+      }
     }
   };
 
