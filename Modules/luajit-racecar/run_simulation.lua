@@ -95,7 +95,11 @@ local function cb_control(inp)
   if not veh_state then
     veh_states[id_robot] = start_states(id_robot)
   elseif veh_state.pose[1] > 4.5 then
-    veh_states[id_robot] = start_states(id_robot)
+    local state_new = start_states(id_robot)
+    -- Add some noise, for merge not to be the same
+    local dnoise_x = math.abs(unpack(vector.randn(1, 1, 0)))
+    state_new.pose[1] = state_new.pose[1] - dnoise_x
+    veh_states[id_robot] = state_new
   end
 end
 

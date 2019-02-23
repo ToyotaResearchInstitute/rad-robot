@@ -186,7 +186,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   three_div.appendChild(renderer.domElement);
 
   let camera = new THREE.PerspectiveCamera(
-      70, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 20);
+      70, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5);
   camera.up.set(0, 0, 1);
   // Left turn sim
   // camera.position.set(X_SVG_SZ / 16, Y_SVG_MIN + 1 * Y_SVG_SZ / 4, 1);
@@ -207,8 +207,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
   // camera.lookAt(1, 1, 0);
 
   // New Holodeck (IROS)
-  camera.position.set(-2, 2.5, 1.25);
-  camera.lookAt(3, 2.5, 0);
+  // Merge
+  // camera.position.set(-0.5, 3.0, 1.25);
+  camera.position.set(-0.5, 2.0, 1.25);
+  camera.lookAt(2.5, 3.25, 0);
+  // Left turn
+  // camera.position.set(-1, 2.5, 1.25);
+  // camera.lookAt(3, 2.5, 0);
 
   var light0 = new THREE.AmbientLight(0x404040); // soft white light
   scene.add(light0);
@@ -477,11 +482,15 @@ document.addEventListener("DOMContentLoaded", function(event) {
           "rotate(" + [ p[2] * RAD_TO_DEG, p[0], p[1] ].join() + ")");
       // Add 3D mesh
       console.log("id_robot", id_robot);
-      if (id_robot == 'tri1') {
-        observer_mesh.position.x = pose[0];
-        observer_mesh.position.y = pose[1];
-        observer_mesh.rotation.z = pose[2];
+      let veh_box = id_robot == 'tri1' ? observer_mesh : veh_boxes[id_robot];
+      if (!veh_box) {
+        veh_box = veh_mesh.clone();
+        scene.add(veh_box);
+        veh_boxes[id_robot] = veh_box;
       }
+      veh_box.position.x = pose[0];
+      veh_box.position.y = pose[1];
+      veh_box.rotation.z = pose[2];
     }
   };
 
