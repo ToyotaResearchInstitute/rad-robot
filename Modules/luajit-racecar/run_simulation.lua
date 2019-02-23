@@ -77,8 +77,10 @@ end
 -- Simulate per the robot
 local function start_states(id_robot)
   if id_robot=='tri1' then
-    -- Merge
+    -- Roundabout
     return {pose={-1.0, 2.5, 0}}
+    -- Merge
+    -- return {pose={-1.0, 2.5, 0}}
     -- Left
     -- return {pose={-1.0, 2.75, 0}}
   else

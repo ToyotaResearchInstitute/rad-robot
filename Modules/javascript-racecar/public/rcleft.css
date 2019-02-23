@@ -42,10 +42,13 @@ html {
 }
 
 /* Canvas */
+#topdown {
+  position: relative;
+}
 #stage {
   /*border: 1px solid blue;*/
   /* For overlaying */
-  position:relative;
+  position:absolute;
   top:0px;
   left:0px;
 }
