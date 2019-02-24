@@ -186,7 +186,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
   three_div.appendChild(renderer.domElement);
 
   let camera = new THREE.PerspectiveCamera(
-      70, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5);
+      // 70, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5.5);
+      // 50, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5.5);
+      40, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5.5);
   camera.up.set(0, 0, 1);
   // Left turn sim
   // camera.position.set(X_SVG_SZ / 16, Y_SVG_MIN + 1 * Y_SVG_SZ / 4, 1);
@@ -209,14 +211,14 @@ document.addEventListener("DOMContentLoaded", function(event) {
   // New Holodeck (IROS)
   // TODO: Based on the message from LCM
   // Roundabout
-  camera.position.set(-1, 2.5, 1.25);
-  camera.lookAt(4 - 1.5, 2.5, 0);
+  // camera.position.set(-1, 2.5, 1.25);
+  // camera.lookAt(4 - 1.5, 2.5, 0);
   // Merge
   // camera.position.set(-0.5, 2.0, 1.25);
   // camera.lookAt(2.5, 3.25, 0);
   // Left turn
-  // camera.position.set(-1, 2.5, 1.25);
-  // camera.lookAt(3, 2.5, 0);
+  camera.position.set(-1, 2.5, 1.75);
+  camera.lookAt(1.25, 2.5, 0);
 
   var light0 = new THREE.AmbientLight(0x404040); // soft white light
   scene.add(light0);
@@ -484,7 +486,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
           null, 'transform',
           "rotate(" + [ p[2] * RAD_TO_DEG, p[0], p[1] ].join() + ")");
       // Add 3D mesh
-      console.log("id_robot", id_robot);
+      // console.log("id_robot", id_robot);
       let veh_box = id_robot == 'tri1' ? observer_mesh : veh_boxes[id_robot];
       if (!veh_box) {
         veh_box = veh_mesh.clone();
