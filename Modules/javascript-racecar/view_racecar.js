@@ -7,7 +7,7 @@ try {
 } catch (e) {
   // console.log("shm", e);
   shm = false;
-  }
+}
 
 // Optional ZeroMQ
 var zeromq;
@@ -16,7 +16,7 @@ try {
   // console.log("zeromq", e);
 } catch (e) {
   zeromq = false;
-  }
+}
 
 var mpack, munpack;
 try {
@@ -26,7 +26,7 @@ try {
 } catch (e) {
   mpack = false;
   munpack = false;
-  }
+}
 
 // HTTP service
 const finalhandler = require('finalhandler');
@@ -76,7 +76,7 @@ mcl_transport.on('message', (msg, rinfo) => {
     return;
   case 0x4c43: // LCM message type
     break;
-    }
+  }
   var ch; // Channel
   switch (msg.readUInt16BE(2)) {
   case 0x3032: // Decode LCM single: 0x4c43 3032
@@ -89,7 +89,7 @@ mcl_transport.on('message', (msg, rinfo) => {
     // console.log(`LCM0 [${seq_id0}]`, ch.toString('utf8'), msg_mp.length);
     if (ch.toString('utf8') != 'vicon') {
       wss.broadcast(msg_mp);
-      }
+    }
     break;
   case 0x3033: // Decode LCM multiple: 0x4c43 3033
     const seq_id = msg.readUInt32BE(4);
@@ -111,7 +111,7 @@ mcl_transport.on('message', (msg, rinfo) => {
       ]);
     } else {
       frag = msg.slice(offset);
-      }
+    }
     // Manage the unordered fragments
     var frag_t, frag_list;
     const uuid = `${seq_id}-${nfrag}`;
@@ -132,12 +132,12 @@ mcl_transport.on('message', (msg, rinfo) => {
       // console.log(`LCM1 [${seq_id}]`, ch.toString('utf8'), msg_mp.length,
       // fragments.size);
       wss.broadcast(msg_mp);
-      }
+    }
     break;
   default:
     console.error("Bad LCM packet!");
     return;
-    } // end of switch/case
+  } // end of switch/case
   // Check if we need to prune
   if (fragments.size > 50) {
     console.log("Prune!", fragments.size);

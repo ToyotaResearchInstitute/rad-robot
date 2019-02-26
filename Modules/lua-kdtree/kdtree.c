@@ -477,7 +477,7 @@ static int find_nearest_n(struct kdnode *node, const double *pos, double range, 
 	int i, ret, added_res = 0;
 
 	if(!node) return 0;
-	
+
 	/* if the photon is close enough, add it to the result heap */
 	dist_sq = 0;
 	for(i=0; i<dim; i++) {
@@ -588,17 +588,17 @@ struct kdres *kd_nearest(struct kdtree *kd, const double *pos) {
   int i;
 
   if (!kd)
-    return 0;
+    return NULL;
   if (!kd->rect)
-    return 0;
+    return NULL;
 
   /* Allocate result set */
   if (!(rset = malloc(sizeof *rset))) {
-    return 0;
+    return NULL;
   }
   if (!(rset->rlist = alloc_resnode())) {
     free(rset);
-    return 0;
+    return NULL;
   }
   rset->rlist->next = 0;
   rset->expanded = 0;
@@ -607,14 +607,15 @@ struct kdres *kd_nearest(struct kdtree *kd, const double *pos) {
   /* Duplicate the bounding hyperrectangle, we will work on the copy */
   if (!(rect = hyperrect_duplicate(kd->rect))) {
     kd_res_free(rset);
-    return 0;
+    return NULL;
   }
 
   /* Our first guesstimate is the root node */
   result = kd->root;
   dist_sq = 0;
-  for (i = 0; i < kd->dim; i++)
+  for (i = 0; i < kd->dim; i++) {
     dist_sq += SQ(result->pos[i] - pos[i]);
+  }
 
   /* Search for the nearest neighbour recursively */
   kd_nearest_i(kd->root, pos, &result, &dist_sq, rect);
@@ -626,14 +627,14 @@ struct kdres *kd_nearest(struct kdtree *kd, const double *pos) {
   if (result) {
     if (rlist_insert(rset->rlist, result, -1.0) == -1) {
       kd_res_free(rset);
-      return 0;
+      return NULL;
     }
     rset->size = 1;
     kd_res_rewind(rset);
     return rset;
   } else {
     kd_res_free(rset);
-    return 0;
+    return NULL;
   }
 }
 

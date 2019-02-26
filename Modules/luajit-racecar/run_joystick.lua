@@ -66,5 +66,5 @@ racecar.listen{
   channel_callbacks = cb_tbl,
   -- fd_updates = fd_updates,
   loop_rate = 50, -- 20Hz input
-  loop_fn = cb_loop
+  fn_loop = cb_loop
 }

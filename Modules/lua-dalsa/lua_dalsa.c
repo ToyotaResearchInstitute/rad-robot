@@ -34,6 +34,8 @@ Author: Stephen McGill <stephen.mcgill@tri.global> 2018
 // DALSA
 #include <gevapi.h>
 
+#include <arpa/inet.h>
+
 /* metatable name for dalsa */
 #define MT_NAME "dalsa_mt"
 
@@ -120,7 +122,7 @@ static int lua_dalsa_get_xml(lua_State *L) {
   fprintf(stderr, "Size required: %d | %d\n", sz_xml, is_xml_compressed);
 #endif
 
-  char *xml_data = (char *)malloc(sz_xml + 1);
+  char *xml_data = malloc(sz_xml + 1);
   status = Gev_RetrieveXMLData(camera->cameraHandle, sz_xml, xml_data, &sz_xml,
                                &is_xml_compressed);
   if (status != GEVLIB_OK) {
@@ -429,7 +431,7 @@ static int lua_dalsa_get_image(lua_State *L) {
 #endif
 
   // int gev_depth = GevGetPixelDepthInBits(img->format);
-  status = GevReleaseImage(camera->cameraHandle, img);
+  status = GevReleaseFrame(camera->cameraHandle, img);
   // TODO: Expiration time... run a memcpy?
   // TODO: Check the status
 
@@ -444,28 +446,38 @@ static int lua_dalsa_stream_off(lua_State *L) {
   }
 
   GEV_STATUS status;
-  status = GevStopImageTransfer(camera->cameraHandle);
+  status = GevStopTransfer(camera->cameraHandle);
   switch (status) {
   case (GEV_STATUS)GEVLIB_OK:
     break;
   case (GEV_STATUS)GEVLIB_ERROR_INVALID_HANDLE:
   default:
-    perror("GevStopImageTransfer");
+    perror("GevStopTransfer");
     lua_pushboolean(L, 0);
-    lua_pushliteral(L, "GevStopImageTransfer");
+    lua_pushliteral(L, "GevStopTransfer");
     return 2;
   }
-  status = GevAbortImageTransfer(camera->cameraHandle);
-
-  status = GevFreeImageTransfer(camera->cameraHandle);
+  status = GevAbortTransfer(camera->cameraHandle);
   switch (status) {
   case (GEV_STATUS)GEVLIB_OK:
     break;
   case (GEV_STATUS)GEVLIB_ERROR_INVALID_HANDLE:
   default:
-    perror("GevFreeImageTransfer");
+    perror("GevAbortTransfer");
     lua_pushboolean(L, 0);
-    lua_pushliteral(L, "GevFreeImageTransfer");
+    lua_pushliteral(L, "GevAbortTransfer");
+    return 2;
+  }
+
+  status = GevFreeTransfer(camera->cameraHandle);
+  switch (status) {
+  case (GEV_STATUS)GEVLIB_OK:
+    break;
+  case (GEV_STATUS)GEVLIB_ERROR_INVALID_HANDLE:
+  default:
+    perror("GevFreeTransfer");
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "GevFreeTransfer");
     return 2;
   }
   camera->is_streaming = FALSE;
@@ -645,7 +657,7 @@ static int lua_dalsa_stream_on(lua_State *L) {
 #endif
     // TODO: Ensure rgb_sz == img_sz
     size_t rgb_sz = camera->cpuRGBPitch * camera->height * sizeof(uint8_t);
-    camera->cpuRGB = (uint8_t *)malloc(rgb_sz);
+    camera->cpuRGB = malloc(rgb_sz);
 #ifdef USE_SHM
   }
 #endif
@@ -678,15 +690,15 @@ static int lua_dalsa_stream_on(lua_State *L) {
                                 N_BUFFERS, camera->image_buffers);
 #else
   // Initialize a transfer with asynchronous buffer handling.
-  status = GevInitImageTransfer(camera->cameraHandle, Asynchronous, N_BUFFERS,
-                                camera->image_buffers);
+  status = GevStartTransfer(camera->cameraHandle, Asynchronous, N_BUFFERS,
+                            camera->image_buffers);
 #endif
 
   // Continuous frames
-  status = GevStartImageTransfer(camera->cameraHandle, -1);
+  status = GevStartTransfer(camera->cameraHandle, -1);
   if (status != GEVLIB_SUCCESS) {
     lua_pushboolean(L, 0);
-    lua_pushliteral(L, "Cannot begin streaming");
+    lua_pushliteral(L, "GevStartTransfer: Cannot begin streaming");
     return 2;
   }
   camera->is_streaming = TRUE;
@@ -768,31 +780,85 @@ static int lua_dalsa_shutdown(lua_State *L) {
   lua_pushboolean(L, 1);
   return 1;
 }
+
 static int lua_dalsa_initialize(lua_State *L) {
+  GEV_STATUS status;
   // Close down the API.
-  GEV_STATUS status = GevApiInitialize();
-  if (status == GEVLIB_OK) {
-    lua_pushboolean(L, 1);
-  } else {
+  status = GevApiInitialize();
+  if (status != GEVLIB_OK) {
     lua_pushboolean(L, 0);
+    return 1;
   }
+#ifdef DEBUG
+  {
+    GEVLIB_CONFIG_OPTIONS options = {0};
+    GevGetLibraryConfigOptions(&options);
+    // options.logLevel = GEV_LOG_LEVEL_OFF;
+    options.logLevel = GEV_LOG_LEVEL_TRACE;
+    // options.logLevel = GEV_LOG_LEVEL_NORMAL;
+    // options.logLevel = GEV_LOG_LEVEL_DEBUG;
+    GevSetLibraryConfigOptions(&options);
+  }
+#endif
+
+  if (lua_istable(L, -1)) {
+    uint32_t maxInterfaces;
+#if LUA_VERSION_NUM == 501
+    maxInterfaces = lua_objlen(L, 1);
+#else
+    maxInterfaces = lua_rawlen(L, 1);
+#endif
+#ifdef DEBUG
+    fprintf(stderr, "Enumerating %d interfaces\n", maxInterfaces);
+#endif
+    int i;
+    struct in_addr ip_addr;
+    GEV_NETWORK_INTERFACE *pIPAddr = malloc(
+        maxInterfaces *
+        sizeof(GEV_NETWORK_INTERFACE));
+    for (i = 0; i < maxInterfaces; i++) {
+      lua_rawgeti(L, -1, i + 1);
+      inet_aton(lua_tostring(L, -1), &ip_addr);
+      lua_pop(L, 1);
+#ifdef DEBUG
+      fprintf(stderr, "Interface %d: [%d]\n", i, ip_addr.s_addr);
+#endif
+      pIPAddr[i].ipAddr = ip_addr.s_addr;
+    }
+    uint32_t numInterfaces;
+    status =
+      GevEnumerateNetworkInterfaces(pIPAddr, maxInterfaces, &numInterfaces);
+#ifdef DEBUG
+    fprintf(stderr, "Enumerated %d interfaces\n", numInterfaces);
+#endif
+    // One camera per interface
+    uint32_t maxDevices = maxInterfaces;
+    GEV_CAMERA_INFO* pDevice = malloc(maxDevices * sizeof(GEV_CAMERA_INFO));
+    uint32_t numDevices;
+    for(i=0;i<numInterfaces;i++){
+      status = GevEnumerateGevDevices(pIPAddr + i, 3e3, pDevice, maxDevices, &numDevices);
+#ifdef DEBUG
+      ip_addr.s_addr = htonl(pIPAddr[i].ipAddr);
+      fprintf(stderr, "Enumerated %d devices on %s\n", numDevices, inet_ntoa(ip_addr));
+#endif
+      if (status!=GEV_STATUS_SUCCESS) {
+        perror("GevEnumerateGevDevices");
+      }
+    }
+    free(pDevice);
+    free(pIPAddr);
+
+  }
+
+
+
+  lua_pushboolean(L, 1);
   return 1;
 }
 
 static int lua_dalsa_open(lua_State *L) {
   GEV_STATUS status;
 
-#ifdef DEBUG
-  {
-    GEVLIB_CONFIG_OPTIONS options = {0};
-    GevGetLibraryConfigOptions(&options);
-    // options.logLevel = GEV_LOG_LEVEL_OFF;
-    // options.logLevel = GEV_LOG_LEVEL_TRACE;
-    // options.logLevel = GEV_LOG_LEVEL_NORMAL;
-    options.logLevel = GEV_LOG_LEVEL_DEBUG;
-    GevSetLibraryConfigOptions(&options);
-  }
-#endif
 
   // Make the userdata
   camera_t *camera = (camera_t *)lua_newuserdata(L, sizeof(camera_t));
@@ -855,8 +921,7 @@ static int lua_dalsa_open(lua_State *L) {
       return 2;
     }
     // If no id string given, open the first camera seen
-    GEV_DEVICE_INTERFACE *pCameras =
-        (GEV_DEVICE_INTERFACE *)malloc(nCamera * sizeof(GEV_DEVICE_INTERFACE));
+    GEV_DEVICE_INTERFACE *pCameras = malloc(nCamera * sizeof(GEV_DEVICE_INTERFACE));
     status = GevGetCameraList(pCameras, nCamera, &nCamera);
     if (status != GEVLIB_SUCCESS || nCamera == 0) {
       free(pCameras);
@@ -972,7 +1037,7 @@ static int lua_dalsa_open(lua_State *L) {
 
   // Zero-fill the buffer structs so we have NULL pointers in
   // buffer and context pointers
-  camera->image_buffers = (uint8_t **)calloc(N_BUFFERS, sizeof(uint8_t *));
+  camera->image_buffers = calloc(N_BUFFERS, sizeof(uint8_t *));
 
   // Give to the user
   luaL_getmetatable(L, MT_NAME);
@@ -983,8 +1048,48 @@ static int lua_dalsa_open(lua_State *L) {
   return 2;
 }
 
+static int lua_dalsa_list(lua_State *L) {
+  GEV_STATUS status;
+#ifdef DEBUG
+  fprintf(stderr, "Opening new camera\n");
+#endif
+  int nCamera = GevDeviceCount();
+#ifdef DEBUG
+  fprintf(stderr, "Found %u cameras\n", nCamera);
+#endif
+  if (nCamera == 0) {
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "No cameras found.");
+    return 2;
+  }
+  // If no id string given, open the first camera seen
+  GEV_DEVICE_INTERFACE *pCameras = malloc(nCamera * sizeof(GEV_DEVICE_INTERFACE));
+  status = GevGetCameraList(pCameras, nCamera, &nCamera);
+  if (status != GEVLIB_SUCCESS || nCamera == 0) {
+    free(pCameras);
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "GevGetCameraList failed.");
+    return 2;
+  }
+  lua_createtable(L, nCamera, 0);
+  for (int i = 0; i < nCamera; i++) {
+    /*
+    lua_pushliteral(L, "serial");
+    lua_pushlstring(L, pCameras[i].serial, 65);
+    lua_pushliteral(L, "addr");
+    lua_pushinteger(L, pCameras[i].ipAddr);
+    */
+    struct in_addr ip_addr;
+    ip_addr.s_addr = pCameras[i].ipAddr;
+    lua_pushstring(L, inet_ntoa(ip_addr));
+    lua_rawseti(L, -2, i + 1);
+  }
+  return 1;
+}
+
 static const struct luaL_Reg dalsa_functions[] = {
     {"initialize", lua_dalsa_initialize},
+    {"list", lua_dalsa_list},
     {"open", lua_dalsa_open},
     {"shutdown", lua_dalsa_shutdown},
     {NULL, NULL}};

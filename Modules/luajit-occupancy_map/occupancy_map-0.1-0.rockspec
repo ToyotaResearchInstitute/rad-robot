@@ -6,7 +6,7 @@ source = {
 description = {
   summary = "SLAM with Lua",
   detailed = [[
-  Simultaneous Localization and Mapping using scan matches from planar LIDAR
+  Occupancy map with scan matching support
   ]],
   homepage = "https://github.com/StephenMcGill-TRI/luajit-occupancy_map",
   maintainer = "Stephen McGill <stephen.mcgill@tri.global>",

@@ -33,13 +33,9 @@ end
 local HOSTNAME = io.popen"hostname":read"*line"
 
 local nan = 0/0
-local DEG_PER_RAD = 180/math.pi
-local RAD_PER_DEG = math.pi/180
 local ROBOT_HOME = os.getenv"ROBOT_HOME" or '.'
 local lib = {
   nan = nan,
-  RAD_TO_DEG = DEG_PER_RAD,
-  DEG_TO_RAD = RAD_PER_DEG,
   RPM_PER_MPS = 5220,
   HOSTNAME = HOSTNAME,
   ROBOT_HOME = ROBOT_HOME
@@ -52,40 +48,37 @@ local skt_mcl, skt_lcm, msg_partitioner
 local function init(options)
   if type(options)~='table' then options = {} end
   -- MCL: localhost with ttl of 0, LCM: subnet with ttl of 1
-  if has_lcm then
-    local err
-    local has_skt, skt = pcall(require, 'skt')
-    if has_skt then
-      local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
-      skt_mcl, err = skt.open{
-        address = MCL_ADDRESS,
-        port = MCL_PORT,
-        ttl = IS_MAIN and 1 or 0
-      }
-      if skt_mcl then
-        local mtu = options.mtu or 'localhost'
-        msg_partitioner = lcm_packet.new_partitioning(mtu)
-      else
-        io.stderr:write(string.format("MCL not available: %s\n",
-                                      tostring(err)))
-      end
-      local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
-      skt_lcm, err = skt.open{
-        address = LCM_ADDRESS,
-        port = LCM_PORT,
-        -- ttl = 1
-      }
-      if not skt_lcm then
-        io.stderr:write(string.format("LCM not available: %s\n",
-                                      tostring(err)))
-      end
+  if not has_lcm then return false, "No MCL" end
+  local err
+  local has_skt, skt = pcall(require, 'skt')
+  if has_skt then
+    local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
+    skt_mcl, err = skt.open{
+      address = MCL_ADDRESS,
+      port = MCL_PORT,
+      ttl = IS_MAIN and 1 or 0
+    }
+    if skt_mcl then
+      local mtu = options.mtu or 'localhost'
+      msg_partitioner = lcm_packet.new_partitioning(mtu)
+    else
+      io.stderr:write(string.format("MCL not available: %s\n",
+                                    tostring(err)))
+    end
+    local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
+    skt_lcm, err = skt.open{
+      address = LCM_ADDRESS,
+      port = LCM_PORT,
+      -- ttl = 1
+    }
+    if not skt_lcm then
+      io.stderr:write(string.format("LCM not available: %s\n",
+                                    tostring(err)))
     end
   end
   return true
 end
 lib.init = init
-
-
 
 local exit_handler = false
 lib.running = true
@@ -125,8 +118,10 @@ local function update_jitter(channel, t_us)
 end
 
 local function announce(channel, str, cnt, t_us)
-  if not (skt_mcl and channel) then
-    return false, "No channel/socket"
+  if not skt_mcl then
+    return false, "No socket"
+  elseif type(channel)~='string' then
+    return false, "No channel"
   elseif type(str)=='table' then
     str = has_logger and logger.encode(str)
   end
@@ -223,16 +218,23 @@ local function parse_arg(arguments, use_dev)
   do
     local i = 1
     local n_args = #arguments
-    while i<=n_args do
+    while i <= n_args do
       local a = arguments[i]
-      i = i + 1
       local flag = a:match"^%-%-([%w_]+)"
       if flag then
-        local val = arguments[i]
+        local val = arguments[i + 1]
         if not val then break end
-        flags[flag] = tonumber(val) or val
+        if val:lower() == 'true' then
+          flags[flag] = true
+        elseif val:lower() == 'false' then
+          flags[flag] = false
+        else
+          flags[flag] = tonumber(val) or val
+        end
+        i = i + 2
       else
         tinsert(flags, a)
+        i = i + 1
       end
     end
   end
@@ -296,13 +298,14 @@ function lib.listen(options)
   end
   local loop_rate = tonumber(options.loop_rate)
   local loop_rate1
-  local loop_fn = type(options.loop_fn)=='function' and options.loop_fn
+  local fn_loop = type(options.fn_loop)=='function' and options.fn_loop
+  local fn_debug = type(options.fn_debug)=='function' and options.fn_debug
   local t_update
   local dt_poll = 4 -- 250Hz
   local t_fn = 0
   local dt_fn
   local t_debug = 0
-  local debug_rate = 1e3
+  local debug_rate = tonumber(options.debug_rate) or 1e3
   local status = true
   local err
   while lib.running do
@@ -317,16 +320,24 @@ function lib.listen(options)
     t_update = time_us()
     if not status then lib.running = false; break end
     dt_fn = tonumber(t_update - t_fn)/1e3
-    if loop_fn and dt_fn >= loop_rate then
+    if fn_loop and dt_fn >= loop_rate then
       t_fn = t_update
       -- update_jitter("lcm_loop", t_fn)
-      loop_fn(t_update)
+      fn_loop(t_fn)
     end
-    if tonumber(t_update - t_debug)/1e3 > debug_rate then
+    local dt_debug = tonumber(t_update - t_debug)
+    if dt_debug / 1e3 > debug_rate then
       t_debug = t_update
       local jt = jitter_tbl()
-      if #jt>0 then
-        io.write(tconcat(jt, '\n'), '\n')
+      if fn_debug then
+        local msg_debug = fn_debug(t_debug)
+        if type(msg_debug)=='string' then
+          tinsert(jt, msg_debug)
+        end
+      end
+      if #jt > 0 then
+        io.write('\n', tconcat(jt, '\n'), '\n')
+        io.flush()
       end
     end
   end

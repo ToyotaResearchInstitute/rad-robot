@@ -313,7 +313,7 @@ extern "C"
   // fprintf(stderr, "aStart: %d | aGoal: %d\n", aStart, aGoal);
   // fprintf(stderr, "nNeighbors: %d\n", nNeighbors);
   // Initiate cost to go values
-  for (int i = 0; i < nNeighbors * m * n; i++) {
+  for (int i = 0; i < nNeighbors * nMatrixNodes; i++) {
     cost_to_go[i] = INFINITY;
   }
 
@@ -344,7 +344,7 @@ extern "C"
   n_directional_neighbors *= 2;
 #endif
   // fprintf(stderr, "n_directional_neighbors: %d\n", n_directional_neighbors);
-  NeighborStruct neighbors_local [n_directional_neighbors];
+  NeighborStruct neighbors_local[n_directional_neighbors];
   int angles_local[n_directional_neighbors];
   double costs_local[n_directional_neighbors];
 
@@ -371,8 +371,12 @@ extern "C"
     int j0 = ij0 / m;
     int i0 = ij0 % m;
     // Find the cost of the index
-    // fprintf(stderr, "Check costmap with ij0=%d /%lu\n",ij0, nMatrixNodes);
+
     double costmap_of_self = costmap[ij0];
+    // fprintf(stderr, "Check costmap with ij0=%d / %lu: %lf\n",
+    //   ij0, nMatrixNodes, costmap_of_self);
+    // fprintf(stderr, "Check costmap (%d, %d): %lf\n",
+    //   i0, j0, costmap_of_self);
 
     int i_nbr = 0;
     // Non-negative heading index:
@@ -383,7 +387,7 @@ extern "C"
       angles_local[i_nbr] = a1;
       // fprintf(stderr, "i_nbr: %d | a0: %d | ashift: %d | a1: %d\n", i_nbr, a0, ashift, a1);
       neighbors_local[i_nbr] = neighbors0[a1];
-      double dir_cost = (shift_amount == 0) ? 1 : (TURN_COST * abs(ashift));
+      double dir_cost = (ashift == 0) ? 1 : (TURN_COST * abs(ashift));
       costs_local[i_nbr] = dir_cost;
       i_nbr++;
     }
@@ -394,7 +398,7 @@ extern "C"
       angles_local[i_nbr] = a1;
       int a2 = (a0 + nNeighbors + ashift + nNeighbors / 2) % nNeighbors;
       neighbors_local[i_nbr] = neighbors0[a2];
-      double dir_cost = (shift_amount == 0) ? 1 : (TURN_COST * abs(ashift));
+      double dir_cost = (ashift == 0) ? 1 : (TURN_COST * abs(ashift));
       // fprintf(stderr, "Fwd: %d -> Back: %d | Cost: %lf\n", a1, a2, dir_cost);
       costs_local[i_nbr] = 4 * dir_cost;
       i_nbr++;
@@ -423,30 +427,29 @@ extern "C"
         continue;
       }
 
-      // Current cost to go from this node to the goal
-      int ind1 = i1 + m * j1 + nMatrixNodes * a1;
+      // Current cost to go from neighbor node to the goal
+      int ij1 = i1 + m * j1;
+      int ind1 = ij1 + nMatrixNodes * a1;
       // fprintf(stderr, "Checking ind1=%d / %lu\n", ind1, nMatrixNodes * nNeighbors);
       double c2g = cost_to_go[ind1];
 
-      // Try to go to this neighbor from our current cell
-      double cost = costmap_of_self;
-
 #ifdef USE_RAYTRACE_NEIGHBOR_COSTS
+      double cost = costmap_of_self;
       // Raytracing cost
       // Number of cells towards our neighbor
       int koffset = floor(dist_nbr);
       for (int k = 1; k <= koffset; k++) {
-        // int ik = i0 - (k*ioffset)/koffset;
-        // int jk = j0 - (k*joffset)/koffset;
-        // int ind = m*jk+ik;
-        int ind = ij0 + (k * (m * joffset + ioffset)) / koffset;
+        int ik = i0 - (k*ioffset)/koffset;
+        int jk = j0 - (k*joffset)/koffset;
+        int ind = m*jk+ik;
+        // int ind = ij0 + (k * (m * joffset + ioffset)) / koffset;
         // fprintf(stderr, "ij0: %d | ind: %d | nMatrixNodes %lu\n", ij0, ind, nMatrixNodes);
         cost += costmap[ind];
       }
       // cost /= koffset;
       // cost /= dist_nbr;
 #else
-      cost *= dist_nbr;
+      double cost = 0.5 * (costmap_of_self + costmap[ij1]) * (dist_nbr);
 #endif
       // fprintf(stderr, "cost=%lf\n", cost);
 
@@ -454,7 +457,8 @@ extern "C"
       // double turn_cost_factor = (ashift == 0) ? 1 : (TURN_COST * abs(ashift));
       double turn_cost_factor = costs_local[i_nbr];
       double c1 = c0 + cost * turn_cost_factor;
-      // fprintf(stderr, "cost1=%lf\n", cost);
+      // fprintf(stderr, "turn_cost_factor=%lf\n", turn_cost_factor);
+      // double c1 = c0 + cost;
 
       if (c1 < c2g) {
         // Heuristic cost:
@@ -465,7 +469,6 @@ extern "C"
           Q.erase(Q.find(CostNodePair(c2g + h1, ind1)));
         }
         // Update the map cost
-        // fprintf(stderr, "Update with ind1=%d /%lu\n", ind1, nMatrixNodes * nNeighbors);
         cost_to_go[ind1] = c1;
         Q.insert(CostNodePair(f1, ind1));
       }
@@ -474,3 +477,21 @@ extern "C"
 
   return 0;
 }
+
+/*
+  [cost_to_go, next_index] = dijkstra_graph(A, goal_index)
+  where connected edge costs i->j are given as positive entries
+  in the sparse adjacency matrix A(i,j).
+
+  dist is the cost to go to the goal node
+  next_index containts the next index to traverse
+
+
+typedef pair<double,int> di;  // (cost, from node)
+typedef vector<di> vdi; // edge list for a single to node
+typedef vector<vdi> vvdi; // vector of edge lists to all nodes
+
+static int lua_dijkstra_graph(lua_State *L) {
+  return 0;
+}
+*/

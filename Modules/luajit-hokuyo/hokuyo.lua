@@ -9,7 +9,6 @@ local tinsert = require'table'.insert
 local cos = require'math'.cos
 local sin = require'math'.sin
 local floor = require'math'.floor
-local DEG_TO_RAD = math.pi/180
 
 local command_names = {
   VV = 'version',
@@ -28,7 +27,7 @@ local thetas = {}
 local np = 1081 -- NOTE: Be careful about other hokuyo models
 -- for i=-floor(np/2), floor(np/2) do
 for i=floor(np/2), -floor(np/2),-1 do
-  tinsert(thetas, i * DEG_TO_RAD / 4)
+  tinsert(thetas, math.rad(0.25 * i))
 end
 assert(#thetas==np, "Bad angle calculation")
 
@@ -162,6 +161,10 @@ local PKT_MAP = 6
 local PKT_END = 7
 local PKT_CMD_MULTISCAN = 8
 local PKT_CMD_SINGLESCAN = 9
+local function update(str, obj, pkt)
+
+end
+
 function lib.update(new_data)
   local str = ''
   local pkt_state = PKT_START

@@ -1,118 +1,106 @@
--- Torch/Lua Kalman Filter based Ball tracker test script
--- (c) 2013 Stephen McGill
-
-local torch = require 'torch'
-torch.Tensor = torch.DoubleTensor
-local libKalman = require 'libKalman'
+#!/usr/bin/env luajit
+local kalman = require 'kalman'
+local vector = require'vector'
+local unpack = unpack or require'table'.unpack
 -- set the seed
 math.randomseed(1234)
 
--- Debugging options
-local show_kalman_gain = false
-local debug_each_state = false
-local test_two = true
+if TEST_LINEAR then
+  -- 4 dimensional kalman filter: {px, py vx vy}
+  local sz_state = 4
+  local nIter = 1e3
 
--- 3 dimensional kalman filter
-local myDim = 10;
-local nIter = 5000;
--- Control input
-local u_k_input = torch.Tensor( myDim ):zero()
--- Set the observations
-local obs1 = torch.Tensor( myDim ):zero()
+  -- Initialize the filter
+  local kalman1 = kalman.rolling({
+    nDim = sz_state,
+    state = {0,0,1,0}
+  })
+  -- Control input
+  local sz_input = 0
+  local u_k_input = sz_input > 0 and vector.zeros(sz_input)
+  -- Set the observations
+  local sz_obs = 2
+  local obs1 = vector.zeros(sz_obs)
 
--- Initialize the filter
-local kalman1 = libKalman.new_filter(myDim)
-local x,P = kalman1:get_state()
+  local x, P = kalman1:get_state()
 
-if test_two then
-  kalman2 = libKalman.new_filter(myDim)
-  obs2 = torch.Tensor(myDim):zero()
+  -- Print the initial state
+  print("Initial state:", table.concat(x, ", "))
+
+  -- Begin the test loop
+  for i=1,nIter do
+    print()
+    print('Iteration',i)
+
+    -- Perform prediction
+    kalman1:predict(u_k_input)
+    local x_pred, P_pred = kalman1:get_prior()
+    print("Prior:", table.concat(x_pred, ", "))
+    print(P_pred)
+
+    -- Make an observation
+    obs1[1] = i + .2*(math.random()-.5)
+    for p=2,sz_obs-1 do
+      obs1[p] = i/p + 1/(5*p)*(math.random()-.5)
+    end
+    print("Observation:", table.concat(obs1, ", "))
+
+    -- Perform correction
+    kalman1:correct( obs1 )
+    x, P = kalman1:get_state()
+
+    print("Corrected:", table.concat(x, ", "))
+    print(P)
+
+    print("Kalman gain")
+    print(kalman1.K_k)
+    print(kalman1.A)
+
+  end
+
+  x,P = kalman1:get_state()
+  print("Final state:", table.concat(x, ", "))
 end
 
--- Print the initial state
-local initial_str = 'Initial State:\n'
-for d=1,x:size(1) do
-	initial_str = initial_str..string.format(' %.3f',x[d])
-end
-print(initial_str)
+print()
+print()
+print("********** Unscented Kalman Filter **********")
 
--- Begin the test loop
-for i=1,nIter do
+-- Test the UKF
+local lapack = require'lapack'
+local matrix = require'matrix'
+local quaternion = require'quaternion'
+local ukf = assert(kalman.ukf())
+local dt = 0.01
 
-	-- Make an observation
-	obs1[1] = i + .2*(math.random()-.5)
-	for p=2,obs1:size(1)-1 do
-		obs1[p] = i/p + 1/(5*p)*(math.random()-.5)
-	end
+local function pukf()
+  print(string.format("RPY: %+.5f, %+.5f, %+.5f",
+    unpack(180/math.pi * vector.new(quaternion.to_rpy(ukf.orientation)))))
+  -- print(string.format("Covariance: %+.2f, %+.2f, %+.2f",
+  --     unpack(180/math.pi * vector.new(matrix.diag(ukf.orientation_cov)))))
+  print("Covariance")
+  print(180/math.pi * ukf.orientation_cov)
+  -- print(ukf.orientation_cov)
 
-	-- Perform prediction
-	kalman1:predict( u_k_input )
-	local x_pred, P_pred = kalman1:get_prior()
-	-- Perform correction
-	kalman1:correct( obs1 )
-	x,P = kalman1:get_state()
-	
-if test_two then
-	for p=1,obs2:size(1) do
-		obs2[p] = 1/obs1[p]
-	end
-	kalman2:predict( u_k_input )
-	kalman2:correct( obs2 )
+  -- local evals, evecs = lapack.eigs(ukf.orientation_cov)
+  -- print("evals", vector.new(evals))
+  -- print("evecs")
+  -- print(matrix:new(evecs))
 end
 
-	-- Print debugging information
-	if debug_each_state then
-		
-		-- Save prediction string
-		local prior_str = 'Prior:\t'
-		for d=1,x_pred:size(1) do
-			prior_str = prior_str..string.format(' %f',x_pred[d])
-		end
-		
-		-- Save observation string
-		local observation_str = 'Observe:\t'
-		for d=1,obs1:size(1) do
-			observation_str = observation_str..string.format(' %f',obs1[d])
-		end
-		
-		-- Save corrected state string
-		local state_str = 'State:\t'
-		for d=1,x:size(1) do
-			state_str = state_str..string.format(' %f',x[d])
-		end
-		
-		print('Iteration',i)
-		print(prior_str)
-		print(observation_str)
-		print(state_str)
-		if show_kalman_gain then
-			-- Save the Kalman gain and A strings
-			local kgain_str = 'Kalman gain\n'
-			local K = kalman1.K_k;
-			for i=1,K:size(1) do
-				for j=1,K:size(2) do
-					kgain_str = kgain_str..string.format('   %f',K[i][j])
-				end
-				kgain_str = kgain_str..'\n'
-			end
-			local a_str = 'A:\n'
-			local A = kalman1.A;
-			for i=1,A:size(1) do
-				for j=1,A:size(2) do
-					a_str = a_str..string.format('   %.3f',A[i][j])
-				end
-				a_str = a_str..'\n'
-			end
-			print(a_str)
-			print(kgain_str)
-		end
-	end
-	
+pukf()
+for i=1,2 do
+  print(string.format("\n== Iteration %d | %f sec", i, i * dt))
+  local gyro = vector.zeros(3)
+  gyro = gyro + 1 * (vector.rand(3) - 0.5) * 0.125 * math.pi/180
+  -- print(string.format("-- Gyro %+.2f, %+.2f, %+.2f", unpack(gyro * 180/math.pi)))
+  local accel = vector.new{0,0,1}
+  local pertub_accel = 2 * (vector.rand(3) - 0.5) * 0.01
+  accel = vector.unit(accel + pertub_accel)
+  print(string.format("-- Accel %+.5f, %+.5f, %+.5f", unpack(accel)))
+  --
+  assert(ukf:motion_gyro(gyro, dt))
+  pukf()
+  assert(ukf:correct_gravity(accel))
+  pukf()
 end
-
-x,P = kalman1:get_state()
-local final_str = 'Final State:\n'
-for d=1,x:size(1) do
-	final_str = final_str..string.format(' %.3f',x[d])
-end
-print(final_str)

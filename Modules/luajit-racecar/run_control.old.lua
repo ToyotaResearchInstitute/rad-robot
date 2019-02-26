@@ -27,6 +27,7 @@ local vel_min = 0.2
 local vel_l = 0.5 -- 0.75 --0.5
 local my_path
 local co_control
+local my_path_name
 
 -- Use tables, since easier
 local poses = {}
@@ -34,20 +35,40 @@ local lanes = {}
 local risk = {}
 
 local waypoints = {}
+
 waypoints.lane_inner = {
-  {1.5, 1}, {1.5, -0.75},
-  {1, -1.25}, {0, -1.25},
-  {-0.5, -0.75}, {-0.5, 3.5},
-  {0, 4}, {1, 4},
-  {1.5, 3.5}, {1.5, 1.5}
+  {3.5, 2}, {3.5, 1.25},
+  {3, -0.25}, {2, -0.25},
+  {1.5, 0.25}, {1.5, 4.5},
+  {2, 4}, {3, 5},
+  {3.5, 4.5}, {3.5, 2.5}
 }
 waypoints.lane_outer =  {
-  {2.1, 1.5}, {2.1, 4.25},
-  {1.6, 4.75}, {-0.75, 4.75},
-  {-1.25, 4.25}, {-1.25, -1.5},
-  {-0.75, -2}, {1.6, -2},
-  {2.1, -1.5}, {2.1, 1}
+  {4.0, 2.5}, {4.0, 4.5},
+  {3.0, 5.75}, {1.75, 5.75},
+  {0.75, 5.0},
+  {0.75, 0}, -- begin turn
+  {1.25, -0.75}, {3.0, -0.75},
+  {4.0, 0.0}, {4.0, 2.0}
 }
+-- Upper loop
+waypoints.lane_outerA =  {
+  {4.0, 3.0}, {4.0, 4.5},
+  {3.0, 5.75}, {1.75, 5.75},
+  {0.75, 5.0},
+  {0.75, 3.5}, -- begin turn
+  {1.25, 2.5}, {2.75, 2.5},
+  {4.0, 3.0},
+}
+-- Lower loop
+-- waypoints.lane_outerB =  {
+--   {4.0, 2.5}, {4.0, 4.5},
+--   {3.0, 5.75}, {1.75, 5.75},
+--   {0.75, 5.0}, {0.75, 0},
+--   {1.25, -0.75}, {3.0, -0.75},
+--   {4.0, 0.0}, {4.0, 2.0}
+-- }
+
 waypoints.lane_enter = {
   {-2.5, 1.5}, {-1.25, 1.5}
 }
@@ -68,41 +89,6 @@ for k, wps in pairs(waypoints) do
   paths[k].tree = tree
   paths[k].length = length
   paths[k].ds = ds
-end
-
--- meters
-local threshold_close = tonumber(flags.threshold_close) or 1
-
--- Give the position, path id, distance to the point
-local function fn_nearby(id_last, p_lookahead)
-  if not p_lookahead then
-    local id_nearby = id_last + 1
-    return id_nearby, my_path[id_nearby]
-  end
-  local nearby = my_path.tree:nearest(p_lookahead, threshold_close)
-  -- NOTE: nearby should be sorted by increasing distance
-  if not nearby then
-    return false, "No points nearby the path"
-  end
-  if not id_last then
-    return nearby[1].user, math.sqrt(nearby[1].dist_sq)
-  end
-  local id_nearby, dist_nearby
-  for _, nby in ipairs(nearby) do
-    if nby.user >= id_last then
-      id_nearby = nby.user
-      dist_nearby = nby.dist_sq
-      break
-    end
-  end
-  if not id_nearby then
-    return false , "No unvisited points"
-  end
-  -- Don't skip too far in a single timestep
-  -- if id_nearby > id_last + 1 then
-  --   id_nearby = id_last + 1
-  -- end
-  return id_nearby, dist_nearby
 end
 
 -- Given car pose
@@ -185,8 +171,25 @@ local function get_turn_path(path_name)
   my_path = paths[path_name or desired_turn]
   co_control = cocreate(control.pure_pursuit{
                         path=my_path,
-                        fn_nearby=fn_nearby,
                         lookahead=lookahead})
+end
+
+local function get_outer_path(path_name)
+  print("path_name input", path_name)
+  local random_path_id = math.random(2)
+  if random_path_id == 2 then
+    path_name = 'lane_outerA'
+  else
+    path_name = 'lane_outer'
+  end
+  print("path_name random", path_name)
+  my_path = paths[path_name]
+  co_control = cocreate(control.pure_pursuit{
+                        path=my_path,
+                        fn_nearby=fn_nearby,
+                        lookahead=lookahead,
+                        id_start=1})
+  return path_name
 end
 
 -- Keep looping
@@ -221,7 +224,8 @@ local function update_steering(pose_rbt)
         get_turn_path()
       end
     else
-      loop_path()
+      -- loop_path()
+      my_path_name = get_outer_path(my_path_name)
     end
     fsm_control:dispatch"done"
     return
@@ -304,7 +308,7 @@ local function update_lead(my_id)
 
   local lead_offset, id_lead = math.huge, nil
   for id, lane in pairs(lanes) do
-    print(id, my_id)
+    -- print("Lead ID", id, my_id)
     if id~=my_id and lane.name_path==my_lane.name_path then
       -- TODO: ds should be specific to the path...
       local path_offset = (lane.id_path - my_lane.id_path) * ds
@@ -353,9 +357,9 @@ local function cb_loop(t_us)
   -- For sending to the vesc
   local result = {}
   local my_state = fsm_control.current_state
-  if my_state ~= 'botStop' then
-    print("my_state", my_state)
-  end
+  -- if my_state ~= 'botStop' then
+  --   print("my_state", my_state)
+  -- end
 
   if my_state == 'botStop' then
     vel_v = 0
@@ -365,6 +369,7 @@ local function cb_loop(t_us)
     if pose_rbt then
       local info_lane, err = find_lane(pose_rbt)
       if info_lane then
+        my_path_name = info_lane.name_path
         my_path = paths[info_lane.name_path]
         print("info_lane.name_path", info_lane.name_path)
         co_control = cocreate(control.pure_pursuit{
@@ -376,8 +381,8 @@ local function cb_loop(t_us)
         elseif info_lane.name_path:match'^lane_' then
           fsm_control:dispatch"lane"
         end
-      else
-        print('info_lane', err)
+      -- else
+      --   print('info_lane', err)
       end
     end
   elseif my_state == 'botFollowLane' then
@@ -398,8 +403,8 @@ local function cb_loop(t_us)
         print(string.format("Stopping for %s | [%.2f -> %.2f]",
                             id_lead, ratio, vel_v))
       end
-    else
-      print("id_lead", lead_offset)
+    -- else
+    --   print("id_lead", lead_offset)
     end
   elseif my_state == 'botApproach' then
     local pose_rbt = poses[id_rbt]
@@ -454,5 +459,7 @@ end
 racecar.listen{
   channel_callbacks = cb_tbl,
   loop_rate = 100, -- 100ms loop
-  loop_fn = cb_loop
+  fn_loop = cb_loop
 }
+
+if log then log:close() end

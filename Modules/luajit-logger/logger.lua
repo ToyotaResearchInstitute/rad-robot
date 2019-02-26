@@ -9,6 +9,7 @@ if not has_mmap then io.stderr:write"No mmap support\n" end
 -- local usleep = require'unix'.usleep
 local utime = require'unix'.time_us
 local tconcat = require'table'.concat
+local tremove = require'table'.remove
 -- local tsort = require'table'.sort
 local unpack = unpack or require'table'.unpack
 
@@ -91,8 +92,8 @@ lib.decode = decode
 lib.encode = encode
 
 -- Do not write the index on the fly. This can be done in post
-local function write(self, obj, channel)
-  local t_us = utime()
+local function write(self, obj, channel, t_us)
+  t_us = t_us or utime()
   local str = encode(obj)
   if not str then return false, "Cannot encode" end
   channel = type(channel) == 'string' and channel or self.channel
@@ -114,8 +115,9 @@ local function write(self, obj, channel)
   local ret, err = self.f_log:write(entry)
   if not ret then return false, err end
   self.last_count = count
+  self.last_t_us = t_us
   self.n_entries_log = self.n_entries_log + 1
-  return str, count, t_us
+  return str, count, t_us, count
 end
 
 -- This is useful for log rewriting
@@ -133,6 +135,8 @@ local function write_raw(self, str, channel, t_us, count)
     return false, "Bad count type"
   elseif count < self.last_count then
     return false, "Decreasing log count"
+  elseif t_us < self.last_t_us then
+    return false, "Decreasing log times"
   end
   local hdr = lcm_hdr_t{
     SYNC_WORD,
@@ -148,12 +152,56 @@ local function write_raw(self, str, channel, t_us, count)
   }
   -- TODO: Add ftell
   local ret, err = self.f_log:write(entry)
-  if not ret then
-    return false, err
-  end
+  if not ret then return false, err end
   self.last_count = count
+  self.last_t_us = t_us
   self.n_entries_log = self.n_entries_log + 1
   return str
+end
+
+-- Just the metadata
+local function playback_meta(logname)
+  local f_log = assert(io.open(logname))
+  local lcm_hdr = ffi.new(lcm_hdr_t)
+  coyield()
+  -- Read until the end of the file
+  while f_log:read(0) do
+    -- Read the LCM header
+    local lcm_hdr_str = f_log:read(lcm_hdr_sz)
+    if #lcm_hdr_str ~= lcm_hdr_sz then break end
+    ffi.copy(lcm_hdr, lcm_hdr_str, lcm_hdr_sz)
+    local t_us = bswap(lcm_hdr.t)
+    local count = bswap(lcm_hdr.count)
+    local sz_channel = bswap(lcm_hdr.sz_channel)
+    local sz_data = bswap(lcm_hdr.sz_data)
+    f_log:seek("cur", sz_channel + sz_data)
+    coyield(sz_data, sz_channel, t_us, count)
+  end
+  f_log:close()
+end
+
+-- Playback meta and channel name
+local function playback_channel(logname)
+  local f_log = assert(io.open(logname))
+  local lcm_hdr = ffi.new(lcm_hdr_t)
+  coyield()
+  -- Read until the end of the file
+  while f_log:read(0) do
+    -- Read the LCM header
+    local lcm_hdr_str = f_log:read(lcm_hdr_sz)
+    if #lcm_hdr_str ~= lcm_hdr_sz then break end
+    ffi.copy(lcm_hdr, lcm_hdr_str, lcm_hdr_sz)
+    local t_us = bswap(lcm_hdr.t)
+    local count = bswap(lcm_hdr.count)
+    local sz_channel = bswap(lcm_hdr.sz_channel)
+    local sz_data = bswap(lcm_hdr.sz_data)
+    -- Read logged information
+    local channel_name = f_log:read(sz_channel)
+    if #channel_name~=sz_channel then break end
+    coyield(sz_data, channel_name, t_us, count)
+    f_log:seek("cur", sz_data)
+  end
+  f_log:close()
 end
 
 -- Meant to be used as a coroutine
@@ -165,14 +213,20 @@ local function playback(logname)
   while f_log:read(0) do
     -- Read the LCM header
     local lcm_hdr_str = f_log:read(lcm_hdr_sz)
+    if #lcm_hdr_str ~= lcm_hdr_sz then break end
     ffi.copy(lcm_hdr, lcm_hdr_str, lcm_hdr_sz)
+    -- assert(lcm_hdr.sync == SYNC_WORD, "Bad sync word")
     local t_us = bswap(lcm_hdr.t)
     local count = bswap(lcm_hdr.count)
     local sz_channel = bswap(lcm_hdr.sz_channel)
     local sz_data = bswap(lcm_hdr.sz_data)
     -- Read logged information
     local channel_name = f_log:read(sz_channel)
+    if #channel_name~=sz_channel then break end
+    -- TODO: Make data reading optional: return data size, instead
     local data_str = f_log:read(sz_data)
+    -- Check that enough data is recorded
+    if #data_str~=sz_data then break end
     coyield(data_str, channel_name, t_us, count)
   end
   f_log:close()
@@ -208,16 +262,23 @@ if has_mmap then
   lib.playback_mmap = playback_mmap
 end
 
+-- TODO: Function to find smallest in state
+
 -- Use callback
 local function playback_multiple(lognames, callbacks)
+  if type(callbacks)~='table' then
+    callbacks = {}
+  end
   -- Initialize the states
   local states = {}
-  for _, logname in ipairs(lognames) do
+  for ilog, logname in ipairs(lognames) do
     local co_play = coroutine.create(playback)
-    if coresume(co_play, logname) and costatus(co_play)=='suspended' then
+    local status0 = assert(coresume(co_play, logname))
+    local status1 = costatus(co_play)
+    if status0 and status1=='suspended' then
       local ok, str, ch, t_us, cnt = coresume(co_play)
       if ok and costatus(co_play)=='suspended' then
-        table.insert(states, {co_play, str, ch, t_us, cnt})
+        table.insert(states, {co_play, ilog, str, ch, t_us, cnt})
       end
     end
   end
@@ -228,7 +289,7 @@ local function playback_multiple(lognames, callbacks)
     -- Find the minimum timestamp
     local imin, tmin = 0, math.huge
     for i,s in ipairs(states) do
-      local t_us = tonumber(s[4])
+      local t_us = tonumber(s[5])
       if t_us < tmin then
         tmin = t_us
         imin = i
@@ -237,28 +298,32 @@ local function playback_multiple(lognames, callbacks)
     -- Yield the minimum
     local s = states[imin]
     if not s then break end
-    local str, ch, t_us, cnt = unpack(s, 2)
-    if callbacks then
+    local str, ch, t_us, cnt = unpack(s, 3)
+    local fn = callbacks[ch]
+    if fn then
       local obj = decode(str)
-      local fn = callbacks[ch]
-      if fn then fn(obj, t_us) end
+      fn(obj, t_us)
     end
-    coyield(str, ch, t_us, cnt)
+    -- Yield an additional index
+    local ilog_min = s[2]
+    coyield(str, ch, t_us, cnt, ilog_min)
     -- Repopulate or remove
     local co_min = s[1]
     local ok
     ok, str, ch, t_us, cnt = coresume(co_min)
+    -- Run to get the next values
     if ok and costatus(co_min)=='suspended' then
-      states[imin] = {co_min, str, ch, t_us, cnt}
+      states[imin] = {co_min, ilog_min, str, ch, t_us, cnt}
     else
-      table.remove(states, imin)
+      tremove(states, imin)
     end
   end
   return
 end
 
 -- Playback the logs
-function lib.play(lognames, use_iterator, callbacks)
+function lib.play(lognames, use_iterator, callbacks, options)
+  if type(options) ~= 'table' then options = {} end
   local coro
   if type(lognames)=='string' then
     coro = playback
@@ -333,7 +398,8 @@ function lib.new(name, log_dir, datestamp)
     fname = fname,
     f_log = f_log,
     n_entries_log = ffi.cast('uint64_t', 0),
-    last_count = ffi.cast('uint64_t', 0)
+    last_count = ffi.cast('uint64_t', 0),
+    last_t_us = ffi.cast('uint64_t', 0),
   }, mt)
 end
 

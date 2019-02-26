@@ -1,6 +1,7 @@
 -- https://learn.sparkfun.com/tutorials/9dof-razor-imu-m0-hookup-guide
 
 local lib = {}
+local tinsert = require'table'.insert
 
 -- Input payload table
 local names = {
@@ -12,12 +13,33 @@ local names = {
 --  "pitch", "roll", "yaw",
 --  "heading"
 }
+lib.names = names
 local nvals = #names
+
+local settings = {}
+for _, name in ipairs(names) do
+  if name:match"^accel" then
+    settings['a'] = true
+  elseif name:match"^gyro" then
+    settings['g'] = true
+  elseif name:match"^mag" then
+    settings['m'] = true
+  elseif name:match"^q[wxyz]$" then
+    settings['q'] = true
+  elseif name=='pitch' or name=='roll' or name=='yaw' then
+    settings['e'] = true
+  elseif name=='heading' then
+    settings['h'] = true
+  end
+end
+
+lib.settings = settings
+lib.all_settings = {'a', 'g', 'm', 'q', 'e', 'h'}
 
 local function line2vals(line)
   local vals = {}
   for val in line:gmatch"[^%, ]+" do
-    table.insert(vals, tonumber(val) or false)
+    tinsert(vals, tonumber(val) or false)
   end
   return vals
 end
@@ -76,7 +98,8 @@ lib.parse = parse
 -- buffer: current data
 local function update(pkt, obj, buffer)
   -- Append new data to our buffer
-  if pkt then buffer = buffer..pkt end
+  if type(buffer)~='string' then buffer = '' end
+  if type(pkt)=='string' then buffer = buffer..pkt end
   local iline = buffer:find('\n', 1, true)
   -- If no complete packet exists, just return
   if not iline then return obj, buffer end
@@ -85,17 +108,18 @@ local function update(pkt, obj, buffer)
   -- Take the line
   local line = buffer:sub(1, iline-1)
   -- Return the data and the buffer
-  return parse(line, obj), buffer1
+  obj = parse(line, obj)
+  return obj, buffer1
 end
 lib.update = update
 
 local coyield = require'coroutine'.yield
-function lib.co_update(pkt)
+function lib.co_update(str)
   local buffer = ''
   local obj = {}
   while true do
-    update(pkt, obj, buffer)
-    pkt = coyield(obj)
+    obj, buffer = update(str, obj, buffer)
+    str = coyield(obj)
   end
 end
 
@@ -105,6 +129,7 @@ local function co_service(devname)
   for line in f:lines() do
     coyield(parse(line))
   end
+  f:close()
 end
 
 function lib.service(devname, wrap)

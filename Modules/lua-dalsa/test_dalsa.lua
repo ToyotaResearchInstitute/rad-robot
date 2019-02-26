@@ -3,6 +3,22 @@
 print("Loading the library")
 local dalsa = require'dalsa'
 
+local interface_addresses = {}
+local ifconfig = io.popen"ifconfig":read"*all"
+for addr in ifconfig:gmatch"inet addr:(%d+%.%d+%.%d+%.%d+)" do
+--  if addr:match"^169%.254%." then
+    table.insert(interface_addresses, addr)
+--  end
+end
+
+dalsa.initialize(interface_addresses)
+
+local cameras = dalsa.list()
+if not cameras then
+  return
+end
+print("Serial numbers", unpack(cameras))
+
 print("\nFinding camera")
 local camera, serial = dalsa.open(arg[1])
 print("Open", camera, serial)

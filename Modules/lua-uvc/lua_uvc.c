@@ -94,10 +94,9 @@ static int lua_uvc_fd(lua_State *L) {
   v4l2_device *ud = lua_checkuvc(L, 1);
   if (ud->init) {
     lua_pushinteger(L, ud->fd);
-  } else {
-    return 0;
+    return 1;
   }
-  return 1;
+  return 0;
 }
 
 static int lua_uvc_get_width(lua_State *L) {

@@ -29,8 +29,16 @@ if flags.vesc then
   stty.serial(fd_vesc)
   stty.speed(fd_vesc, 115200)
 else
+  io.stderr:write("!! No physical VESC\n")
   read = function() end
   write = function() end
+end
+
+local function exit()
+  if log then log:close() end
+  close(fd_vesc)
+  fd_vesc = -1
+  return 0
 end
 
 local cmds = {
@@ -46,11 +54,29 @@ local function steering2servo(steering)
   -- Put into range of [0, 1] with 0.5 center (sign flipped, too)
   return steering / (-2 * steer_max) + 0.5
 end
-local function cb_control(obj)
-  cmds.servo = steering2servo(tonumber(obj.steering) or 0)
-  cmds.duty = tonumber(obj.duty)
-  cmds.rpm = tonumber(obj.rpm)
-  -- print("cb control")
+local function cb_control(inp)
+  local rpm = tonumber(inp.velocity)
+  local duty = tonumber(inp.duty)
+  cmds.rpm = tonumber(rpm * vesc.RPM_PER_MPS)
+  cmds.servo = steering2servo(tonumber(inp.steering) or 0)
+end
+
+local vel_min = 0.2
+local vel_max = 1
+local function parse_joystick(msg)
+  if type(msg.buttons)~='table' or type(msg.axes)~='table' then
+    return
+  end
+  cmds.servo = steering2servo(msg.axes[3] / -32767)
+  local zero_to_one = msg.axes[2] / -32767
+  cmds.duty = zero_to_one
+  local mps = vel_max * zero_to_one
+  if math.abs(mps) > vel_min then
+    cmds.rpm = mps * vesc.RPM_PER_MPS
+  else
+    -- cmds.rpm = false
+    cmds.rpm = 0
+  end
 end
 
 -- TODO: Put into VESC library
@@ -59,9 +85,8 @@ local coro_vesc = coroutine.create(vesc.update)
 -- Read to find data
 local function update_read(e)
   if e~=1 and fd_vesc >= 0 then
-    print("Reading", e)
-    close(fd_vesc)
-    fd_vesc = -1
+    print("VESC | Bad read", e)
+    exit()
     return os.exit()
   end
   -- TODO: Check the type of event:
@@ -99,11 +124,11 @@ local function cb_loop(t_us)
   end
   local pkt_duty = cmds.duty and vesc.duty_cycle(cmds.duty)
   local pkt_rpm = cmds.rpm and vesc.rpm(cmds.rpm)
-  if pkt_duty then
-    write(fd_vesc, schar(unpack(pkt_duty)))
-    cmds.duty = false
-  elseif pkt_rpm then
+  if pkt_rpm then
     write(fd_vesc, schar(unpack(pkt_rpm)))
+    cmds.duty = false
+  elseif pkt_duty then
+    write(fd_vesc, schar(unpack(pkt_duty)))
     cmds.rpm = false
   end
   -- Save the commands in the log file
@@ -113,16 +138,19 @@ end
 
 -- Listen at 100Hz
 local cb_tbl = {
-  control = cb_control
+  control = cb_control,
+  joystick = parse_joystick,
 }
 local fd_updates = {}
 if fd_vesc then
   fd_updates[fd_vesc] = update_read
 end
+
+racecar.handle_shutdown(exit)
 racecar.listen{
   channel_callbacks = cb_tbl,
   fd_updates = fd_updates,
   loop_rate = 10,
-  loop_fn = cb_loop
+  fn_loop = cb_loop
 }
-
+exit()

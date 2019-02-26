@@ -10,8 +10,8 @@ Author  : Daniel D. Lee <ddlee@seas.upenn.edu>, 05/10
 static query_node *add_query_node(query_node *query, char *key,
                                   void *query_value,
                                   long unsigned int query_value_len) {
-  query_node *new_node = (query_node *)malloc(sizeof(query_node));
-  new_node->key = (char *)malloc(strlen(key));
+  query_node *new_node = malloc(sizeof(query_node));
+  new_node->key = malloc(strlen(key));
   memcpy(new_node->key, key, strlen(key));
 
   new_node->value = malloc(query_value_len);

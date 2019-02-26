@@ -8,13 +8,13 @@ end
 
 q = require'quaternion'
 
-angle0 = 45*DEG_TO_RAD
+angle0 = math.rad(45)
 axis0 = {0,1,0}
-angle1 = 45*DEG_TO_RAD
+angle1 = math.rad(45)
 axis1 = {1,0,0}
 t = 0
-print(angle0*RAD_TO_DEG, unpack(axis0))
-print(angle1*RAD_TO_DEG, unpack(axis1))
+print(math.deg(angle0), unpack(axis0))
+print(math.deg(angle1), unpack(axis1))
 --
 q0 = q.from_angle_axis(angle0,axis0)
 q1 = q.from_angle_axis(angle1,axis1)
@@ -23,7 +23,7 @@ print('q1', unpack(q1))
 --
 qSlerp = q.slerp(q0,q1,t)
 angle, axis = q.angle_axis( qSlerp )
-print(angle*RAD_TO_DEG, unpack(axis))
+print(math.deg(angle), unpack(axis))
 
 print('=======')
 function randAA()
@@ -64,6 +64,6 @@ for i,quatp in ipairs(quatps) do
 	--local tr1 = fromQ(quatp1)
 	print("quatp", unpack(quatp))
 	print("quatp1", unpack(quatp1))
-	
+
 	--print(quatp1-quatp)
 end

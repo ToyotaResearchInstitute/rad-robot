@@ -24,4 +24,15 @@ while not data do
   end
 end
 
-for k,v in pairs(data) do print(k, v) end
+for k,v in pairs(data) do
+  print(k, v)
+  if type(v)=='table' then
+    for kk, vv in pairs(v) do
+      if type(vv)=='table' then
+        print(kk, table.concat(vv, ', '))
+      else
+        print(kk, vv)
+      end
+    end
+  end
+end

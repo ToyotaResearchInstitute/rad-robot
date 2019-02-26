@@ -49,11 +49,12 @@ const eps = 1e-4;
 const to_rainbow =
     (v, a) => { return 'hsla(' + floor(360 * v) + ', 100%, 50%, ' + a + ')'; };
 
-const n_timesteps = 100; // 75; // 100;
+const n_timesteps = 75; // 100; // 75; // 100;
 var risk_over_time = [], risk_times = [];
+var gap_over_time = [];
+var dj_over_time = [];
 
 document.addEventListener("DOMContentLoaded", function(event) {
-
   var cur = {};
 
   const munpack = msgpack5().decode;
@@ -102,7 +103,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const X_CANVAS_MIN = 0, Y_CANVAS_MIN = 0;
   var canvas_ready = false;
   const update_canvas = () => {
-    var rect = environment_svg.getBoundingClientRect();
+    const rect = environment_svg.getBoundingClientRect();
     X_CANVAS_SZ = graph_canvas.width = rect.width;
     Y_CANVAS_SZ = graph_canvas.height = rect.height;
     graph_ctx = graph_canvas.getContext('2d');
@@ -125,10 +126,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const svg2canvas = (p) => {
     return [
       X_CANVAS_SZ * (p[0] - X_SVG_MIN) / X_SVG_SZ + X_CANVAS_MIN,
-      Y_CANVAS_SZ * (p[1] - Y_SVG_MIN) / Y_SVG_SZ + X_CANVAS_MIN, p[2]
+      Y_CANVAS_SZ * (p[1] - Y_SVG_MIN) / Y_SVG_SZ + Y_CANVAS_MIN, p[2]
     ];
   };
-  const coord2svg = (p) => { return [ p[0], -p[1], -p[2] ]; };
+  // const coord2svg = (p) => { return [ p[0], -p[1], -p[2] ]; };
+  // Flip X and Y
+  const coord2svg = (p) => { return [ p[1], p[0], Math.PI / 2 - p[2] ]; };
 
   const observer_svg = document.getElementById('observers');
   const vehicles_svg = document.getElementById('vehicles');
@@ -183,7 +186,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
   three_div.appendChild(renderer.domElement);
 
   let camera = new THREE.PerspectiveCamera(
-      70, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 20);
+      // 70, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5.5);
+      // 50, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5.5);
+      40, THREE_CANVAS_WIDTH / THREE_CANVAS_HEIGHT, 0.01, 5.5);
   camera.up.set(0, 0, 1);
   // Left turn sim
   // camera.position.set(X_SVG_SZ / 16, Y_SVG_MIN + 1 * Y_SVG_SZ / 4, 1);
@@ -199,9 +204,21 @@ document.addEventListener("DOMContentLoaded", function(event) {
   //                     1);
   // camera.lookAt(-1, -1, 0);
   // Left turn RC
-  camera.position.set(X_SVG_MIN + 0 * X_SVG_SZ / 2,
-                      Y_SVG_MIN + 3 * Y_SVG_SZ / 4, 1.25);
-  camera.lookAt(-1, 1.6, 0);
+  // camera.position.set(X_SVG_MIN + 0 * X_SVG_SZ / 2,
+  //                     Y_SVG_MIN + 3 * Y_SVG_SZ / 4, 1.25);
+  // camera.lookAt(1, 1, 0);
+
+  // New Holodeck (IROS)
+  // TODO: Based on the message from LCM
+  // Roundabout
+  // camera.position.set(-1, 2.5, 1.25);
+  // camera.lookAt(4 - 1.5, 2.5, 0);
+  // Merge
+  // camera.position.set(-0.5, 2.0, 1.25);
+  // camera.lookAt(2.5, 3.25, 0);
+  // Left turn
+  camera.position.set(-1, 2.5, 1.75);
+  camera.lookAt(1.25, 2.5, 0);
 
   var light0 = new THREE.AmbientLight(0x404040); // soft white light
   scene.add(light0);
@@ -223,17 +240,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const update_road = (msg) => {
     if (has_road) {
       return;
-      }
+    }
     const lanes = msg.lanes;
     if (!lanes) {
       return;
     }
-    /*
+
     var lanes_els = lanes_svg.getElementsByClassName('lane');
     lanes.forEach((l, i, arr) => {
-      const points = l.map((coord, i) => {
-                        return coord2svg(coord).slice(0, 2).join();
-                      }).join(' ');
+      const points =
+          l.map((coord, i) => { return coord2svg(coord).slice(0, 2).join(); })
+              .join(' ');
       var el = lanes_els.item(i);
       if (!el) {
         el = document.createElementNS("http://www.w3.org/2000/svg", 'polyline');
@@ -242,11 +259,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
         // el.style.stroke = "#0F0";
         el.style.stroke = d3colors(i);
         el.style.strokeWidth = "0.1";
+        el.style.opacity = "0.25";
         lanes_svg.appendChild(el);
       }
       el.setAttributeNS(null, 'points', points);
     });
-    */
 
     // // Road shape
     // const lane_width = 0.1, lane_height = 0.025;
@@ -283,15 +300,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
   let has_obstacles = false;
   const update_obstacles = (msg) => {
-    if (has_obstacles) {
-      return;
-      }
     const obstacles = msg.obstacles;
     if (!obstacles) {
       return;
-      }
+    }
+    // if (has_obstacles) {
+    //   return;
+    // }
+    // has_obstacles = true;
     let obs_els = obstacles_svg.getElementsByClassName('obstacle');
     obstacles.forEach((obs, i) => {
+      // SVG
       const points =
           obs.map((coord) => { return coord2svg(coord).slice(0, 2).join(); })
               .join(' ');
@@ -302,41 +321,38 @@ document.addEventListener("DOMContentLoaded", function(event) {
         obstacles_svg.appendChild(el);
       }
       el.setAttributeNS(null, 'points', points);
-    });
-
-    obstacles.forEach((obs, i) => {
-      // Obstacle shape
+      // THREE.js
+      // TODO: Check if this obstacle exists already
       let obs_shape = new THREE.Shape();
       obs_shape.moveTo(obs[0][0], obs[0][1]);
       obs.forEach((v, i) => {
-        if (i == 0) {
-          return;
+        if (i > 0) {
+          obs_shape.lineTo(v[0], v[1]);
         }
-        obs_shape.lineTo(v[0], v[1]);
       });
       obs_shape.lineTo(obs[0][0], obs[0][1]);
-
+      // Geometry from the underlying shape
+      // TODO: Can we update just the shape, and the Extrude gets updated?
       let obs_geometry = new THREE.ExtrudeBufferGeometry(obs_shape, {
         steps : 1,
         depth : 0.5,
         bevelEnabled : false,
       });
-
+      // Should only perform this once per obstacle
       const obs_mesh = new THREE.Mesh(
           obs_geometry,
           new THREE.MeshLambertMaterial(
               {color : 0xFF8080, transparent : true, opacity : 0.75}));
       scene.add(obs_mesh);
     });
-
-    has_obstacles = true;
-  };
+  }; // end update_obstacles
 
   const update_vehicles = (msg) => {
     const vehicles = msg.vehicles;
     if (!vehicles) {
       return;
-      }
+    }
+    // SVG
     var vehicle_els = vehicles_svg.getElementsByClassName('vehicle');
     vehicles.map(coord2svg).forEach((v, i) => {
       var el = vehicle_els.item(i);
@@ -352,39 +368,38 @@ document.addEventListener("DOMContentLoaded", function(event) {
         // el.style.fill = "#F00";
         // el.style.stroke = "none";
         vehicles_svg.appendChild(el);
-        }
+      }
       // el.setAttributeNS(null, 'cx', v[0] || 0);
       // el.setAttributeNS(null, 'cy', v[1] || 0);
-      const x = v[0] || 0, y = v[1] || 0, a = v[2] || 0;
-      el.setAttributeNS(null, 'x', x);
-      el.setAttributeNS(null, 'y', y);
-      el.setAttributeNS(null, 'transform',
-                        "rotate(" + [ a * RAD_TO_DEG, x, y ].join() + ")");
+      el.setAttributeNS(null, 'x', v[0]);
+      el.setAttributeNS(null, 'y', v[1]);
+      const tfm_vel =
+          "rotate(" + [ v[2] * RAD_TO_DEG, v[0], v[1] ].join() + ")";
+      el.setAttributeNS(null, 'transform', tfm_vel);
     });
-
+    // THREE.js
     while (vehicles.length > veh_boxes.length) {
       const veh = veh_mesh.clone();
       scene.add(veh);
       veh_boxes.push(veh);
-      }
+    }
     while (vehicles.length < veh_boxes.length) {
       scene.remove(veh_boxes.pop());
     }
-
     vehicles.forEach((v, i) => {
       let veh = veh_boxes[i];
       veh.position.x = v[0];
       veh.position.y = v[1];
       veh.rotation.z = v[2];
     });
-
   };
 
+  /*
   const update_observer = (msg) => {
     const observer = msg.observer;
     if (!observer) {
       return;
-      }
+    }
     var obs_el = document.getElementById('observer');
     if (!obs_el) {
       obs_el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
@@ -393,7 +408,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
                             '#sweetvehicle');
       obs_el.setAttributeNS(null, 'id', 'observer');
       observer_svg.appendChild(obs_el);
-      }
+    }
     const o = coord2svg(observer);
     const x = o[0] || 0, y = o[1] || 0, a = o[2] || 0;
     obs_el.setAttributeNS(null, 'x', x);
@@ -405,48 +420,104 @@ document.addEventListener("DOMContentLoaded", function(event) {
     observer_mesh.position.x = observer[0];
     observer_mesh.position.y = observer[1];
     observer_mesh.rotation.z = observer[2];
+  };
+  */
 
+  const update_control = (msg) => {
+    const ctrl = msg.control;
+    if (!ctrl) {
+      return;
+    }
+    const id_robot = ctrl.id;
+    // Lookahead
+    const p_lookahead = ctrl.p_lookahead;
+    if (p_lookahead) {
+      var pla_el = document.getElementById('lookahead_' + id_robot);
+      if (!pla_el) {
+        pla_el =
+            document.createElementNS("http://www.w3.org/2000/svg", 'circle');
+        pla_el.setAttributeNS(null, 'id', 'lookahead_' + id_robot);
+        pla_el.setAttributeNS(null, 'r', 0.05);
+        pla_el.setAttributeNS(null, 'class', 'lookahead');
+        pla_el.style.fill = "red";
+        pla_el.style.stroke = "none";
+        observer_svg.appendChild(pla_el);
+      }
+      const pla = coord2svg(p_lookahead);
+      pla_el.setAttributeNS(null, 'cx', pla[0]);
+      pla_el.setAttributeNS(null, 'cy', pla[1]);
+    }
+
+    // Near
+    const p_near = ctrl.p_path;
+    if (p_near) {
+      var pn_el = document.getElementById('near_' + id_robot);
+      if (!pn_el) {
+        pn_el =
+            document.createElementNS("http://www.w3.org/2000/svg", 'circle');
+        pn_el.setAttributeNS(null, 'id', 'near_' + id_robot);
+        pn_el.setAttributeNS(null, 'r', 0.05);
+        pn_el.setAttributeNS(null, 'class', 'near');
+        pn_el.style.fill = "yellow";
+        pn_el.style.stroke = "none";
+        observer_svg.appendChild(pn_el);
+      }
+      const pn = coord2svg(p_near);
+      const xn = pn[0] || 0, yn = pn[1] || 0;
+      pn_el.setAttributeNS(null, 'cx', xn);
+      pn_el.setAttributeNS(null, 'cy', yn);
+    }
+
+    // Pose
+    const pose = ctrl.pose;
+    if (pose) {
+      var pose_el = document.getElementById('pose_' + id_robot);
+      if (!pose_el) {
+        pose_el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
+        pose_el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href',
+                               '#sweetvehicle');
+        pose_el.setAttributeNS(null, 'id', 'pose_' + id_robot);
+        observer_svg.appendChild(pose_el);
+      }
+      const p = coord2svg(pose);
+      pose_el.setAttributeNS(null, 'x', p[0]);
+      pose_el.setAttributeNS(null, 'y', p[1]);
+      pose_el.setAttributeNS(
+          null, 'transform',
+          "rotate(" + [ p[2] * RAD_TO_DEG, p[0], p[1] ].join() + ")");
+      // Add 3D mesh
+      // console.log("id_robot", id_robot);
+      let veh_box = id_robot == 'tri1' ? observer_mesh : veh_boxes[id_robot];
+      if (!veh_box) {
+        veh_box = veh_mesh.clone();
+        scene.add(veh_box);
+        veh_boxes[id_robot] = veh_box;
+      }
+      veh_box.position.x = pose[0];
+      veh_box.position.y = pose[1];
+      veh_box.rotation.z = pose[2];
+    }
   };
 
   const update_3D = (msg) => {
     const beliefs = msg[likelihood_selection];
     if (!beliefs) {
       return;
-      }
-    const waypoints = msg.waypoints;
+    }
 
     // Ensure we have the same lanes
     while (beliefs.length > bel_boxes.length) {
       bel_boxes.push([]);
-      }
+    }
     while (beliefs.length < bel_boxes.length) {
       bel_boxes.pop();
-      }
+    }
     while (beliefs.length > risk_boxes.length) {
       risk_boxes.push([]);
-      }
+    }
     while (beliefs.length < risk_boxes.length) {
       risk_boxes.pop();
     }
-    // Iterate through the lanes
-    msg.conditioned_risk.forEach((lr, il) => {
-      let lrisk_boxes = risk_boxes[il];
-      while (lr.length > lrisk_boxes.length) {
-        let rm = risk_mesh.clone();
-        rm.position.x = (lrisk_boxes.length - lr.length / 2) * sz_box_path;
-        scene.add(rm);
-        lrisk_boxes.push(rm);
-        }
-      while (lr.length < lrisk_boxes.length) {
-        scene.remove(lrisk_boxes.pop());
-      }
-
-      lr.map((b) => max(eps, 1 / (1 - Math.log(b)))).forEach((b, i) => {
-        let rm = lrisk_boxes[i];
-        rm.scale.z = b / sz_box_width;
-        rm.position.z = (b / 2) + sz_box_width / 2;
-      });
-    });
 
     // Iterate through the lanes
     beliefs.forEach((lb, il) => {
@@ -457,7 +528,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         bm.position.x = (lbel_boxes.length - lb.length / 2) * sz_box_path;
         scene.add(bm);
         lbel_boxes.push(bm);
-        }
+      }
       while (lb.length < lbel_boxes.length) {
         let bm = lbel_boxes.pop();
         scene.remove(bm);
@@ -469,14 +540,41 @@ document.addEventListener("DOMContentLoaded", function(event) {
         bm.position.y = (b / 2) + sz_box_width / 2;
       });
     });
+
+    // Iterate through the lanes
+    if ('conditioned_risk' in msg) {
+      msg.conditioned_risk.forEach((lr, il) => {
+        let lrisk_boxes = risk_boxes[il];
+        while (lr.length > lrisk_boxes.length) {
+          let rm = risk_mesh.clone();
+          rm.position.x = (lrisk_boxes.length - lr.length / 2) * sz_box_path;
+          scene.add(rm);
+          lrisk_boxes.push(rm);
+        }
+        while (lr.length < lrisk_boxes.length) {
+          scene.remove(lrisk_boxes.pop());
+        }
+
+        lr.map((b) => max(eps, 1 / (1 - Math.log(b)))).forEach((b, i) => {
+          let rm = lrisk_boxes[i];
+          rm.scale.z = b / sz_box_width;
+          rm.position.z = (b / 2) + sz_box_width / 2;
+        });
+      });
+    }
+
     // Apply a transform
-    if (waypoints) {
-      waypoints.forEach((lwp, il) => {
+    if ('waypoints' in msg) {
+      msg.waypoints.forEach((lwp, il) => {
         lwp.forEach((wp, i, arr) => {
           let bm = bel_boxes[il][i];
           let rm = risk_boxes[il][i];
+          if (rm === undefined || bm === undefined) {
+            return;
+          }
           bm.position.x = wp[0];
           bm.position.y = wp[1];
+
           if (i == 0) {
           } else if (i == arr.length - 1) {
           } else {
@@ -484,6 +582,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
             bm.rotation.z = rm.rotation.z =
                 Math.atan2(b[1] - a[1], b[0] - a[0]);
           }
+          // Risk
           rm.position.x = wp[0];
           rm.position.y = wp[1];
         });
@@ -491,18 +590,271 @@ document.addEventListener("DOMContentLoaded", function(event) {
     }
   };
 
+  const update_beliefs = (msg) => {
+    const beliefs = msg[likelihood_selection];
+    const waypoints = msg.waypoints;
+    if (!beliefs || !waypoints) {
+      return;
+    }
+    graph_ctx.clearRect(X_CANVAS_MIN, Y_CANVAS_MIN, X_CANVAS_SZ, Y_CANVAS_SZ);
+    // Size of squares
+    const s = svg2canvas_sz([ 0.075, 0.075 ]);
+    var beliefs_els = lanes_svg.getElementsByClassName('belief');
+    var counter = 0;
+    beliefs.forEach((lb, il) => {
+      const lwp = waypoints[il];
+      lb = lb.map((b) => 1 / (1 - Math.log(b)));
+
+      lb.forEach((b, i) => {
+        // lb.forEach((b, i) => {
+        const wp = coord2svg(lwp[i]);
+        const p = svg2canvas([ wp[0], wp[1] ]);
+        graph_ctx.fillStyle = to_jet(b, 0.75);
+        // graph_ctx.fillStyle = to_rainbow(b, 0.75);
+        graph_ctx.fillRect(p[0] - s[0] / 2, p[1] - s[0] / 2, s[0], s[1]);
+        counter += 1;
+      });
+    });
+  };
+
   const update_plot = (msg) => {
     const time = msg.t, risks = msg.risks;
     if (time === undefined || risks === undefined) {
       return;
-      }
+    }
+
+    // console.log("Gap", has_gap);
+    // console.log("Plot Msg", msg);
+
+    if (time < risk_times[risk_times.length - 1]) {
+      risk_times = [];
+      risk_over_time = [];
+      gap_over_time = [];
+      dj_over_time = [];
+    }
+    if (risk_times.length >= n_timesteps) {
+      risk_times.shift();
+      risk_over_time.forEach((r) => { r.shift(); });
+      gap_over_time.shift();
+      dj_over_time.shift();
+    }
+    const risk_acceptable = 0.075;
+
+    // Add the time indicator
+    risk_times.push(time);
+    n_risk_times = risk_times.length;
+
+    // Invert to mimic risk
+    const has_gap = msg.gap ? 0 : 1;
+    gap_over_time.push(has_gap);
+
+    // As the car approaches the intersection: Shows nudging behavior
+    const d_j = msg.d_j;
+    dj_over_time.push(d_j);
+
+    var data;
+    const tclear_checks = msg.tclear_checks;
+    const risk_checks = msg.risk_checks;
+
+    // Default plot layout
+    var layout = {
+      title : 'Intersection Risk to Go',
+      font : {
+        family : 'Times',
+        // family: 'Courier New, monospace',
+        size : 18,
+        // color: '#7f7f7f'
+      },
+      showlegend : true,
+      legend : {borderwidth : 1},
+      xaxis : {
+        title : 'time (s)',
+        titlefont : {size : 16},
+        showgrid : false,
+        zeroline : false
+      },
+      yaxis : {
+        title : 'Conditioned Risk',
+        titlefont : {size : 16},
+        showgrid : false,
+        zeroline : false,
+        // range : [ 0, 2.5 ]
+        range : [ 0, 2 ]
+      },
+      width : 840,
+      height : 560,
+      // width : 720,
+      // height : 480,
+      datarevision : time,
+      // plot_bgcolor : "lightgray",
+      plot_bgcolor : "#EEEEEE",
+      // paper_bgcolor : "#FFF3"
+    };
+
+    const linings = [ 'solid', 'dash', 'dot', 'dashdot' ];
+
+    if (d_j && false) {
+      layout.xaxis.title = 'd<sub>e</sub>';
+      layout.datarevision = d_j;
+      msg.risk_checks.forEach((risks, i) => {
+        var r = risks[risks.length - 1];
+        // r = Math.log(r);
+        // r = 1 / (1 - Math.log(r));
+        if (i >= risk_over_time.length) {
+          risk_over_time[i] = [ r ];
+        } else {
+          risk_over_time[i].push(r);
+        }
+      });
+      data = risk_over_time.map((r, i, arr) => {
+        const idx_lining = i % linings.length;
+        const tc = tclear_checks[i];
+        const my_tclear = r.map(() => tc);
+        return {
+          x : dj_over_time,
+          y : r,
+          type : 'scatter',
+          mode : 'lines',
+          name : 't<sub>c</sub> = ' + tc.toFixed(1) + 's',
+          line : {
+            dash : linings[idx_lining],
+            width : 2 + 3 * (i - idx_lining) / linings.length,
+            // color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+            color : d3colors(i),
+          }
+        };
+      });
+      data.push({
+        showscale : false,
+        x : [ dj_over_time[0], dj_over_time[n_risk_times - 1] ],
+        y : [ risk_acceptable, risk_acceptable ],
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'r<sub>go</sub> = ' + risk_acceptable.toFixed(3),
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'green',
+        },
+        marker : {line : {color : 'black', width : 6}}
+      });
+      data.push({
+        showscale : false,
+        x : dj_over_time,
+        y : gap_over_time,
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'Gap',
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'pink',
+        }
+      });
+    } else if (tclear_checks && risk_checks) {
+      // console.log(msg.tclear_checks, msg.risk_checks);
+      // msg.risk_checks.map((r) => 1 / (1 - Math.log(r))).forEach((risks, i) =>
+      // {
+      msg.risk_checks.forEach((risks, i) => {
+        var r = risks[risks.length - 1];
+        // r = Math.log(r);
+        // r = 1 / (1 - Math.log(r));
+        if (i >= risk_over_time.length) {
+          risk_over_time[i] = [ r ];
+        } else {
+          risk_over_time[i].push(r);
+        }
+      });
+
+      data = risk_over_time.map((r, i, arr) => {
+        const idx_lining = i % linings.length;
+        const tc = tclear_checks[i];
+        const my_tclear = r.map(() => tc);
+        // console.log(risk_times, r, my_tclear);
+        return {
+          x : risk_times,
+          y : r,
+          type : 'scatter',
+          mode : 'lines',
+          name : 't<sub>c</sub> = ' + tc.toFixed(1) + 's',
+          line : {
+            dash : linings[idx_lining],
+            width : 3 + 3 * (i - idx_lining) / linings.length,
+            // color : to_jet0(i / (arr.length - 1)) || d3colors(i),
+            color : d3colors(i),
+          }
+        };
+      });
+      data.push({
+        showscale : false,
+        x : [ risk_times[0], risk_times[n_risk_times - 1] ],
+        y : [ risk_acceptable, risk_acceptable ],
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'r<sub>go</sub> = ' + risk_acceptable.toFixed(3),
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'violet',
+        },
+        marker : {line : {color : 'black', width : 6}}
+      });
+      data.push({
+        showscale : false,
+        x : risk_times,
+        y : gap_over_time,
+        type : 'scatter',
+        mode : 'lines+markers',
+        name : 'Gap',
+        opacity : 0.5,
+        line : {
+          dash : 'solid',
+          width : 3,
+          color : 'pink',
+        }
+      });
+    } else {
+      // risk.map((b) => 1 / (1 - Math.log(b))).forEach((r, i) => {
+      risks.forEach((r, i) => {
+        if (i >= risk_over_time.length) {
+          risk_over_time[i] = [ r ];
+        } else {
+          risk_over_time[i].push(r);
+        }
+      });
+
+      data = risk_over_time.map((r, i, arr) => {
+        return {
+          x : risk_times,
+          y : r,
+          line : {color : to_jet(i / arr.length) || d3colors(i)},
+          mode : 'lines',
+          name : 'lane' + i,
+          type : 'scatter',
+        };
+      });
+      data[data.length - 1].name = 'total';
+      data[data.length - 1].line.color = d3colors(9);
+    }
+
+    Plotly.react(graph_div, data, layout);
+  };
+  /*
+  const update_plot = (msg) => {
+    const time = msg.t, risks = msg.risks;
+    if (time === undefined || risks === undefined) {
+      return;
+    }
+    // console.log("Plot Msg", msg);
 
     if (time < risk_times[risk_times.length - 1]) {
       // risk_times = [];
       // risk_over_time = [];
       return;
-      }
-    else if (risk_times.length >= n_timesteps) {
+    } else if (risk_times.length >= n_timesteps) {
       risk_times.shift();
       risk_over_time.forEach((r) => { r.shift(); });
     }
@@ -539,7 +891,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
           y : my_tclear,
           type : 'scatter3d',
           mode : 'lines',
-          // type : 'surface',
           name : 't_clear=' + tc.toFixed(2),
           line : {
             width : 12,
@@ -584,7 +935,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       });
       data[data.length - 1].name = 'total';
       data[data.length - 1].line.color = d3colors(9);
-      }
+    }
 
     var layout = {
       title : 'Intersection Risk to Go',
@@ -609,19 +960,20 @@ document.addEventListener("DOMContentLoaded", function(event) {
           titlefont : {size : 32},
           range : [ 2, 4.5 ]
         },
-        zaxis :
-            {range : [ 0, 2.5 ], /*title : 'Risk', titlefont : {size : 32},*/},
+        zaxis : {
+            range : [ 0, 2.5 ],
+            // title : 'Risk', titlefont : {size : 32},
+          },
       },
       width : 720,
       height : 720,
       datarevision : time
     };
     Plotly.react(graph_div, data, layout);
-
   };
+  */
 
   ws.onmessage = (e) => {
-    // console.log(e.data);
     var msg = munpack(new Uint8Array(e.data));
     Object.assign(cur, msg);
 
@@ -634,48 +986,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
     update_road(msg);
     update_obstacles(msg);
     update_vehicles(msg);
-    update_observer(msg);
+    // update_observer(msg);
     update_plot(msg);
-
-    if (msg.control !== undefined) {
-      // Lookahead
-      const p_lookahead = msg.control.p_lookahead;
-      if (p_lookahead) {
-        var pla_el = document.getElementById('lookahead');
-        if (!pla_el) {
-          pla_el =
-              document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-          pla_el.setAttributeNS(null, 'id', 'lookahead');
-          pla_el.setAttributeNS(null, 'r', 0.05);
-          pla_el.style.fill = "red";
-          pla_el.style.stroke = "none";
-          observer_svg.appendChild(pla_el);
-          }
-        const pla = coord2svg(p_lookahead);
-        const xla = pla[0] || 0, yla = pla[1] || 0;
-        pla_el.setAttributeNS(null, 'cx', xla);
-        pla_el.setAttributeNS(null, 'cy', yla);
-        }
-
-      // Near
-      const p_near = msg.control.p_nearby;
-      if (p_near) {
-        var pn_el = document.getElementById('near');
-        if (!pn_el) {
-          pn_el =
-              document.createElementNS("http://www.w3.org/2000/svg", 'circle');
-          pn_el.setAttributeNS(null, 'id', 'near');
-          pn_el.setAttributeNS(null, 'r', 0.05);
-          pn_el.style.fill = "yellow";
-          pn_el.style.stroke = "none";
-          observer_svg.appendChild(pn_el);
-          }
-        const pn = coord2svg(p_near);
-        const xn = pn[0] || 0, yn = pn[1] || 0;
-        pn_el.setAttributeNS(null, 'cx', xn);
-        pn_el.setAttributeNS(null, 'cy', yn);
-      }
-      }
+    update_control(msg);
+    update_beliefs(msg);
 
     const trajectory_turn = msg.trajectory_turn;
     if (trajectory_turn) {
@@ -683,10 +997,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
       trajectory_turn.forEach((l, i) => {
         if (i > 0) {
           return;
-          }
-        const points = l.map((coord, i) => {
-                          return coord2svg(coord).slice(0, 2).join();
-                        }).join(' ');
+        }
+        const points =
+            l.map((coord, i) => { return coord2svg(coord).slice(0, 2).join(); })
+                .join(' ');
         var el = trajectory_turn_els.item(i);
         if (!el) {
           el = document.createElementNS("http://www.w3.org/2000/svg",
@@ -700,37 +1014,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
         }
         el.setAttributeNS(null, 'points', points);
       });
-      }
-
-    const beliefs = msg[likelihood_selection];
-    const waypoints = msg.waypoints;
-    if (beliefs && waypoints) {
-      graph_ctx.clearRect(X_CANVAS_MIN, Y_CANVAS_MIN, X_CANVAS_SZ, Y_CANVAS_SZ);
-      // Size of squares
-      const s = svg2canvas_sz([ 0.075, 0.075 ]);
-      var beliefs_els = lanes_svg.getElementsByClassName('belief');
-      var counter = 0;
-      beliefs.forEach((lb, il) => {
-        const lwp = waypoints[il];
-        lb = lb.map((b) => 1 / (1 - Math.log(b)));
-
-        lb.forEach((b, i) => {
-          // lb.forEach((b, i) => {
-          const wp = coord2svg(lwp[i]);
-          const p = svg2canvas([ wp[0], wp[1] ]);
-          graph_ctx.fillStyle = to_jet(b, 0.75);
-          // graph_ctx.fillStyle = to_rainbow(b, 0.75);
-          graph_ctx.fillRect(p[0] - s[0] / 2, p[1] - s[0] / 2, s[0], s[1]);
-          counter += 1;
-        });
-      });
-      }
+    }
 
     const time = msg.t;
     if (time !== undefined) {
       info_div.innerHTML =
           [ time.toFixed(2), msg.go ? "Go" : "No Go" ].join('<br/>');
-      }
+    }
     const risks = msg.risks;
 
     if ('viewBox' in msg) {
@@ -739,15 +1029,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
       if (changed) {
         // console.log("Changed viewBox", msg.viewBox, viewBox);
         viewBox = msg.viewBox;
-        environment_svg.setAttribute('viewBox', viewBox.join(' '));
-        X_SVG_MIN = parseFloat(viewBox[0]);
-        Y_SVG_MIN = parseFloat(viewBox[1]);
-        X_SVG_SZ = parseFloat(viewBox[2]);
-        Y_SVG_SZ = parseFloat(viewBox[3]);
+        // Must flip the coordinates...
+        X_SVG_MIN = parseFloat(viewBox[1]);
+        Y_SVG_MIN = parseFloat(viewBox[0]);
+        X_SVG_SZ = parseFloat(viewBox[3]);
+        Y_SVG_SZ = parseFloat(viewBox[2]);
+        environment_svg.setAttribute('viewBox', X_SVG_MIN + ' ' + Y_SVG_MIN +
+                                                    ' ' + X_SVG_SZ + ' ' +
+                                                    Y_SVG_SZ);
         update_canvas();
       }
     }
-
   };
   // Handle the radio change
   var rad = document.likelihoodSelection.likelihood;
@@ -762,7 +1054,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
   for (var i = 0; i < rad.length; i++) {
     // rad[i].onchange = radioHandler;
     rad[i].addEventListener('change', radioHandler);
-    }
+  }
 
   var img_video1 = document.getElementById('video1');
   var img_video2 = document.getElementById('video2');
@@ -777,7 +1069,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       window.URL.revokeObjectURL(img_video1.src);
       img_video1.src = window.URL.createObjectURL(blobJ);
       // img_camera.onload = (e) => { console.log("done") };
-      }
+    }
     const video2 = cur.video2;
     if (video2) {
       cur.video2 = false;
@@ -785,7 +1077,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       window.URL.revokeObjectURL(img_video2.src);
       img_video2.src = window.URL.createObjectURL(blobJ);
       // img_camera.onload = (e) => { console.log("done") };
-      }
+    }
     const video3 = cur.video3;
     if (video3) {
       cur.video3 = false;
@@ -797,5 +1089,4 @@ document.addEventListener("DOMContentLoaded", function(event) {
   };
 
   draw();
-
 });

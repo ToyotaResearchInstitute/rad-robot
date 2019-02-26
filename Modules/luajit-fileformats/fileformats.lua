@@ -26,7 +26,9 @@ function lib.load_netpbm(fname)
   else
     f_pgm = io.open(fname)
   end
-  if not f_pgm then return false end
+  if not f_pgm then
+    return false, "Could not open"
+  end
 
   local state = "magic"
   local comments = {}
@@ -59,6 +61,7 @@ function lib.load_netpbm(fname)
   if magic ~="P5" then return false, "Bad magic" end
   if maxval~=255 then return false, "Bad maxval" end
   local n_cells = width * height
+  local n_channels = 1
   local map
   if magic=='P5' then
     if has_ffi and has_unix then
@@ -77,11 +80,14 @@ function lib.load_netpbm(fname)
     end
   elseif magic=='P6' then
     -- RGB
+    n_channels = 3
     if has_ffi and has_unix then
-      map = ffi.new("uint8_t[?]", 3*n_cells)
-      unix.fread(f_pgm, map, 3*n_cells)
+      map = ffi.new("uint8_t[?]", 3 * n_cells)
+      unix.fread(f_pgm, map, 3 * n_cells)
     end
   elseif magic=='P3' then
+    -- RGB
+    n_channels = 3
     map = {}
     for l in f_pgm:lines() do
       -- gmatch each number
@@ -94,28 +100,35 @@ function lib.load_netpbm(fname)
     end
   end
   f_pgm:close()
-  return map, width, height, comments
+  return map, {width, height, n_channels}, comments
 end
 
-function lib.save_netpbm(fname, map, width, height, resolution, offset)
+function lib.save_netpbm(fname, map, width, height, comments, maxval)
   local f_pgm
-  if fname:match"%.gz$" then
+  if io.type(fname)=='file' then
+    f_pgm = fname
+  elseif fname:match"%.gz$" then
     f_pgm = io.popen("gzip > "..fname, "w")
   else
     f_pgm = io.open(fname, "w")
   end
   if not f_pgm then return false end
-
-  local maxval = 255
+  if type(comments)~='table' then
+    comments = {}
+  end
+  maxval = max(0, min(tonumber(maxval) or 255, 255))
   if type(map) == 'table' then
     local header = {
       "P2",
-      sformat("%d %d", width, height),
-      maxval,
-      sformat('# resolution: %.2f', tonumber(resolution) or 0),
-      sformat('# offset: %.2f', tonumber(offset) or 0),
     }
-    f_pgm:write(tconcat(header, "\n"), "\n")
+    for k, v in pairs(comments) do
+      local comment = string.format("# %s: %s", tostring(k), tostring(v))
+      tinsert(header, comment)
+    end
+    tinsert(header, sformat("%d %d", width, height))
+    tinsert(header, sformat("%d", maxval))
+    tinsert(header, '')
+    f_pgm:write(tconcat(header, "\n"))
     local line = {}
     for row in map do
       for i, el in ipairs(row) do
@@ -126,19 +139,23 @@ function lib.save_netpbm(fname, map, width, height, resolution, offset)
   else
     local header = {
       "P5",
-      sformat('# resolution: %.2f', tonumber(resolution) or 0),
-      sformat('# offset: %.2f', tonumber(offset) or 0),
-      sformat("%d %d", width, height),
-      maxval,
-      ''
     }
+    for k, v in pairs(comments) do
+      tinsert(header, sformat('# %s: %s', tostring(k), tostring(v)))
+    end
+    tinsert(header, sformat("%d %d", width, height))
+    tinsert(header, sformat("%d", maxval))
+    tinsert(header, "")
     local hdr = tconcat(header, "\n")
     -- f_pgm:write(hdr, "\n")
     unix.fwrite(f_pgm, hdr, #hdr)
     unix.fwrite(f_pgm, map, width * height)
   end
-  f_pgm:close()
-  return true
+  if io.type(fname)=='file' then
+    return true
+  else
+    return f_pgm:close()
+  end
 end
 
 local function ply_header(n)
