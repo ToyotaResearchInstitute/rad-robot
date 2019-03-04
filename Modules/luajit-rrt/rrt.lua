@@ -1,6 +1,7 @@
 -- Rapidly-exploring Random Trees
 local lib = {}
 local kdtree = require'kdtree'
+local has_dubins, dubins = pcall(require, 'dubins')
 local unpack = unpack or require'table'.unpack
 local systems = {}
 
@@ -56,9 +57,11 @@ local function is_collision0() return false end
 
 local function trace0(self)
   local path_xy = {reversed=true}
+  local length = 0
   local cur = self.goal
   while cur.parent do
     local dist, dists = self:distState(cur.parent, cur)
+    length = length + dist
     local incrementTotal = dist / self.DISCRETIZATION_STEP
     for j=1,#dists do dists[j] = dists[j] / incrementTotal end
     local inter = {unpack(cur.parent)}
@@ -84,7 +87,7 @@ local function trace0(self)
     -- end
     cur = cur.parent
   end
-  return path_xy
+  return path_xy, length
 end
 
 -- Walk from state to goal
@@ -318,6 +321,7 @@ local function plan(self, start, goal)
   self.kd:insert(self.start, self.start.id)
   self.tree[self.start.id] = self.start
   -- Do not add the goal to the kd-tree
+  return self
 end
 
 -- Input: list of min and max for each dimension {{a,b},{c,d},...}
@@ -365,39 +369,11 @@ function lib.new(parameters)
   return obj
 end
 
-local has_ffi, ffi = pcall(require, 'ffi')
-local dubins
-if has_ffi then
-  ffi.cdef[[
-  typedef enum
-  {
-      LSL = 0,
-      LSR = 1,
-      RSL = 2,
-      RSR = 3,
-      RLR = 4,
-      LRL = 5
-  } DubinsPathType;
-  typedef struct
-  {
-      /* the initial configuration */
-      double qi[3];
-      /* the lengths of the three segments */
-      double param[3];
-      /* model forward velocity / model angular velocity */
-      double rho;
-      /* the path type described */
-      DubinsPathType type;
-  } DubinsPath;
-  int dubins_shortest_path(DubinsPath* path, double q0[3], double q1[3], double rho);
-  double dubins_path_length(DubinsPath* path);
-  int dubins_path_sample(DubinsPath* path, double t, double q[3]);
-  ]]
-  dubins = ffi.load"dubins"
-end
-
 
 function systems.dubins(parameters)
+  if not has_dubins then
+    return false, dubins
+  end
   parameters = parameters or {}
   local sys = {}
   -- circular_obstacles: {{x_center, y_center, radius}, ...}
@@ -445,15 +421,13 @@ function systems.dubins(parameters)
   local TURNING_RADIUS = parameters.TURNING_RADIUS or 1
   function sys.distState(self, from, to)
     -- Check if close enough to each other...?
-    local path = ffi.new"DubinsPath"
-    local q0 = ffi.new("double[3]", from)
-    local q1 = ffi.new("double[3]", to)
-    -- Should return the extra information
-    local ret = dubins.dubins_shortest_path(
-      path, q0, q1, TURNING_RADIUS)
-    if ret~=0 then return false, "Bad Dubins path" end
+    local path, err = dubins.shortest_path(from, to, TURNING_RADIUS)
+    if not path then return
+      false, err
+    end
     -- Give the length and the path
-    local length = dubins.dubins_path_length(path)
+    local length = dubins.path_length(path)
+    -- Should return the extra information
     return length, path
   end
 
@@ -463,16 +437,14 @@ function systems.dubins(parameters)
       length, path = self:distState(state, target)
     end
     if not length then
-      length = dubins.dubins_path_length(path)
+      length = dubins.path_length(path)
     end
     -- Walk along the path and check for collisions
     local step_size = self.DISCRETIZATION_STEP -- meters
     ----[[
-    local q = ffi.new("double[3]")
     local t = 0
     while t < length do
-      dubins.dubins_path_sample(path, t, q)
-      local xya = {q[0], q[1], q[2]}
+      local xya = dubins.path_sample(path, t)
       -- Collision check this configuration
       if self:is_collision(xya) then
         return false, xya, t, path
@@ -505,20 +477,19 @@ function systems.dubins(parameters)
   function sys.trace(self)
     local step_size = self.DISCRETIZATION_STEP -- meters
     local dist = 0
-    local path_xy = {reversed=true, unpack(self.goal)}
+    local path_xy = {reversed=true, {unpack(self.goal)}}
     local cur = self.goal
     while cur.parent do
       local length, path = self:distState(cur.parent, cur)
       dist = dist + length
       -- Walk along the path and check for collisions
+      -- TODO: Use dubins.path_list
       ----[[
-      local q = ffi.new("double[3]")
       -- local t = 0
       -- while t < length do
       local t = length
       while t > 0 do
-        dubins.dubins_path_sample(path, t, q)
-        local xya = {q[0], q[1], q[2]}
+        local xya = dubins.path_sample(path, t)
         table.insert(path_xy, xya)
         -- t = t + step_size
         t = t - step_size

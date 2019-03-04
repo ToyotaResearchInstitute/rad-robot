@@ -14,6 +14,7 @@ local abs = require'math'.abs
 local atan2 = require'math'.atan2
 local cos = require'math'.cos
 local sin = require'math'.sin
+local ceil = require'math'.ceil
 local floor = require'math'.floor
 local log = require'math'.log
 local max = require'math'.max
@@ -42,6 +43,15 @@ local function fill(self, value)
   return self
 end
 
+local function point(self, xy, cb)
+  if type(cb) ~='function' then cb = set_max end
+  local grid = self.grid
+  local xy2idx = self.xy2idx
+  local idx = xy2idx(unpack(xy))
+  if idx then cb(grid, idx) end
+  return self
+end
+
 local function path(self, list, cb)
   if type(cb) ~='function' then cb = set_max end
   local grid = self.grid
@@ -54,15 +64,6 @@ local function path(self, list, cb)
       idx1 = idx
     end
   end
-  return self
-end
-
-local function point(self, xy, cb)
-  if type(cb) ~='function' then cb = set_max end
-  local grid = self.grid
-  local xy2idx = self.xy2idx
-  local idx = xy2idx(unpack(xy))
-  if idx then cb(grid, idx) end
   return self
 end
 
@@ -125,6 +126,8 @@ end
 
 -- Draw a filled circle
 local function circle(self, pc, rc, cb)
+  -- pc: Center point
+  -- rc: Radius from center
   if type(cb) ~='function' then cb = set_max end
   local grid = self.grid
   local scale = self.scale
@@ -157,15 +160,15 @@ end
 local function arc(self, pc, rc, a1, a2, cb)
   -- pc: Center point
   -- rc: Radius from center
-  -- a1: start angle
-  -- a2: stop angle
+  -- a1: start angle (inclusive)
+  -- a2: stop angle (inclusive)
   if type(cb) ~='function' then cb = set_max end
   local grid = self.grid
   local xy2ij, ij2idx = self.xy2ij, self.ij2idx
   local xc, yc = unpack(pc, 1, 2)
   local idx1
-  local ang_resolution = atan2(self.scale, rc)
-  if a2 < a1 then ang_resolution = -1 * ang_resolution end
+  local dir = a2 > a1 and 1 or -1
+  local ang_resolution = dir * atan2(self.scale, rc)
   for angle=a1, a2, ang_resolution do
     local c, s = cos(angle), sin(angle)
     local dx, dy = c * rc, s * rc
@@ -356,7 +359,7 @@ local function save(self, fname, options)
     outmax = min(255, vmax)
   end
   -- Try to save
-  if has_ff and fname:match"pgm$" then
+  if has_ff and fname:match"%.pgm$" then
     return ff.save_netpbm(
       fname,
       grid_to_save,
@@ -369,7 +372,7 @@ local function save(self, fname, options)
         ymax = self.ymax,
       },
       options.use_max and outmax)
-  elseif has_png and fname:match"png$" then
+  elseif has_png and fname:match"%.png$" then
     local ptr = tonumber(ffi.cast('intptr_t', ffi.cast('void *', grid_to_save)))
     local str = png.compress(ptr, self.n_cells, self.m, self.n, 1)
     if fname=='png' then
@@ -377,7 +380,7 @@ local function save(self, fname, options)
     else
       return io.open(fname, "w"):write(str):close()
     end
-  elseif has_jpeg and fname:match"jp[e]?g$" then
+  elseif has_jpeg and fname:match"%.jp[e]?g$" then
     local ptr = tonumber(ffi.cast('intptr_t', ffi.cast('void *', grid_to_save)))
     local str = c_gray:compress(ptr, self.n_cells, self.m, self.n)
     if fname=='jpeg' or fname=='jpg' then
@@ -435,12 +438,22 @@ function lib.new(params)
 
   -- Establish the grid memory
   if not obj.grid then
+    -- NOTE: Working
     obj.n = floor(obj.scale_inv * (obj.xmax - obj.xmin)) --n/j/x
     obj.m = floor(obj.scale_inv * (obj.ymax - obj.ymin)) -- m/i/y
+    -- NOTE: Try this:
+    obj.n = ceil(obj.scale_inv * (obj.xmax - obj.xmin)) --n/j/x
+    obj.m = ceil(obj.scale_inv * (obj.ymax - obj.ymin)) -- m/i/y
+    --
     obj.n_cells = obj.m * obj.n
     if type(params.grid)=='cdata' then
       obj.grid = params.grid
     else
+      if obj.n_cells >= math.huge then
+        return false, "Too many cells"
+      elseif obj.n_cells <= 0 then
+        return false, "No cells"
+      end
       obj.grid = ffi.new(datatype.."[?]", obj.n_cells)
     end
   end

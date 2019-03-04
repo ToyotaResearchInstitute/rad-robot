@@ -15,9 +15,6 @@ math.randomseed(123)
 
 local grid = require'grid'
 local atan = require'math'.atan
-local atan2 = require'math'.atan2 or require'math'.atan
-local transform = require'transform'
-local tf2D_inv = require'transform'.tf2D_inv
 local usleep = require'unix'.usleep
 local vector = require'vector'
 
@@ -27,13 +24,13 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 
 -- Test the control library
 local control = require'control'
-local generate_control_points = require'control'.generate_control_points
-local generate_path = require'control'.generate_path
+local path = require'path'
+local generate_waypoints = require'path'.generate_waypoints
+local path_from_waypoints = require'path'.path_from_waypoints
 
 -- Globally accessible variables
 local veh_poses = {}
 local desired_path = flags.path or 'outer'
-local vel_h = false
 local vel_lane0 = tonumber(flags.vel_lane) or 0.5
 local vel_lane = vel_lane0
 local vel_max = 0.75 -- 1 --0.75
@@ -179,35 +176,20 @@ routes.outerB = {
 -- These show the points before and after a turn
 local route_knots = {}
 for name, route in pairs(routes) do
-  local knots = assert(generate_control_points(route))
+  local knots = assert(generate_waypoints(route))
   route_knots[name] = knots
 end
 -- Print the knots
 for name, knots in pairs(route_knots) do
-  -- print("Route knots", name)
+  print("Route", name)
   for i, kn in ipairs(knots) do print(i, unpack(kn)) end
-end
-
--- Intersection lookup helper
-local all_knots = {
-  tree = require'kdtree'.create(2),
-  last = {n = 0}
-}
-for name, knots in pairs(route_knots) do
-  print(name, "n_knots", #knots)
-  for i, knot in ipairs(knots) do
-    local info = {name, i}
-    table.insert(all_knots, info)
-    -- Insert with the ID to the route information
-    all_knots.tree:insert(knot, #all_knots)
-  end
 end
 
 -- Go from a route to a list of points (path)
 local paths = {}
 for name, knots in pairs(route_knots) do
   g_holo:fill(0)
-  local path, length = generate_path(knots, {
+  local path, length = path_from_waypoints(knots, {
   ds = ds, grid_raster = g_holo, closed = routes[name].closed})
   assert(path, length)
   assert(#path > 0, "No points in path")
@@ -226,7 +208,7 @@ end
 local radius_roundabout1 = 1.5
 local radius_roundabout2 = 1.75
 do
-  local path, length = control.path_arc(
+  local path, length = path.path_arc(
   {2.5, 2.5}, radius_roundabout1, 0, 2 * math.pi, ds)
   path.length = length
   path.ds = ds
@@ -235,13 +217,28 @@ do
   paths.roundabout1 = path
 end
 do
-  local path, length = control.path_arc(
+  local path, length = path.path_arc(
   {2.5, 2.5}, radius_roundabout2, 0, 2 * math.pi, ds)
   path.length = length
   path.ds = ds
   path.closed = true
   control.generate_kdtree(path)
   paths.roundabout2 = path
+end
+
+-- Intersection lookup helper
+local all_knots = {
+  tree = require'kdtree'.create(2),
+  last = {n = 0}
+}
+for name, knots in pairs(route_knots) do
+  print(name, "n_knots", #knots)
+  for i, knot in ipairs(knots) do
+    local info = {name, i}
+    table.insert(all_knots, info)
+    -- Insert with the ID to the route information
+    all_knots.tree:insert(knot, #all_knots)
+  end
 end
 
 -- TODO: Paths should come from a separate program
@@ -385,7 +382,6 @@ local function cb_loop(t_us)
     assert (type(vel_lane)=='number')
 
   end
-
 
   -- TODO: Call our simulation within here? Speed/Dropped packets
   -- if RUN_SIMULATION then

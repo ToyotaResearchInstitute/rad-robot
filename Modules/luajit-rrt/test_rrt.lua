@@ -47,12 +47,9 @@ local grid_params = {
   datatype = 'double'
 }
 local costmap = grid.new(grid_params)
-
-local function color_path(map, idx, i)
-  map[idx] = 127
-end
+local function color_path(map, idx) map[idx] = 127 end
 costmap:path(path_xy, color_path)
-assert(costmap:save"/tmp/costmapRRT_path_default")
+assert(costmap:save"/tmp/costmapRRT_path_default.pgm")
 
 
 -- Test the dubins model for the car
@@ -71,16 +68,8 @@ local circular_obstacles = {
   {-2, 2, CIRCLE_RADIUS},
 }
 
-local planner_car = rrt.new{
-  intervals = intervals,
-  DISCRETIZATION_STEP = DISCRETIZATION_STEP,
-}:set_system(rrt.systems.dubins({
-  TURNING_RADIUS = 3,
-  circular_obstacles = circular_obstacles
-}))
-
 local grid_params = {
-  scale = planner_car.DISCRETIZATION_STEP,
+  scale = DISCRETIZATION_STEP,
   xmin = interval_x[1], xmax = interval_x[2],
   ymin = interval_y[1], ymax = interval_y[2],
   datatype = 'double'
@@ -91,16 +80,25 @@ local function set_obs(map, idx)
 end
 for _,c in ipairs(circular_obstacles) do
   local xc, yc, rc = unpack(c)
-  costmap:circle(xc, yc, rc, set_obs)
+  costmap:circle({xc, yc}, rc, set_obs)
 end
 
-assert(costmap:save"/tmp/costmapRRT")
+assert(costmap:save"/tmp/costmapRRT.pgm")
 
 print("Planning the car route!")
+local planner_car = assert(rrt.new{
+  intervals = intervals,
+  DISCRETIZATION_STEP = DISCRETIZATION_STEP,
+})
+local sys_dubins = assert(rrt.systems.dubins({
+  TURNING_RADIUS = 3,
+  circular_obstacles = circular_obstacles
+}))
+assert(planner_car:set_system(sys_dubins))
 
 local start = {-7.5,-7.5, 0}
 local goal = {7.5, 7.5, 0}
-planner_car:plan(start, goal)
+assert(planner_car:plan(start, goal))
 -- Periodically, check to find the best trajectory
 -- Should do this within a computational bound
 local i = 0
@@ -121,9 +119,12 @@ repeat
 until dt > 5
 
 local path_xy, path_length = assert(planner_car:trace())
-print("Path", path_length)
-local function color_path(map, idx, i)
-  map[idx] = 127
+print("path_xy", path_xy)
+for i, v in ipairs(path_xy) do
+  print(i, v)
 end
+
+print("Path length", path_length)
+local function color_path(map, idx, i) map[idx] = 127 end
 costmap:path(path_xy, color_path)
-assert(costmap:save"/tmp/costmapRRT_path")
+assert(costmap:save"/tmp/costmapRRT_path.pgm")
