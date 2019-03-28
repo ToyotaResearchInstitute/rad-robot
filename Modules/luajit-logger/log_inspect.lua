@@ -9,33 +9,13 @@ local tinsert = require'table'.insert
 
 -- TODO: Use stringify
 local has_cjson, cjson = pcall(require, 'cjson')
-local stringify = false
+local stringify
 if has_cjson then
   stringify = cjson.encode
 else
   io.stderr:write"WARNING | No CJSON\n"
-end
-
-if not fname:match(logger.iso8601_match) then
-  io.stderr:write"WARNING | Bad log datestamp\n"
-end
-
-local function inspect(str, ch, t_us, count)
-  if not ch:find(ch_pattern) then return end
-  local obj = logger.decode(str)
-  -- io.write(sformat("[%s][%d] # t_us: %d | %s\n",
-  --   ch, tonumber(count), tonumber(t_us), type(obj)))
-  local info = {
-    string.format('"channel": "%s"', tostring(ch)),
-    string.format('"count": %d', tonumber(count)),
-    string.format('"t_us": %d', tonumber(t_us)),
-  }
-  if type(obj)=='string' then
-    tinsert(info, sformat('"sz_payload": %d', #str))
-  elseif type(stringify)=='function' then
-    io.write(stringify(obj), '\n')
-    return
-  else
+  stringify = function(obj, info)
+    if type(info)~='table' then info = {} end
     for k, v in pairs(obj) do
       local tp = type(v)
       if tp=='table' and #v <= 12 then
@@ -61,13 +41,29 @@ local function inspect(str, ch, t_us, count)
         tinsert(info, sformat('"%s": %s', k, tostring(v)))
       end
     end
+    return "{"..tconcat(info, ',').."}"
   end
-
-  -- io.write(tconcat(info, ',\n'), '\n')
-  io.write("{", tconcat(info, ','), "}", '\n')
-  -- io.write("{\n", tconcat(info, ',\n'), '\n}\n')
 end
 
-for str, ch, t_us, count in logger.play(fname, true) do
+local function inspect(str, ch, t_us, count)
+  if not ch:find(ch_pattern) then return end
+  local obj = assert(logger.decode(str))
+  if type(obj)=='string' then
+    obj = {__payload = #obj}
+  end
+  -- Add extra bits
+  obj['__channel'] = ch
+  obj['__count'] = tonumber(count)
+  obj['__t'] = tonumber(t_us)
+  io.write(stringify(obj), '\n')
+end
+
+--
+local options = {
+  use_iterator = true,
+}
+local log = logger.open(fname)
+local it_log, sz_log = log:play(options)
+for str, ch, t_us, count in it_log do
   inspect(str, ch, t_us, count)
 end

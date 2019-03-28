@@ -55,117 +55,114 @@ local function process_way(w, nodes, ways)
     table.insert(ways, way)
   end
 end
-
-local bounds
-for line in io.lines(fname) do
-  if line:find'%s*<bounds'==1 then
-    bounds = {
-      minlat = tonumber(line:match'minlat="(%S+)"'),
-      minlon = tonumber(line:match'minlon="(%S+)"'),
-      maxlat = tonumber(line:match'maxlat="(%S+)"'),
-      maxlon = tonumber(line:match'maxlon="(%S+)"'),
-    }
-    break
-  end
-end
-assert(type(bounds)=='table', 'Did not find the bounds')
-
--- Node references to keep
-local nodes = {}
--- Ways to keep
-local ways = {}
-
-local in_way
-for line in io.lines(fname) do
-  local attr = line:match'<way%s(.*)>'
-  if attr then
-    assert(not in_way, "Should not be in a way...")
-    in_way = {}
-    -- Save the attributes
-    for key, val in attr:gmatch'(%w+)="(%S+)"' do in_way[key] = val end
-  elseif line:find'</way>' then
-    assert(type(in_way)=='table', "Should be in a way")
-    process_way(in_way, nodes, ways)
-    in_way = nil
-  elseif in_way then
-    table.insert(in_way, line)
-  end
-end
--- Done with attribute saving
-attr2way = nil
-
--- Save some nodes
-for line in io.lines(fname) do
-  local ref = line:match'<node id="(%d+)"'
-  if nodes[ref] then
-    local lat = tonumber(line:match'lat="(%S+)"')
-    local lon = tonumber(line:match'lon="(%S+)"')
-    nodes[ref] = {lat, lon}
-  --else print("Discard")
-  end
-end
-
--- Associate waypoints with lat/lon
-for _,w in ipairs(ways) do
-  local points = {}
-  for _,s in ipairs(w.refs) do
-    local latlon = nodes[s]
-    assert(type(latlon)=='table' and #latlon==2)
-    table.insert(points, latlon)
-  end
-  w.points = points
-  assert(#w.points==#w.refs)
-  --print("\n=====\tWay")
-  --for k, v in pairs(w) do
-    --if type(v)=='table' then
-      --print('#'..k..' = '..#v)
-    --else
-      --print(k, v)
-    --end
-  --end
-end
-
--- Format as hashtable
-while #ways>0 do
-  local w = table.remove(ways)
-  local id = assert(w.id)
-  w.id = nil
-  ways[id] = w
-end
-
--- Find the nodes that are referenced twice
--- TODO: Could do object reference, later... Doing ID list of strings
-local intersections = {}; -- Save as Hashtable
-for id, way in pairs(ways) do
---print(assert(way.name))
-  for _, ref in ipairs(way.refs) do
-    if intersections[ref] then
-      table.insert(intersections[ref], id)
-    else
-      intersections[ref] = {id}
+local function get_bound(filename)
+  for line in io.lines(filename) do
+    if line:find'%s*<bounds'==1 then
+      return {
+        minlat = tonumber(line:match'minlat="(%S+)"'),
+        minlon = tonumber(line:match'minlon="(%S+)"'),
+        maxlat = tonumber(line:match'maxlat="(%S+)"'),
+        maxlon = tonumber(line:match'maxlon="(%S+)"'),
+      }
     end
   end
 end
 
--- Form the intersections
-for ref, ids in pairs(intersections) do
-  if #ids < 2 then
-    intersections[ref] = nil
-  else
-    intersections[ref] = {
-      point = nodes[ref],
-      segments = ids
-    }
+local function process_in_way(filename, nodes, ways)
+  local in_way
+  for line in io.lines(filename) do
+    local attr = line:match'<way%s(.*)>'
+    if attr then
+      assert(not in_way, "Should not be in a way...")
+      in_way = {}
+      -- Save the attributes
+      for key, val in attr:gmatch'(%w+)="(%S+)"' do in_way[key] = val end
+    elseif line:find'</way>' then
+      assert(type(in_way)=='table', "Should be in a way")
+      process_way(in_way, nodes, ways)
+      in_way = nil
+    elseif in_way then
+      table.insert(in_way, line)
+    end
   end
 end
+
+-- Save some nodes
+local function save_nodes(filename, nodes)
+  for line in io.lines(filename) do
+    local ref = line:match'<node id="(%d+)"'
+    if nodes[ref] then
+      local lat = tonumber(line:match'lat="(%S+)"')
+      local lon = tonumber(line:match'lon="(%S+)"')
+      nodes[ref] = {lat, lon}
+    --else print("Discard")
+    end
+  end
+end
+
+-- Associate waypoints with lat/lon
+local function associate_ways(nodes, ways)
+  for _,w in ipairs(ways) do
+    local points = {}
+    for _,s in ipairs(w.refs) do
+      local latlon = nodes[s]
+      assert(type(latlon)=='table' and #latlon==2)
+      table.insert(points, latlon)
+    end
+    w.points = points
+    assert(#w.points==#w.refs)
+  end
+end
+
+
+-- Format as hashtable
+local function as_hashtable(ways)
+  while #ways>0 do
+    local w = table.remove(ways)
+    local id = assert(w.id)
+    w.id = nil
+    ways[id] = w
+  end
+  return ways
+end
+
+-- Find the nodes that are referenced twice
+-- TODO: Could do object reference, later... Doing ID list of strings
+local function to_intersections(nodes, ways)
+  local intersections = {}; -- Save as Hashtable
+  for id, way in pairs(ways) do
+  --print(assert(way.name))
+    for _, ref in ipairs(way.refs) do
+      if intersections[ref] then
+        table.insert(intersections[ref], id)
+      else
+        intersections[ref] = {id}
+      end
+    end
+  end
+  -- Form the intersections
+  for ref, ids in pairs(intersections) do
+    if #ids < 2 then
+      intersections[ref] = nil
+    else
+      intersections[ref] = {
+        point = nodes[ref],
+        segments = ids
+      }
+    end
+  end
+  return intersections
+end
+
+
+
 
 ------------------------------------------------
 -----------------SPLIT--------------------------
 ------------------------------------------------
-local segments2 = {}
-local segments = ways
 
-local function gen_id()
+
+local function gen_id(segments2)
   local id
   repeat
     -- A-Z
@@ -199,6 +196,24 @@ local function get_split(segment, intersection_ref)
   if not ip then return false, "Could not split" end
   return ip
 end
+
+-- Node references to keep
+local nodes = {}
+-- Ways to keep
+local ways = {}
+local bounds = get_bound(fname)
+assert(type(bounds)=='table', 'Did not find the bounds')
+process_in_way(fname, nodes, ways)
+-- Done with attribute saving
+attr2way = nil
+--
+save_nodes(fname, nodes)
+associate_ways(nodes, ways)
+ways = as_hashtable(ways)
+local intersections= to_intersections(nodes, ways)
+-- SPLIT ZONE --
+local segments2 = {}
+local segments = ways
 
 -- Set the intersection points in the segments
 for _, segment in pairs(segments) do
@@ -246,7 +261,7 @@ for ref, segment in pairs(segments) do
     -- Find the next split point
     local ip1, ip2 = unpack(ip_pair)
     -- Split the segment
-    local seg_id = gen_id()
+    local seg_id = gen_id(segments2)
     -- Copy all information
     local seg = {}
     for k,v in pairs(segment) do seg[k] = v end

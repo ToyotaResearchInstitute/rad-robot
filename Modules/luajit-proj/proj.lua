@@ -74,23 +74,32 @@ local function new(lla0)
 end
 lib.new = new
 
-local function get_osm(center_lla, radius_meters)
-  radius_meters = tonumber(radius_meters) or 1e3
-  local pr = new(center_lla)
-  local lat_min, lon_min = pr:lla(-radius_meters, -radius_meters)
-  local lat_max, lon_max = pr:lla(radius_meters, radius_meters)
+local function url_from_minmax(lla_min, lla_max)
+  local lat_min, lon_min = unpack(lla_min)
+  local lat_max, lon_max = unpack(lla_max)
   local bbox = sformat("%.7f,%.7f,%.7f,%.7f", lat_min, lon_min, lat_max, lon_max)
-  local kinds = sformat("way[lanes][highway!=footway];way[highway][highway!=footway];")
-  local query = sformat("[bbox:%s];(%s);(._;>;);out;", kinds, bbox)
+  local kinds = sformat('way[highway]["highway"!="footway"];way[lanes]["highway"!="footway"];')
+  local query = sformat("[bbox:%s];(%s);(._;>;);out;", bbox, kinds)
   local url = sformat("http://overpass-api.de/api/interpreter?data=%s", query)
   return url
 end
+lib.url_from_minmax = url_from_minmax
+
+local function url_from_center(center_lla, radius_meters)
+  radius_meters = tonumber(radius_meters) or 1e3
+  local pr = new(center_lla)
+  return url_from_minmax(
+    {pr:lla(-radius_meters, -radius_meters)},
+    {pr:lla(radius_meters, radius_meters)})
+
+end
+lib.url_from_center = url_from_center
 --[[
 local lat_center, lon_center = unpack(center_lla, 1, 2)
 local filename = sformat("/tmp/map%.7f_%.7f.osm", lat_center, lon_center)
 local cmd = sformat('wget "%s" -O %s', url, filename)
 -- os.execute(cmd)
 ]]
-lib.get_osm = get_osm
+
 
 return lib

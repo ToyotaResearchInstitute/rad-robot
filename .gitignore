@@ -87,3 +87,4 @@ Tools/Matlab/Figures/
 # Julia and iPython
 .ipynb_checkpoints
 *.ipynb
+harvests/

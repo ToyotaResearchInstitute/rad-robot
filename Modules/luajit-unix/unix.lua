@@ -334,7 +334,9 @@ function lib.select(fds, timeout)
   end
   return status, set
 end
-
+local pread = false
+lib.pread = pread
+--posix_fadvise
 --[[
 local mt = {}
 -- Provide raw access to all of our functions and variables

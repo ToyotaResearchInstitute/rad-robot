@@ -30,6 +30,11 @@ local function inspect(str, ch, t_us, count)
   end
 end
 
-for str, ch, t_us, count in logger.play(fname, true) do
+local options = {
+  use_iterator = true,
+}
+local log = logger.open(fname)
+local it_log, sz_log = log:play(options)
+for str, ch, t_us, count in it_log do
   inspect(str, ch, t_us, count)
 end

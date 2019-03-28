@@ -344,19 +344,28 @@ function lib.listen(options)
   return status, err
 end
 
-function lib.play(fnames, realtime, update, cb)
-  local co = assert(logger.play(fnames, false, update))
+local function replay(fnames, options)
+  local realtime = options.realtime
+  -- TODO: Add fn_loop, fn_debug
+  local channel_callbacks = {}
+  if type(options.channel_callbacks)=='table' then
+    channel_callbacks = options.channel_callbacks
+  end
+  local co_play
+  if type(fnames)=='string' then
+    co_play = assert(logger.play(fnames, options))
+  elseif type(fnames)=='table' then
+    co_play = assert(logger.play_many(fnames, options))
+  else
+    return false, "Invalid logs"
+  end
   local t_log0, t_log1
   local t_host0
-  local t_send = -math.huge
-  local dt_send = 1e6 / 5
-  repeat
-    local ok, str, ch, t_us, count = coresume(co)
+  while costatus(co_play)=='suspended' do
+    if not lib.running then break end
+    local ok, str, ch, t_us = coresume(co_play)
     if not ok then
       io.stderr:write(string.format("Error: %s\n", str))
-      break
-    elseif costatus(co)~='suspended' then
-      io.stderr:write"Dead coro\n"
       break
     end
     local t_host = time_us()
@@ -369,15 +378,28 @@ function lib.play(fnames, realtime, update, cb)
     local dt0_host = tonumber(t_host - t_host0)
     local lag_to_host = dt0_log - dt0_host
     local dt_host = dt_log + lag_to_host
-    local ret = realtime and usleep(dt_host)
+    if realtime then usleep(dt_host) end
     t_log1 = t_us
-    local ret = realtime and cb and cb(dt0_log, ch)
-  until not lib.running
+    -- Run a callback
+    local cb = channel_callbacks[ch]
+    if type(cb)=='function' then
+      local obj = assert(logger.decode(str))
+      cb(obj, dt0_log)
+    end
+  end
 end
+lib.replay = lib
 
 if IS_MAIN then
   init()
   local flags = parse_arg(arg, false)
+  if flags.replay then
+    print("Replay", flags.replay, unpack(flags))
+    return replay({flags.replay, unpack(flags)},
+      {
+        realtime = flags.realtime,
+      })
+  end
   local msg = flags[1]
   if msg then
     print("Sending", msg)

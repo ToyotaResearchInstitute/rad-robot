@@ -390,8 +390,8 @@ local function cb_loop(t_us)
   --   pose_rbt = state.pose
   -- end
   -- Should we broadcast?
+  log_announce(log, result, "control")
   if DEBUG_ANNOUNCE then
-    log_announce(log, result, "control")
     -- TODO: Environment should be in a different Lua file, as it listen to the path
     -- env.observer = pose_rbt
     assert(racecar.announce("risk", env))

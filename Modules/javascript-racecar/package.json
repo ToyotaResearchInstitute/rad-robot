@@ -7,7 +7,7 @@
     "finalhandler": "^1.1.1",
     "msgpack5": "^4.2.0",
     "npm": "^6.9.0",
-    "plotly.js": "^1.45.3",
+    "plotly.js": "^1.47.3",
     "serve-static": "^1.13.2",
     "smoothie": "^1.35.0",
     "three": "^0.101.1",

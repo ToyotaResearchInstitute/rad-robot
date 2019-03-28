@@ -23,11 +23,18 @@ print("Dist", pr:geodesic({pr:lla(0, 0)}, {pr:lla(0, 1e3)}))
 print("Dist", pr:geodesic({pr:lla(0, 0)}, {pr:lla(1e4, 0)}))
 print("Dist", pr:geodesic({pr:lla(0, 0)}, {pr:lla(0, 1e4)}))
 
-print(proj.get_osm({lat0, lon0}, 1e3))
+local url = proj.url_from_center({lat0, lon0}, 1e3)
+print(url)
 
-if true then return end
+if arg[1]~='draw' then
+  return
+end
+local ffi = require'ffi'
+local filename =
+local cmd = string.format('wget "%s" -O %s', url, filename)
+-- os.execute(cmd)
 
--- Project our raods files
+-- Project our roads files
 lat0 = 42.3448
 lon0 = -71.0520
 P = ffi.gc(pjt.pjt_init(lat0, lon0), pjt.pjt_exit)
