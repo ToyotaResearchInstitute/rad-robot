@@ -73,6 +73,7 @@ typedef struct utsname {
 } utsname;
 int uname(struct utsname *name);
 
+char * realpath(const char * file_name, char * resolved_name);
 int chdir(const char *path);
 char * getcwd(char *buf, size_t size);
 void free(void *ptr);
@@ -227,6 +228,16 @@ end
 function lib.write(fd, item)
   local buf = tostring(item)
   return C.write(fd, buf, #buf)
+end
+
+function lib.realpath(dir)
+  if type(dir)~='string' then
+    return false
+  end
+  local raw_path = C.realpath(dir, nil)
+  local path = ffi.string(raw_path)
+  C.free(raw_path)
+  return path
 end
 
 function lib.getcwd()
