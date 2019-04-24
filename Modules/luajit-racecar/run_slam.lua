@@ -1,9 +1,14 @@
 #!/usr/bin/env luajit
 
+--[[
+Usage:
+./run_slam.lua --realtime true ../logs/GoodFriday/good_friday_20190419T173135Z-000.lmp
+--]]
+
 local flags = require'racecar'.parse_arg(arg)
 local ENABLE_AUTO_BIAS = flags.enable_auto_bias ~= 0
 local ENABLE_IMU_REMAP = flags.enable_imu_remap ~= 0
-local realtime = flags.realtime ~= 0
+local realtime = flags.realtime
 
 local racecar = require'racecar'
 local log_announce = require'racecar'.log_announce
@@ -189,6 +194,12 @@ end
 
 -- Actually play the log
 -- flags: commandline list of log files
-racecar.replay(flags, realtime, update, run_update)
+
+-- run_update
+assert(racecar.replay(flags, {
+  realtime=realtime,
+  channel_callbacks=update,
+  fn_loop=run_update
+}))
 
 slam.omap.gridmap:save("map.png")
