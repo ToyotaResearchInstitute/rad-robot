@@ -354,7 +354,9 @@ local function replay(fnames, options)
   end
   local co_play
   if type(fnames)=='string' then
-    co_play = assert(logger.play(fnames, options))
+    local log = logger.open(fnames)
+    co_play = assert(log:play())
+    -- co_play = assert(logger.play(fnames, options))
   elseif type(fnames)=='table' and #fnames>0 then
     co_play = assert(logger.play_many(fnames, options))
   else

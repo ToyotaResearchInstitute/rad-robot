@@ -383,11 +383,15 @@ local function play(self, options)
     return fn_play, sz_log
   else
     local co_play = coroutine.create(playback)
-    local ok, sz_log = coresume(co_play, self, options)
-    return ok and co_play, sz_log
+    local ok, sz_log, err = coresume(co_play, self, options)
+    if not ok then
+      return false, sz_log
+    elseif not sz_log then
+      return false, err
+    end
+    return co_play, sz_log
   end
 end
-lib.play = play
 
 local function play_many(logs, options)
   -- Playback the logs
