@@ -154,6 +154,8 @@ end
 local last_tach_t, last_tach = false, 0
 local TACH_FACTOR = 8 -- No idea why this factor...
 function update.vesc(obj, t_us)
+  -- for k, v in pairs(obj) do print(k, v) end
+  if obj.sensor_request then return end
   local dt_tach = tonumber(t_us - (last_tach_t or t_us)) / 1e6
   last_tach_t = t_us
   -- Remap
@@ -164,7 +166,7 @@ function update.vesc(obj, t_us)
   -- Kill off values that had too much time in b/t
   if dt_tach < 0.15 then
     local dx_odom = d_tach * dt_tach / TACH_FACTOR
-    filter_slam:update_odometry(dx_odom)
+    filter_slam:update_odometry({dx_odom, 0, 0})
   end
 end
 
