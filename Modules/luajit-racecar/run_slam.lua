@@ -103,7 +103,7 @@ function update.imu(obj)
       print("Jerk", gNorm, accel)
       -- filter_ukf:correct_gravity(accel)
     end
-    filter_slam:update_gyro(unpack(gyro * dt_imu))
+    filter_slam:update_gyro(gyro * dt_imu)
   end
 
   -- The roll/pitch estimates are not great
