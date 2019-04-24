@@ -286,6 +286,7 @@ local function playback(self, options)
     -- Update the index for the next round
     idx = log_info.sz_entries
   end
+  io.stderr:write("Done!\n")
 end
 
 -- Add an mmap version if possible
@@ -386,6 +387,7 @@ local function play(self, options)
     return ok and co_play, sz_log
   end
 end
+lib.play = play
 
 local function play_many(logs, options)
   -- Playback the logs

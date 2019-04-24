@@ -194,9 +194,11 @@ end
 
 -- Actually play the log
 -- flags: commandline list of log files
+local fnames = {unpack(flags)}
+if #fnames==1 then fnames = fnames[1] end
 
 -- run_update
-assert(racecar.replay(flags, {
+assert(racecar.replay(fnames, {
   realtime=realtime,
   channel_callbacks=update,
   fn_loop=run_update

@@ -388,6 +388,7 @@ local function replay(fnames, options)
       cb(obj, dt0_log)
     end
   end
+  return true
 end
 lib.replay = replay
 
