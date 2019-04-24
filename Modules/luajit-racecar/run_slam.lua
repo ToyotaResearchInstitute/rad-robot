@@ -189,6 +189,6 @@ end
 
 -- Actually play the log
 -- flags: commandline list of log files
-racecar.play(flags, realtime, update, run_update)
+racecar.replay(flags, realtime, update, run_update)
 
 slam.omap.gridmap:save("map.png")

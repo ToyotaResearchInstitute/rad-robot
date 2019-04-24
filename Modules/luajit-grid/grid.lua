@@ -395,7 +395,7 @@ end
 
 -- Make a new grid
 function lib.new(params)
-  params = params or {}
+  if type(params) ~='table' then params = {} end
   local datatype = params.datatype or "uint8_t"
   local obj = {}
   if has_ff and type(params.fname)=='string' then

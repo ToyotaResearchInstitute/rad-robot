@@ -194,6 +194,7 @@ local function update_map(self, pose_map, pts_rbt, hits, thinds)
 end
 
 function lib.init(params)
+  if type(params) ~='table' then params = {} end
   local gridmap = grid.new(params)
   -- Fully Uncertain
   gridmap:fill(127)

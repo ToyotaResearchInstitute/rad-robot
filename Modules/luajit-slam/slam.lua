@@ -51,8 +51,9 @@ local function get_pose(self)
   return {self.pose_x, self.pose_y, self.pose_th}
 end
 
-function lib.new(parameters)
-  local omap = occupancy_map.new()
+function lib.new(params)
+  if type(params) ~='table' then params = {} end
+  local omap = occupancy_map.init()
   return {
     -- Occupancy Map
     omap = omap,
@@ -66,7 +67,7 @@ function lib.new(parameters)
     update_odometry = update_odometry,
     get_pose = get_pose,
     --
-    use_laser_match = not parameters.odometry_only
+    use_laser_match = not params.odometry_only
   }
 end
 

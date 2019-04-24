@@ -345,6 +345,7 @@ function lib.listen(options)
 end
 
 local function replay(fnames, options)
+  if type(options)~='table' then options = {} end
   local realtime = options.realtime
   -- TODO: Add fn_loop, fn_debug
   local channel_callbacks = {}
@@ -388,7 +389,7 @@ local function replay(fnames, options)
     end
   end
 end
-lib.replay = lib
+lib.replay = replay
 
 if IS_MAIN then
   init()
