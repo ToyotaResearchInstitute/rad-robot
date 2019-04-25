@@ -359,7 +359,7 @@ local function save(self, fname, options)
     outmax = min(255, vmax)
   end
   -- Try to save
-  if has_ff and fname:match"%.pgm$" then
+  if has_ff and fname:match"pgm$" then
     return ff.save_netpbm(
       fname,
       grid_to_save,
@@ -372,7 +372,8 @@ local function save(self, fname, options)
         ymax = self.ymax,
       },
       options.use_max and outmax)
-  elseif has_png and fname:match"%.png$" then
+  elseif fname:match"png$" then
+    assert(has_png, png)
     local ptr = tonumber(ffi.cast('intptr_t', ffi.cast('void *', grid_to_save)))
     local str = png.compress(ptr, self.n_cells, self.m, self.n, 1)
     if fname=='png' then
@@ -380,7 +381,8 @@ local function save(self, fname, options)
     else
       return io.open(fname, "w"):write(str):close()
     end
-  elseif has_jpeg and fname:match"%.jp[e]?g$" then
+  elseif fname:match"jp[e]?g$" then
+    assert(has_jpeg, c_gray)
     local ptr = tonumber(ffi.cast('intptr_t', ffi.cast('void *', grid_to_save)))
     local str = c_gray:compress(ptr, self.n_cells, self.m, self.n)
     if fname=='jpeg' or fname=='jpg' then

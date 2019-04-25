@@ -173,25 +173,30 @@ end
 -- Send the map every second
 local dt_us_send = 1e6
 local dt_save = 0
+local t0
 local function run_update(t_us)
   local dt_us = t_us - dt_save
   if dt_us < dt_us_send then return end
   dt_save = t_us
+  local t = tonumber(t_us)/1e6
+  if not t0 then t0 = t end
+  local fname_map = string.format("/tmp/map%03d.png", t - t0)
   print(string.format(
-    "SLAM | %f seconds", tonumber(t_us)/1e6))
+    "SLAM | %f seconds | %s", t, fname_map))
   local pose_xya = filter_slam:get_pose()
   local pkt = {
     t = tonumber(t_us),
     pose = pose_xya
   }
-  local t0 = time()
-  pkt.png = slam.omap.gridmap:save("png")
-  local t1 = time()
+  local t_save0 = time()
+  pkt.png = assert(filter_slam.omap.gridmap:save("png"))
+  io.open(fname_map, "w"):write(pkt.png):close()
+  local t_save1 = time()
   print(string.format("%.2f ms | %.2f ratio -> %d bytes",
-    (t1-t0)*1e3, #pkt.png / slam.omap.gridmap.n_cells, #pkt.png))
+    (t_save1-t_save0)*1e3, #pkt.png / filter_slam.omap.gridmap.n_cells, #pkt.png))
 
   if realtime then log_announce(false, pkt, 'slam') end
-  -- slam.omap.gridmap:save(string.format("/tmp/map%03d.pgm", dt0_log/1e6))
+  -- filter_slam.omap.gridmap:save(string.format("/tmp/map%03d.pgm", dt0_log/1e6))
 end
 
 -- Actually play the log
