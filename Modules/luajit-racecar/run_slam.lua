@@ -60,13 +60,16 @@ function update.imu(obj)
 
   -- Perform the re-mapping for the robot
   local q_imu = obj.q and #obj.q==4 and quaternion.unit(obj.q * q_imu_to_rbt_inv)
-  local accel, gyro
+  local accel
+  local gyroSensitivity = 131-- 131, 65.5, 32.8, 16.4
+  local gyro = vnew(obj.gyro) / gyroSensitivity
   if ENABLE_IMU_REMAP then
     accel = vnew{obj.accel[2], obj.accel[1], -obj.accel[3]}
-    gyro = vrad{obj.gyro[2], obj.gyro[1], -obj.gyro[3]}
+    gyro = vrad{gyro[2], gyro[1], -gyro[3]} / gyroSensitivity
   else
-    accel, gyro = vnew(obj.accel), vrad(obj.gyro)
+    accel, gyro = vnew(obj.accel), vrad(gyro) / gyroSensitivity
   end
+  -- print(dt_imu, "gyro", unpack(gyro))
 
   -- Find the accelerometer bias at startup
   if ENABLE_AUTO_BIAS and (acc_bias.count < 300) then
@@ -112,7 +115,7 @@ function update.imu(obj)
     local gyro_dt = gyro * dt_imu
     -- print("dt_imu", dt_imu)
     -- print("gyro_dt", math.deg(gyro_dt[1]), math.deg(gyro_dt[2]), math.deg(gyro_dt[3]))
-    -- filter_slam:update_gyro(gyro_dt)
+    filter_slam:update_gyro(gyro_dt)
   end
 
   -- The roll/pitch estimates are not great
@@ -177,7 +180,7 @@ function update.vesc(obj, t_us)
   if d_tach==0 then return end
   if dt_tach < 0.15 then
     local dx_odom = d_tach * dt_tach / TACH_FACTOR
-    print("dx_odom", dx_odom)
+    -- print("dx_odom", dx_odom)
     local d_odom = vnew{dx_odom, 0, 0}
     filter_slam:update_odometry(d_odom)
   end
@@ -225,5 +228,5 @@ assert(racecar.replay(fnames, {
   fn_loop=run_update
 }))
 
--- ffmpeg -i map%03d.png map.webm
-slam.omap.gridmap:save("map.png")
+-- ffmpeg -r 1 -i map%03d.png map.webm
+-- filter_slam.omap.gridmap:save("map.png")
