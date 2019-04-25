@@ -216,6 +216,18 @@ local function cb_loop(t_us)
   -- filter_slam.omap.gridmap:save(string.format("/tmp/map%03d.pgm", dt0_log/1e6))
 end
 
+local function cb_debug(t_us)
+  local px, py, pa = filter_slam:get_pose()
+  -- local pose_rbt = veh_poses[id_robot]
+  -- if not pose_rbt then return end
+  -- local px, py, pa = unpack(pose_rbt)
+  local info = {
+    -- string.format("Path: %s", desired_path),
+    string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa))
+  }
+  -- return table.concat(info, "\n")
+end
+
 -- Actually play the log
 -- flags: commandline list of log files
 local fnames = {unpack(flags)}
@@ -225,14 +237,15 @@ if #fnames==1 then fnames = fnames[1] end
 assert(racecar.replay(fnames, {
   realtime=realtime,
   channel_callbacks=cb_tbl,
-  fn_loop=cb_loop
+  fn_loop=cb_loop,
+  fn_debug = cb_debug
 }))
 
 -- racecar.listen{
 --   channel_callbacks = cb_tbl,
 --   loop_rate = 100, -- 100ms loop
 --   -- fn_loop = cb_loop,
---   -- fn_debug = cb_debug
+--   fn_debug = cb_debug
 -- }
 
 -- ffmpeg -r 1 -i map%03d.png -pix_fmt yuv420p map.m4v
