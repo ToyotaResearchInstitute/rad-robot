@@ -365,11 +365,13 @@ local function replay(fnames, options)
   end
   local t_log0, t_log1
   local t_host0
-  while costatus(co_play)=='suspended' do
-    if not lib.running then break end
+  while lib.running do
+    if costatus(co_play)~='suspended' then break end
     local ok, str, ch, t_us = coresume(co_play)
     if not ok then
       io.stderr:write(string.format("Error: %s\n", str))
+      break
+    elseif not str then
       break
     end
     -- Run a callback

@@ -6,8 +6,8 @@ Usage:
 --]]
 
 local flags = require'racecar'.parse_arg(arg)
-local ENABLE_AUTO_BIAS = flags.enable_auto_bias ~= 0
-local ENABLE_IMU_REMAP = flags.enable_imu_remap ~= 0
+local ENABLE_AUTO_BIAS = flags.enable_auto_bias and flags.enable_auto_bias ~= 0
+local ENABLE_IMU_REMAP = flags.enable_imu_remap and flags.enable_imu_remap ~= 0
 local realtime = flags.realtime
 
 local racecar = require'racecar'
@@ -109,7 +109,10 @@ function update.imu(obj)
       -- print("Jerk", gNorm, accel)
       -- filter_ukf:correct_gravity(accel)
     end
-    filter_slam:update_gyro(gyro * dt_imu)
+    local gyro_dt = gyro * dt_imu
+    -- print("dt_imu", dt_imu)
+    -- print("gyro_dt", math.deg(gyro_dt[1]), math.deg(gyro_dt[2]), math.deg(gyro_dt[3]))
+    -- filter_slam:update_gyro(gyro_dt)
   end
 
   -- The roll/pitch estimates are not great
@@ -165,14 +168,18 @@ function update.vesc(obj, t_us)
   local dt_tach = tonumber(t_us - (last_tach_t or t_us)) / 1e6
   last_tach_t = t_us
   -- Remap
-  local tach = -1 * obj.tach
+  local tach = obj.tach
+  -- tach = -1 * tach
   --
   local d_tach = tach - (last_tach or 0)
   last_tach = tach
   -- Kill off values that had too much time in b/t
+  if d_tach==0 then return end
   if dt_tach < 0.15 then
     local dx_odom = d_tach * dt_tach / TACH_FACTOR
-    filter_slam:update_odometry({dx_odom, 0, 0})
+    print("dx_odom", dx_odom)
+    local d_odom = vnew{dx_odom, 0, 0}
+    filter_slam:update_odometry(d_odom)
   end
 end
 
@@ -186,7 +193,7 @@ local function run_update(t_us)
   dt_save = t_us
   local t = tonumber(t_us)/1e6
   if not t0 then t0 = t end
-  local fname_map = string.format("/tmp/map%03d.png", t - t0)
+  local fname_map = string.format(racecar.ROBOT_HOME.."/logs/map%03d.png", t - t0)
   print(string.format(
     "SLAM | %f seconds | %s", t, fname_map))
   local pose_xya = filter_slam:get_pose()
@@ -202,6 +209,7 @@ local function run_update(t_us)
     (t_save1-t_save0)*1e3, #pkt.png / filter_slam.omap.gridmap.n_cells, #pkt.png))
 
   if realtime then log_announce(false, pkt, 'slam') end
+  -- if t - t0 > 27 then os.exit() end
   -- filter_slam.omap.gridmap:save(string.format("/tmp/map%03d.pgm", dt0_log/1e6))
 end
 
@@ -217,4 +225,5 @@ assert(racecar.replay(fnames, {
   fn_loop=run_update
 }))
 
+-- ffmpeg -i map%03d.png map.webm
 slam.omap.gridmap:save("map.png")
