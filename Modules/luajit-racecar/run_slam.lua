@@ -1,16 +1,16 @@
 #!/usr/bin/env luajit
-
 --[[
 Usage:
 ./run_slam.lua --realtime true ../logs/GoodFriday/good_friday_20190419T173135Z-000.lmp
 --]]
 
-local flags = require'racecar'.parse_arg(arg)
+local racecar = require'racecar'
+local flags = racecar.parse_arg(arg)
 local ENABLE_AUTO_BIAS = flags.enable_auto_bias and flags.enable_auto_bias ~= 0
 local ENABLE_IMU_REMAP = flags.enable_imu_remap and flags.enable_imu_remap ~= 0
 local realtime = flags.realtime
 
-local racecar = require'racecar'
+racecar.init()
 local log_announce = require'racecar'.log_announce
 
 local unpack = unpack or require'table'.unpack
@@ -36,7 +36,7 @@ local filter_slam = slam.new({
 local filter_ukf = kalman.ukf()
 
 -- callbacks
-local update = setmetatable({}, {
+local cb_tbl = setmetatable({}, {
   __index = function(_, k)
     return function(obj)
       if realtime then log_announce(false, obj, k) end
@@ -53,7 +53,7 @@ local q_imu_to_rbt_inv = quaternion.conjugate(q_imu_to_rbt)
 local rbt0_to_rbt = tf.eye()
 
 local t_last_imu, accel_last, gyro_last
-function update.imu(obj)
+function cb_tbl.imu(obj)
   local t_imu = obj.timeM
   local dt_imu = tonumber(t_imu - (t_last_imu or t_imu)) / 1e3
   t_last_imu = t_imu
@@ -136,7 +136,7 @@ end
 ----------- Laser -----------
 local d2p = require'hokuyo'.distances2points
 local lsr_to_rbt0 = tf.trans(0.28, 0, 0.115)
-function update.hokuyo(obj)
+function cb_tbl.hokuyo(obj)
   local lsr_to_rbt = rbt0_to_rbt * lsr_to_rbt0
   -- Find the points in the frame of the hokuyo
   local xs_hok, ys_hok, zs_hok, hits = d2p(obj.distances)
@@ -165,7 +165,7 @@ end
 ----------- Motor Controller -----------
 local last_tach_t, last_tach = false, 0
 local TACH_FACTOR = 8 -- No idea why this factor...
-function update.vesc(obj, t_us)
+function cb_tbl.vesc(obj, t_us)
   -- for k, v in pairs(obj) do print(k, v) end
   if obj.sensor_request then return end
   local dt_tach = tonumber(t_us - (last_tach_t or t_us)) / 1e6
@@ -190,7 +190,7 @@ end
 local dt_us_send = 1e6
 local dt_save = 0
 local t0
-local function run_update(t_us)
+local function cb_loop(t_us)
   local dt_us = t_us - dt_save
   if dt_us < dt_us_send then return end
   dt_save = t_us
@@ -224,9 +224,15 @@ if #fnames==1 then fnames = fnames[1] end
 -- run_update
 assert(racecar.replay(fnames, {
   realtime=realtime,
-  channel_callbacks=update,
-  fn_loop=run_update
+  channel_callbacks=cb_tbl,
+  fn_loop=cb_loop
 }))
 
--- ffmpeg -r 1 -i map%03d.png map.webm
--- filter_slam.omap.gridmap:save("map.png")
+-- racecar.listen{
+--   channel_callbacks = cb_tbl,
+--   loop_rate = 100, -- 100ms loop
+--   -- fn_loop = cb_loop,
+--   -- fn_debug = cb_debug
+-- }
+
+-- ffmpeg -r 1 -i map%03d.png -pix_fmt yuv420p map.m4v
