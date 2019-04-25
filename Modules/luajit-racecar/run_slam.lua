@@ -100,7 +100,7 @@ function update.imu(obj)
       accel = vunit(accel)
       filter_ukf:correct_gravity(accel)
     else
-      print("Jerk", gNorm, accel)
+      -- print("Jerk", gNorm, accel)
       -- filter_ukf:correct_gravity(accel)
     end
     filter_slam:update_gyro(gyro * dt_imu)
@@ -171,14 +171,14 @@ function update.vesc(obj, t_us)
 end
 
 -- Send the map every second
-local dt_send = 1e6
+local dt_us_send = 1e6
 local dt_save = 0
-local function run_update(dt0_log)
-  local dt = dt0_log - dt_save
-  if dt < dt_send then return end
-  dt_save = dt0_log
+local function run_update(t_us)
+  local dt_us = t_us - dt_save
+  if dt_us < dt_us_send then return end
+  dt_save = t_us
   print(string.format(
-    "SLAM | %d seconds", dt0_log/1e6))
+    "SLAM | %f seconds", tonumber(t_us)/1e6))
   local pose_xya = filter_slam:get_pose()
   local pkt = {
     t = tonumber(t_us),

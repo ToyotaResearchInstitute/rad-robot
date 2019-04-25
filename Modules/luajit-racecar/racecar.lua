@@ -347,6 +347,7 @@ end
 local function replay(fnames, options)
   if type(options)~='table' then options = {} end
   local realtime = options.realtime
+  local fn_loop = type(options.fn_loop)=='function' and options.fn_loop
   -- TODO: Add fn_loop, fn_debug
   local channel_callbacks = {}
   if type(options.channel_callbacks)=='table' then
@@ -371,6 +372,13 @@ local function replay(fnames, options)
       io.stderr:write(string.format("Error: %s\n", str))
       break
     end
+    -- Run a callback
+    local cb = channel_callbacks[ch]
+    if type(cb)=='function' then
+      local obj = assert(logger.decode(str))
+      cb(obj, t_us)
+    end
+    if fn_loop then fn_loop(t_us) end
     local t_host = time_us()
     if not t_log0 then
       t_log0 = t_log0 or t_us
@@ -383,12 +391,6 @@ local function replay(fnames, options)
     local dt_host = dt_log + lag_to_host
     if realtime then usleep(dt_host) end
     t_log1 = t_us
-    -- Run a callback
-    local cb = channel_callbacks[ch]
-    if type(cb)=='function' then
-      local obj = assert(logger.decode(str))
-      cb(obj, dt0_log)
-    end
   end
   return true
 end

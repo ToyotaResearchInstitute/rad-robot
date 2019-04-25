@@ -25,6 +25,7 @@ end
 
 -- Input: {{x0, x1, ...}, {y0, y1, ...}}
 local function update_laser(self, pts_rbt, hits)
+  -- print("update_laser")
   -- Thin the points into indices OK for the map
   local thinds = self.omap:thindex(unpack(pts_rbt))
 

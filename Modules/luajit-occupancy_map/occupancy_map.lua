@@ -129,7 +129,7 @@ local function match_pose(self, pose_map, pts_rbt, valid, thinds)
             lxs_rbt[i_l] + dx, lys_rbt[i_l] + dy,
             c, s,
             pose_x, pose_y)
-          local imap = map:xy2idx(px, py)
+          local imap = map.xy2idx(px, py)
           -- Not all transformed points lie on the map
           if imap and ptr[imap] > 127 then
             hits_off_pts[i_off] = hits_off_pts[i_off] + ptr[imap]
@@ -183,7 +183,7 @@ local function update_map(self, pose_map, pts_rbt, hits, thinds)
       -- NOTE: This raytraces the hit point itself, in addition to the ray
       map:bresenham(pose_map, {lx_map, ly_map}, update_clear)
       -- Grab the index and ensure the point lies within our map bounds
-      local imap = map:xy2idx(lx_map, ly_map)
+      local imap = map.xy2idx(lx_map, ly_map)
       if imap then
         -- Increment the map point of the hit
         update_hit(ptr, imap)
@@ -244,7 +244,9 @@ function lib.init(params)
     update_map = update_map,
     --
     update_hit = update_hit,
-    update_clear = update_clear
+    update_clear = update_clear,
+    --
+    offset_th = offset_th,
   }
 end
 
