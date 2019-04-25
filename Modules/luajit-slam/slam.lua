@@ -54,7 +54,7 @@ end
 
 function lib.new(params)
   if type(params) ~='table' then params = {} end
-  local omap = occupancy_map.init()
+  local omap = occupancy_map.init(params)
   return {
     -- Occupancy Map
     omap = omap,

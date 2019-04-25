@@ -26,7 +26,13 @@ local slam = require'slam'
 local tf = require'transform'
 
 -- GLOBALS
-local filter_slam = slam.new()
+local filter_slam = slam.new({
+  xmin = -10,
+  ymin = -10,
+  xmax = 10,
+  ymax = 10,
+  scale = 0.05,
+})
 local filter_ukf = kalman.ukf()
 
 -- callbacks
