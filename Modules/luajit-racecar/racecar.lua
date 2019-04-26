@@ -348,6 +348,8 @@ local function replay(fnames, options)
   if type(options)~='table' then options = {} end
   local realtime = options.realtime
   local fn_loop = type(options.fn_loop)=='function' and options.fn_loop
+  local fn_debug = type(options.fn_debug)=='function' and options.fn_debug
+  local debug_rate = tonumber(options.debug_rate) or 1e3
   -- TODO: Add fn_loop, fn_debug
   local channel_callbacks = {}
   if type(options.channel_callbacks)=='table' then
@@ -363,6 +365,7 @@ local function replay(fnames, options)
   else
     return false, "Invalid logs"
   end
+  local t_debug = 0
   local t_log0, t_log1
   local t_host0
   while lib.running do
@@ -381,6 +384,21 @@ local function replay(fnames, options)
       cb(obj, t_us)
     end
     if fn_loop then fn_loop(t_us) end
+    local dt_debug = tonumber(t_us - t_debug)
+    if dt_debug / 1e3 > debug_rate then
+      t_debug = t_us
+      local jt = jitter_tbl()
+      if fn_debug then
+        local msg_debug = fn_debug(t_debug)
+        if type(msg_debug)=='string' then
+          tinsert(jt, msg_debug)
+        end
+      end
+      if #jt > 0 then
+        io.write('\n', tconcat(jt, '\n'), '\n')
+        io.flush()
+      end
+    end
     local t_host = time_us()
     if not t_log0 then
       t_log0 = t_log0 or t_us
