@@ -1,6 +1,6 @@
 #!/usr/bin/env luajit
 local flags = require'racecar'.parse_arg(arg)
-local devname = flags.uvc or flags[1] or '/dev/video0'
+local devname = flags.uvc or flags[1]
 
 local uvc = require'uvc'
 local time = require'unix'.time
@@ -10,9 +10,10 @@ local log_announce = racecar.log_announce
 
 -- local width, height = 1344, 376
 local width, height = 640, 480
+local fps = 5
 -- local width, height = 320, 240
 local fmt = flags.fmt or 'yuyv'
-local camera = assert(uvc.init(devname, width, height, fmt, 1, 30))
+local camera = assert(uvc.init(devname, width, height, fmt, 1, fps))
 
 local c_jpeg
 if fmt=='yuyv' then
@@ -26,7 +27,7 @@ elseif fmt == 'mjpeg' then
   -- c_jpeg = function(ptr, sz) return ffi.string(ptr, sz) end
 end
 
-local channel = devname:match("([^/]+%d+)") or 'camera'
+local channel = devname and devname:match("([^/]+%d+)") or 'camera'
 local logger = require'logger'
 local log = flags.log~=0 and assert(logger.new(channel, racecar.ROBOT_HOME.."/logs"))
 
@@ -54,10 +55,13 @@ local function update_read(evt)
   if evt==32 then
     return false, "Bad read"
   end
-  -- print("Grab image")
-  local img, sz = camera:get_image(0, not c_jpeg)
+  local img, sz, cnt = camera:get_image(0, not c_jpeg)
   local t = time()
-  if not img then return end
+  -- print("Image", type(img), t, cnt)
+  if not img then
+    print("Error", sz)
+    return
+  end
   process_img(img, sz, t)
 end
 
@@ -71,24 +75,15 @@ local fd_updates = {
   [fd_cam] = update_read
 }
 
---[[
-local t_debug = time()
-local n = 0
-while racecar.running do
-  local img, sz = camera:get_image(-1, not c_jpeg)
-  local t = time()
-  if img then
-    process_img(img, sz, t)
-    n = n + 1
-  end
-  local dt_debug = t - t_debug
-  if dt_debug > 1 then
-    io.write(table.concat(jitter_tbl(), '\n'), '\n')
-    t_debug = t
-    n = 0
-  end
+local function entry()
+  -- Set manual exposure
+  camera:set_param("ae_mode", 1)
+  -- Set exposure time in milliseconds
+  camera:set_param("exposure_abs", 20.0)
+  -- Begin to stream
+  camera:stream_on()
 end
---]]
+entry()
 
 racecar.listen{
   channel_callbacks = cb_tbl,
