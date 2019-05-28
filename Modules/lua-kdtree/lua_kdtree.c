@@ -76,12 +76,13 @@ static int lua_kdtree_insert(lua_State *L) {
   }
   // Take values in the table of the first k dimensions
   int k = kd_get_dimension(kd);
+
 #if LUA_VERSION_NUM == 501
-  if (lua_objlen(L, 2) < k)
+  int nd = lua_objlen(L, 2);
 #else
-  if (lua_rawlen(L, 2) < k)
+  int nd = lua_rawlen(L, 2);
 #endif
-  {
+  if (nd < k) {
     lua_pushboolean(L, 0);
     lua_pushliteral(L, "Not enough dimensions");
     return 2;
@@ -130,19 +131,20 @@ static int lua_kdtree_nearest(lua_State *L) {
     return 1;
   }
 #if LUA_VERSION_NUM == 501
-  if (lua_objlen(L, 2) < k)
+  int nd = lua_objlen(L, 2);
 #else
-  if (lua_rawlen(L, 2) < k)
+  int nd = lua_rawlen(L, 2);
 #endif
-  {
+  if (nd < k) {
     lua_pushboolean(L, 0);
     lua_pushliteral(L, "Not enough dimensions");
     return 2;
   }
+
   // VLA
   int i;
   double vals0[k];
-  for (int i = 1; i <= k; i++) {
+  for (i = 1; i <= k; i++) {
     lua_rawgeti(L, 2, i);
     vals0[i - 1] = luaL_checknumber(L, -1);
     lua_pop(L, 1);

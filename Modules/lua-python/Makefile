@@ -20,7 +20,9 @@ LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
 LUA_LIBS ?= $(shell pkg-config $(LUA) --libs-only-l)
 
-CFLAGS ?= -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
+CCWARN= -Wall
+CCWARN+= -Wextra -Wdeclaration-after-statement -Wredundant-decls -Wshadow -Wpointer-arith
+CFLAGS ?= $(CCWARN) -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
 
 PYTHON = python3
 PYTHON_CFLAGS = $(shell $(PYTHON)-config --cflags | sed s/-fno-plt//g)

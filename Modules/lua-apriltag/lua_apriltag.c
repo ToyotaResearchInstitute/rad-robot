@@ -7,17 +7,6 @@ Author: Stephen McGill <stephen.mgill@tri.global>, 05/2019
 #include <lua.h>
 #include <lualib.h>
 
-#include <fcntl.h>
-#include <math.h>
-#include <poll.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <sys/time.h>
-#include <unistd.h>
-
 #include <apriltag/apriltag.h>
 #include <apriltag/apriltag_pose.h>
 #include <apriltag/common/zarray.h>

@@ -5,7 +5,9 @@ TARGET=png.so
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
-CFLAGS ?= -fPIC -Ofast $(shell pkg-config $(LUA) --cflags-only-other)
+CCWARN= -Wall
+CCWARN+= -Wextra -Wdeclaration-after-statement -Wredundant-decls -Wshadow -Wpointer-arith
+CFLAGS ?= $(CCWARN) -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
 
 ifndef OSTYPE
 OSTYPE=$(shell uname -s | tr '[:upper:]' '[:lower:]')
@@ -32,7 +34,7 @@ $(TARGET): $(OBJS)
 
 %.o: %.c
 	$(CC) -c -o $@ $< -I$(LUA_INCDIR) $(CFLAGS) $(shell pkg-config --cflags libpng)
-  
+
 install: $(TARGET)
 	@echo --- install
 	@echo INST_PREFIX: $(INST_PREFIX)

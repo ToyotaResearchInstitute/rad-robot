@@ -9,7 +9,9 @@ endif
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
-CFLAGS ?= -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
+CCWARN= -Wall
+CCWARN+= -Wextra -Wdeclaration-after-statement -Wredundant-decls -Wshadow -Wpointer-arith
+CFLAGS ?= $(CCWARN) -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
 
 ifeq ($(OSTYPE),darwin)
 LIBFLAG ?= -bundle -undefined dynamic_lookup -all_load -macosx_version_min 10.13

@@ -10,7 +10,9 @@ endif
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
-CFLAGS ?= -Wall -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other) $(shell pkg-config --cflags apriltag)
+CCWARN= -Wall
+CCWARN+= -Wextra -Wdeclaration-after-statement -Wredundant-decls -Wshadow -Wpointer-arith
+CFLAGS ?= $(CCWARN) -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other) $(shell pkg-config --cflags apriltag)
 # CFLAGS ?= -Wall -fPIC -g $(shell pkg-config $(LUA) --cflags-only-other) $(shell pkg-config --cflags apriltag) -DDEBUG
 
 ifeq ($(OSTYPE),darwin)
