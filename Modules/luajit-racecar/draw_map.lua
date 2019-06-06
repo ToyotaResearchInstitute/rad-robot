@@ -1,7 +1,6 @@
 #!/usr/bin/env luajit
 local fname_lmp = assert(arg[1], "No log specified")
-local unpack = require'table'.unpack
-local stringify = require'cjson'.encode
+local unpack = unpack or require'table'.unpack
 local stringify = require'cjson'.encode
 local logger = require'logger'
 
@@ -11,13 +10,17 @@ local fname_segments = fname_lmp:gsub("%.lmp$", ".segments.json")
 local fname_links = fname_lmp:gsub("%.lmp$", ".links.json")
 local fname_bounds = fname_lmp:gsub("%.lmp$", ".bounds.json")
 local fname_map = fname_lmp:gsub("%.lmp$", ".map.pgm")
+print("Writing map", fname_map)
 
 local function exists(fname)
   local f = io.open(fname, "r")
-  if not f then return false end
+  if not f then return false, "Does not exist" end
   f:close()
   return true
 end
+
+-- Make sure that the input file exists
+assert(exists(fname_lmp))
 
 local function get_log_bounds(fname_lmp)
   -- Find the bounds
@@ -43,7 +46,9 @@ local function get_log_bounds(fname_lmp)
 end
 
 -- Grab the OSM file if need be
+print("Checking OSM", fname_osm)
 if not exists(fname_osm) then
+  print("Grabbing the OSM file for this log")
   local lla_min, lla_max = get_log_bounds(fname_lmp)
   local proj = require'proj'
   local url_overpass = proj.url_from_minmax(lla_min, lla_max)
@@ -58,7 +63,8 @@ if not exists(fname_segments) then
 end
 
 -- Find the roadways
-local cjson = require'cjson'
+local has_cjson, cjson = pcall(require, 'cjson')
+print("has_cjson", has_cjson)
 local bounds = cjson.decode(io.open(fname_bounds):read"*all")
 print("bounds", bounds)
 local segments = cjson.decode(io.open(fname_segments):read"*all")

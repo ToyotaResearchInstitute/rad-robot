@@ -6,11 +6,8 @@ racecar.init()
 local flags = racecar.parse_arg(arg)
 local log_announce = racecar.log_announce
 
-local DEBUG_ANNOUNCE = os.getenv("ANNOUNCE") or flags.announce
-local RUN_SIMULATION = os.getenv("SIMULATE") or flags.simulate
 local id_robot = flags.id or racecar.HOSTNAME
 assert(id_robot, "No name provided!")
-print("RUN_SIMULATION", RUN_SIMULATION)
 math.randomseed(123)
 
 local grid = require'grid'
@@ -25,12 +22,17 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 -- Test the control library
 local control = require'control'
 local path = require'path'
-local generate_waypoints = require'path'.generate_waypoints
-local path_from_waypoints = require'path'.path_from_waypoints
 
 -- Globally accessible variables
-local veh_poses = {}
 local desired_path = flags.path or 'outer'
+-- TODO: Paths should come from a separate program
+local pp_params = {
+  path = false,
+  lookahead = 0.5, --0.33, -- 0.6
+  threshold_close = 0.25
+}
+local pp_control = false
+local veh_poses = {}
 local vel_lane0 = tonumber(flags.vel_lane) or 0.5
 local vel_lane = vel_lane0
 local vel_max = 0.75 -- 1 --0.75
@@ -39,9 +41,6 @@ local vel_min = 0.2
 local wheel_base = 0.3
 -- Parameters for trajectory following
 local dt = 0.1
-local lookahead = 0.33
--- local lookahead = 0.6
-local threshold_close = 0.25
 --
 local function cb_debug(t_us)
   local pose_rbt = veh_poses[id_robot]
@@ -54,9 +53,6 @@ local function cb_debug(t_us)
   return table.concat(info, "\n")
 end
 
--- Path increments: one inch
-local ds = 0.10
-
 -- For grid drawing
 local function set_mid(map, idx) map[idx] = 127 end
 local function set_quarter(map, idx) map[idx] = 63 end
@@ -68,215 +64,15 @@ local g_holo = assert(grid.new{
   ymin = -1, ymax = 6
 })
 
-local g_loop = assert(grid.new{
-  scale = 0.01,
-  xmin = 0, xmax = 4.5,
-  ymin = -1, ymax = 6
-})
-
-local routes = {}
--- Inner and outer are merely two different lanes
--- On the same road
-routes.inner = {
-  {1.25, -0.25, math.rad(90)},
-  {1.25, 5.25, math.rad(0)},
-  {3.5, 5.25, math.rad(270)},
-  {3.5, -0.25, math.rad(180)},
-  turning_radius = 0.3,
-  closed = true
-}
-routes.outer = {
-  {0.75, -0.75, math.rad(0)},
-  {4, -0.75, math.rad(90)},
-  {4, 5.75, math.rad(180)},
-  {0.75, 5.75, math.rad(270)},
-  turning_radius = 0.3,
-  closed = true
-}
-routes.driveway = {
-  -- Starting point
-  {-0.6, 2.5, math.rad(0)},
-  -- {-0.25, 2.5, math.rad(0)},
-  -- {0.05, 2.5, math.rad(0)},
-  {0.15, 2.5, math.rad(0)},
-  -- {0.25, 2.5, math.rad(0)},
-  -- {0.35, 2.5, math.rad(0)}, -- Just before entering
-  -- {0.4, 2.5, math.rad(0)},
-  turning_radius = 0.3,
-  closed = false
-}
-
--- local radius_roundabout1 = 1.5
--- local radius_roundabout2 = 2.5
--- routes.roundabout1 = {
---   {2.5 + radius_roundabout, 2.5, math.rad(90)},
---   {2.5, 2.5 + radius_roundabout, math.rad(180)},
---   {2.5 - radius_roundabout, 2.5, math.rad(270)},
---   {2.5, 2.5 - radius_roundabout, math.rad(0)},
---   turning_radius = radius_roundabout1,
---   closed = true
--- }
-
--- routes.roundabout2 = {
---   {4, -0.75, math.rad(90)},
---   {4, 5.75, math.rad(180)},
---   {0.75, 5.75, math.rad(270)},
---   {0.75, -0.75, math.rad(0)},
---   turning_radius = 0.3,
---   closed = true
--- }
-
-routes.merge = {
-  -- Starting point
-  {-1.0, 2.5, math.rad(0)},
-  {1.5, 2.5, math.rad(15)},
-  {2.0, 2.75, math.rad(30)},
-  -- {3.0, 3.0, math.rad(15)}, -- Just before merging
-  {3.5, 3.25, math.rad(15)}, -- Merged
-  {5.0, 3.25, math.rad(0)}, -- Merged
-  turning_radius = 0.3,
-  closed = false
-}
-
-routes.highway = {
-  -- Starting point
-  {-1.0, 3.25, math.rad(0)},
-  {5.0, 3.25, math.rad(0)}, -- Merged
-  {6.0, 4.25, math.rad(90)},
-  {5.0, 5.25, math.rad(180)},
-  {0.0, 5.25, math.rad(180)},
-  {-1.0, 4.25, math.rad(270)},
-  turning_radius = 0.3,
-  closed = true
-}
-
--- Smaller loops
---[[
-routes.outerA = {
-  {0.75, -0.75, math.rad(0)},
-  {4, -0.75, math.rad(90)},
-  {4, 2.5, math.rad(180)},
-  {0.75, 2.5, math.rad(270)},
-  turning_radius = 0.3,
-  closed = true
-}
---]]
---[[
-routes.outerB = {
-  {4, 5.75, math.rad(180)},
-  {0.75, 5.75, math.rad(270)},
-  {0.75, 2.5, math.rad(0)},
-  {4, 2.5, math.rad(90)},
-  turning_radius = 0.3,
-  closed = true
-}
---]]
-
--- Generate the knots
--- These show the points before and after a turn
-local route_knots = {}
-for name, route in pairs(routes) do
-  local knots = assert(generate_waypoints(route))
-  route_knots[name] = knots
-end
--- Print the knots
-for name, knots in pairs(route_knots) do
-  print("Route", name)
-  for i, kn in ipairs(knots) do print(i, unpack(kn)) end
-end
-
--- Go from a route to a list of points (path)
-local paths = {}
-for name, knots in pairs(route_knots) do
-  g_holo:fill(0)
-  local path, length = path_from_waypoints(knots, {
-  ds = ds, grid_raster = g_holo, closed = routes[name].closed})
-  assert(path, length)
-  assert(#path > 0, "No points in path")
-  assert(length > 0, "No path length")
-  control.generate_kdtree(path)
-  -- Since we are drawing, save the drawing of the path(s)
-  assert(g_holo:save("/tmp/path_"..name..".pgm"))
-  -- Add to the table of paths
-  path.length = length
-  paths[name] = path
-  print(string.format("Route [%s] Length [%.2f meters] Points [%d]",
-  name, path.length, #path))
-end
-
--- For the roundabouts
-local radius_roundabout1 = 1.5
-local radius_roundabout2 = 1.75
-do
-  local path, length = path.path_arc(
-  {2.5, 2.5}, radius_roundabout1, 0, 2 * math.pi, ds)
-  path.length = length
-  path.ds = ds
-  path.closed = true
-  control.generate_kdtree(path)
-  paths.roundabout1 = path
-end
-do
-  local path, length = path.path_arc(
-  {2.5, 2.5}, radius_roundabout2, 0, 2 * math.pi, ds)
-  path.length = length
-  path.ds = ds
-  path.closed = true
-  control.generate_kdtree(path)
-  paths.roundabout2 = path
-end
-
--- Intersection lookup helper
-local all_knots = {
-  tree = require'kdtree'.create(2),
-  last = {n = 0}
-}
-for name, knots in pairs(route_knots) do
-  print(name, "n_knots", #knots)
-  for i, knot in ipairs(knots) do
-    local info = {name, i}
-    table.insert(all_knots, info)
-    -- Insert with the ID to the route information
-    all_knots.tree:insert(knot, #all_knots)
+local function find_lead(path_lane, id_path)
+  if type(path_lane)~='table' then
+    return false, "Bad path: "..type(path_lane)
   end
-end
-
--- TODO: Paths should come from a separate program
-local my_path = assert(paths[desired_path], "Path not found!")
-local pp_params = {
-  path = my_path,
-  lookahead = lookahead,
-  threshold_close = threshold_close
-}
-local pp = assert(control.pure_pursuit(pp_params))
-
--- Set the environment for displaying in-browser
-local env = {
-  viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
-  observer = false,
-  time_interval = dt,
-  speed = vel_lane,
-  -- Show the knots for better printing
-  lanes = {
-    -- {unpack(paths.inner)}, {unpack(paths.outer)},
-    -- {unpack(paths.driveway)},
-    -- {unpack(paths.highway)}
-    -- {unpack(paths.merge)},
-    {unpack(paths.roundabout1)}, {unpack(paths.roundabout2)}, {unpack(paths.driveway)},
-    -- {unpack(paths.outerA)}, {unpack(paths.outerB)}
-  },
-  -- This isn't quite right...?
-  trajectory_turn = {
-    -- {unpack(paths.inner)}, {unpack(paths.outer)}
-  },
-}
-
-local function find_lead(path, id_path)
   -- Check if in my lane
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
     if name_veh ~= id_robot then
-      local info = control.find_in_path(pose_veh, path, 0.25)
+      local info = control.find_in_path(pose_veh, path_lane, 0.25)
       -- Check if they are in our lane
       if info then
         table.insert(in_my_lane, {name_veh, info})
@@ -294,16 +90,16 @@ local function find_lead(path, id_path)
     local name_veh, info_veh = unpack(name_info)
     local id_path_other = info_veh.id_in_path
     local d_id = id_path_other - id_path
-    local d_rel = d_id * path.ds
+    local d_rel = d_id * path_lane.ds
     -- Loop around if closed
-    if path.closed then
+    if path_lane.closed then
       if id_path_other < id_path then
-        id_path_other = id_path_other + #path
+        id_path_other = id_path_other + #path_lane.points
       else
-        id_path_other = id_path_other - #path
+        id_path_other = id_path_other - #path_lane.points
       end
       local d_id2 = id_path_other - id_path
-      local d_rel2 = d_id2 * path.ds
+      local d_rel2 = d_id2 * path_lane.ds
       if math.abs(d_rel2) < math.abs(d_rel) then
         d_rel = d_rel2
       end
@@ -326,8 +122,11 @@ local function cb_loop(t_us)
     log_announce(log, control_inp, "control")
     return
   end
+  if not pp_control then
+    return
+  end
   -- Find our control policy
-  local result, err = pp(pose_rbt)
+  local result, err = pp_control(pose_rbt)
   if not result then return false, err end
   -- for k, v in pairs(result) do
   --   if type(v)=='table' then
@@ -347,7 +146,7 @@ local function cb_loop(t_us)
   local ratio = 1
   --------------------------------
   -- Check the obstacles around us
-  local name_lead, d_lead = find_lead(my_path, result.id_path)
+  local name_lead, d_lead = find_lead(pp_params.path, result.id_path)
   -- Slow for a lead vehicle
   if name_lead then
     -- print("Lane leader | ", name_lead, d_lead)
@@ -358,6 +157,7 @@ local function cb_loop(t_us)
       -- Bound the ratio
       ratio = math.max(0, math.min(ratio, 1))
     end
+    print("Leader", name_lead, d_lead)
   else
     print("No leader", d_lead)
   end
@@ -383,21 +183,8 @@ local function cb_loop(t_us)
 
   end
 
-  -- TODO: Call our simulation within here? Speed/Dropped packets
-  -- if RUN_SIMULATION then
-  --   local control_inp = {steering = steering, velocity = vel_lane}
-  --   local state = assert(simulate_vehicle({pose=pose_rbt}, control_inp))
-  --   pose_rbt = state.pose
-  -- end
   -- Should we broadcast?
   log_announce(log, result, "control")
-  if DEBUG_ANNOUNCE then
-    -- TODO: Environment should be in a different Lua file, as it listen to the path
-    -- env.observer = pose_rbt
-    assert(racecar.announce("risk", env))
-    -- Wait a touch if simulating
-    if RUN_SIMULATION then usleep(1e4) end
-  end
 end
 -- Update the pure pursuit
 --------------------------
@@ -432,16 +219,36 @@ end
 -- TODO: Houston stop/pause of simulation
 -- TODO: Check that no risk is accumulated when veoxels beyond t_clear
 
+local function parse_plan(msg)
+  -- print("Message:", type(msg))
+  -- for k, v in pairs(msg) do
+  --   print(k, v)
+  -- end
+  -- for _, path_lane in pairs(msg.paths) do
+
+  -- end
+  local my_path = msg.paths[desired_path] or false
+  if type(my_path)=='table' then
+    -- We've found our table
+    if pp_params.path ~= my_path or not pp_control then
+      -- KD Tree of points
+      local pt_tree = control.generate_kdtree(my_path.points)
+      my_path.tree = pt_tree
+      -- Update the parameters
+      pp_params.path = my_path
+      pp_control = assert(control.pure_pursuit(pp_params))
+    end
+  end
+end
 
 local cb_tbl = {
   vicon = parse_vicon,
+  risk = parse_plan
 }
 
 local function exit()
   if log then log:close() end
-  if DEBUG_ANNOUNCE then
-    racecar.announce("control", {id = id_robot, steering = 0, velocity = 0})
-  end
+  log_announce(log, {id = id_robot, steering = 0, velocity = 0}, "control")
   -- assert(g_holo:save"/tmp/simulated.pgm")
   -- assert(g_loop:save(string.format("/tmp/loop%02d.pgm", loop_counter)))
   -- print("p_history", #p_history)

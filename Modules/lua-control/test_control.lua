@@ -1,4 +1,4 @@
-#! / usr / bin / env luajit
+#!/usr/bin/env luajit
 local unpack = unpack or require'table'.unpack
 
 local DEBUG_ANNOUNCE = false
@@ -92,7 +92,7 @@ routes.triangle = {
   vpose{1 + 0, 2, math.rad(270)},
   turning_radius = 0.1
 }
- 
+
 routes.polygon = {
   vpose{0.125 + 0, 0, math.rad(0)},
   vpose{0.125 + 2, 0, math.rad(30)},
@@ -242,7 +242,7 @@ for iloop = 1, nloops do
   -- Draw the point where we are
   g_holo:point(pose_rbt)
   g_loop:point(pose_rbt)
-  
+
   local result, err = assert(pp(pose_rbt))
   if type(result) ~= 'table' then
     print("Improper", result, err)
@@ -261,7 +261,7 @@ for iloop = 1, nloops do
     end
   end
   print("==")
-  
+
   -- Intersection check
   local intersection_close = 2 * ds
   print("intersection_close", intersection_close)
@@ -278,11 +278,11 @@ for iloop = 1, nloops do
   if type(upcoming_intersections) == 'table' then
     print("Route | Lookahead:", unpack(result.p_lookahead))
     for _, upcoming in ipairs(upcoming_intersections) do
-      
+
       local iknot = upcoming.user
       local name, idx = unpack(all_knots[iknot])
       local knot = route_knots[name][idx]
-      
+
       -- TODO: Check distance and orientation
       local d_knot = vector.distance(knot, result.p_lookahead)
       local da_knot = transform.mod_angle(knot[3] - pose_rbt[3])
@@ -319,7 +319,7 @@ for iloop = 1, nloops do
     end
     assert(n_intersection_routes == #intersection_routes)
     print("selector0", table.concat(intersection_routes, ','))
-    
+
     --
     if not vector.set_eq_set(intersection_routes, all_knots.last) then
       all_knots.last = intersection_routes
@@ -329,7 +329,7 @@ for iloop = 1, nloops do
     end
   end
   -- upcoming_intersections = all_knots.tree:nearest(result.p_lookahead_path, threshold_close)
-  
+
   -----------------------------
   -- Check if reaching the goal
   local n_path = #my_path
@@ -348,7 +348,7 @@ for iloop = 1, nloops do
   end
   -- End goal check
   -----------------------------
-  
+
   -- Random routes
   -- print("Routes available", #intersection_knots)
   -- Choose a (random) new path
@@ -375,7 +375,7 @@ for iloop = 1, nloops do
   elseif done_path then
     break
   end
-  
+
   -------------------------
   -- Run forward simulation
   -- Set the angle of the front wheels
@@ -386,7 +386,7 @@ for iloop = 1, nloops do
   pose_rbt = vector.pose(state.pose)
   -- End forward simulation
   -------------------------
-  
+
   -- Should we broadcast?
   if DEBUG_ANNOUNCE then
     env.observer = pose_rbt

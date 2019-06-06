@@ -178,10 +178,8 @@ local function path_from_waypoints(waypoints, params)
   local grid_raster = params.grid_raster
   if type(grid_raster) ~= 'table' then grid_raster = false end
   local closed = params.closed and true or false
-  path.closed = closed
   -- ds: discrete distance between each waypoint
   local ds = params.ds
-  path.ds = ds
   -- Save the path length from this call
   local length = 0
   local n_waypoints = #waypoints

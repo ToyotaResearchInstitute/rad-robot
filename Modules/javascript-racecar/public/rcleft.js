@@ -241,19 +241,25 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (has_road) {
       return;
     }
-    const lanes = msg.lanes;
+    const lanes = msg.paths;
     if (!lanes) {
       return;
     }
-
+    const pt_to_pair =
+        (coord, i) => { return coord2svg(coord).slice(0, 2).join(); };
+    // Grab the SVG of each lane
     var lanes_els = lanes_svg.getElementsByClassName('lane');
-    lanes.forEach((l, i, arr) => {
-      const points =
-          l.map((coord, i) => { return coord2svg(coord).slice(0, 2).join(); })
-              .join(' ');
-      var el = lanes_els.item(i);
+    // console.log(lanes_els);
+    // Iterate the names of the lanes
+    Object.keys(lanes).forEach(function(name) {
+      const l = lanes[name];
+      // console.log(name, l);
+      // console.log("l['points']", l['points']);
+      const points = l['points'].map(pt_to_pair).join(' ');
+      var el = lanes_els.namedItem(name);
       if (!el) {
         el = document.createElementNS("http://www.w3.org/2000/svg", 'polyline');
+        el.setAttributeNS(null, 'id', 'lane_' + name);
         el.setAttributeNS(null, 'class', 'lane');
         el.style.fill = "none";
         // el.style.stroke = "#0F0";

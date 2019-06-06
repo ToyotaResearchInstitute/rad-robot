@@ -29,8 +29,6 @@ local function generate_kdtree(path)
   if tree:size() ~= #path then
     return false, "No points added to the kd-tree"
   end
-  -- Add to the
-  path.tree = tree
   return tree
 end
 lib.generate_kdtree = generate_kdtree
@@ -76,7 +74,7 @@ local function find_in_path(p_vehicle, path, closeness)
   -- Since distance sorted, find the first with a reasonable alignment
   for _, nby in ipairs(nearby) do
     local id_in_path = nby.user
-    local path_x, path_y, path_a = unpack(path[id_in_path])
+    local path_x, path_y, path_a = unpack(path.points[id_in_path])
     local dx, dy = p_x - path_x, p_y - path_y
     -- Only if the path _has_ an angle at that point
     local da = path_a and mod_angle(p_a - path_a)
@@ -142,9 +140,11 @@ local function pure_pursuit(params)
   -- Initialization bits
   if type(params) ~= 'table' then return false, "No parameters" end
   local path = params.path
+  local points = path.points
+  local n_points = #points
   if type(path)~='table' then
     return false, "Bad path"
-  elseif #path==0 then
+  elseif n_points==0 then
     return false, "No path points"
   end
   local threshold_close = tonumber(params.threshold_close) or 0.25
@@ -164,7 +164,7 @@ local function pure_pursuit(params)
     if not id_path then
       return false, is_nearby
     end
-    local p_path = path[id_path]
+    local p_path = points[id_path]
     local d_path = false
     local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
     if p_path then
@@ -182,7 +182,7 @@ local function pure_pursuit(params)
       id_lookahead_last = id_lookahead_last,
       lookahead = lookahead,
     }
-    if id_path==#path and not path.closed then
+    if id_path==#points and not path.closed then
       result.done = true
       return result
     end
@@ -201,24 +201,25 @@ local function pure_pursuit(params)
       -- Keep in a loop using the modulo
       -- print("steps_lookahead", steps_lookahead)
       id_lookahead = id_path + steps_lookahead
-      if id_lookahead > #path then
+      if id_lookahead > n_points then
         if path.closed then
           -- Assuming that steps_lookahead < #path
-          id_lookahead = id_lookahead - #path
+          id_lookahead = id_lookahead - n_points
         else
-          id_lookahead = #path
+          id_lookahead = n_points
         end
       end
       -- print("id_path", id_path)
       -- print("id_lookahead", id_lookahead)
-      p_lookahead = path[id_lookahead]
+      p_lookahead = points[id_lookahead]
       -- print("p_path", unpack(p_path))
       -- print("p_lookahead", unpack(p_lookahead))
       -- error("OOPS")
     end
     result.p_lookahead = p_lookahead
     -- Find delta between robot and lookahead path point
-    local p_lookahead_path = assert(path[id_lookahead], "No lookahead point on the path")
+    local p_lookahead_path = assert(points[id_lookahead],
+      string.format("No lookahead point [%s]", tostring(id_lookahead)))
     -- Ensure that we set this variable for debugging
     if not id_lookahead then
       result.p_lookahead = p_lookahead_path

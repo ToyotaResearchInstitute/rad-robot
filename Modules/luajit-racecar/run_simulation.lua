@@ -6,7 +6,7 @@ racecar.init()
 local flags = racecar.parse_arg(arg)
 local log_announce = racecar.log_announce
 
-local DEBUG_ANNOUNCE = os.getenv("ANNOUNCE") or flags.announce
+local DEBUG_ANNOUNCE = flags.announce
 math.randomseed(123)
 
 local transform = require'transform'
@@ -15,6 +15,15 @@ local vector = require'vector'
 
 local has_logger, logger = pcall(require, 'logger')
 local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racecar.ROBOT_HOME.."/logs"))
+
+-- Start configurations - this is a JSON file
+local has_cjson, cjson = pcall(require, 'cjson')
+local configuration = has_cjson and flags.configuration
+if type(configuration)=='string' then
+  local f_conf = assert(io.open(configuration))
+  configuration = cjson.decode(f_conf:read"*all")
+  f_conf:close()
+end
 
 -- Globally accessible variables
 local veh_states = {}
@@ -67,7 +76,8 @@ local function simulate_vehicle(state, control_inp, dt, use_noise)
     transform.mod_angle(pose_a + dpose_a)
   }
   -- Add noise to the process
-  local pose_noisy = use_noise and noisy_pose(pose_process, dt) or pose_process
+  -- TODO: only if moving!
+  local pose_noisy = use_noise and (velocity > 0) and noisy_pose(pose_process, dt) or pose_process
   return {
     pose = pose_noisy
   }
