@@ -188,28 +188,28 @@ for name, knots in pairs(route_knots) do
 end
 
 -- For the roundabouts
-local radius_roundabout1 = 1.5
-local radius_roundabout2 = 1.75
-do
-  local points, length = path.path_arc(
-    {2.5, 2.5}, radius_roundabout1, 0, 2 * math.pi, ds)
-  paths.roundabout1 = {
-    length = length,
-    ds = ds,
-    closed = true,
-    points = points
-  }
-end
-do
-  local points, length = path.path_arc(
-    {2.5, 2.5}, radius_roundabout2, 0, 2 * math.pi, ds)
-  paths.roundabout2 = {
-    length = length,
-    ds = ds,
-    closed = true,
-    points = points
-  }
-end
+-- local radius_roundabout1 = 1.5
+-- local radius_roundabout2 = 1.75
+-- do
+--   local points, length = path.path_arc(
+--     {2.5, 2.5}, radius_roundabout1, 0, 2 * math.pi, ds)
+--   paths.roundabout1 = {
+--     length = length,
+--     ds = ds,
+--     closed = true,
+--     points = points
+--   }
+-- end
+-- do
+--   local points, length = path.path_arc(
+--     {2.5, 2.5}, radius_roundabout2, 0, 2 * math.pi, ds)
+--   paths.roundabout2 = {
+--     length = length,
+--     ds = ds,
+--     closed = true,
+--     points = points
+--   }
+-- end
 
 -- Set the environment for displaying in-browser
 local env = {

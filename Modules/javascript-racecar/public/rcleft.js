@@ -365,8 +365,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       if (!el) {
         el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
         el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href',
-                          // '#basevehicle');
-                          '#sweetvehicle');
+                          '#automobile');
         el.setAttributeNS(null, 'class', 'vehicle');
         // el = document.createElementNS("http://www.w3.org/2000/svg",
         // 'circle');
@@ -399,35 +398,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
       veh.rotation.z = v[2];
     });
   };
-
-  /*
-  const update_observer = (msg) => {
-    const observer = msg.observer;
-    if (!observer) {
-      return;
-    }
-    var obs_el = document.getElementById('observer');
-    if (!obs_el) {
-      obs_el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
-      obs_el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href',
-                            // '#basevehicle');
-                            '#sweetvehicle');
-      obs_el.setAttributeNS(null, 'id', 'observer');
-      observer_svg.appendChild(obs_el);
-    }
-    const o = coord2svg(observer);
-    const x = o[0] || 0, y = o[1] || 0, a = o[2] || 0;
-    obs_el.setAttributeNS(null, 'x', x);
-    obs_el.setAttributeNS(null, 'y', y);
-
-    obs_el.setAttributeNS(null, 'transform',
-                          "rotate(" + [ a * RAD_TO_DEG, x, y ].join() + ")");
-
-    observer_mesh.position.x = observer[0];
-    observer_mesh.position.y = observer[1];
-    observer_mesh.rotation.z = observer[2];
-  };
-  */
 
   const update_control = (msg) => {
     const ctrl = msg.control;
@@ -481,7 +451,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
       if (!pose_el) {
         pose_el = document.createElementNS("http://www.w3.org/2000/svg", 'use');
         pose_el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href',
-                               '#sweetvehicle');
+                               '#automobile');
+        pose_el.setAttribute("fill", "brown");
+        pose_el.setAttribute("stroke", "white");
+        pose_el.setAttribute("fill-opacity", "0.75");
+        // '#sweetvehicle');
         pose_el.setAttributeNS(null, 'id', 'pose_' + id_robot);
         observer_svg.appendChild(pose_el);
       }
@@ -983,7 +957,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     var msg = munpack(new Uint8Array(e.data));
     Object.assign(cur, msg);
 
-    // console.log(msg);
+    console.log(msg);
     if (msg.risk !== undefined) {
       msg = msg.risk;
     }

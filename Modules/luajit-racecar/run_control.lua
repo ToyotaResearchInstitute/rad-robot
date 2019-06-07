@@ -2,41 +2,47 @@
 local unpack = unpack or require'table'.unpack
 
 local racecar = require'racecar'
-racecar.init()
 local flags = racecar.parse_arg(arg)
-local log_announce = racecar.log_announce
-
 local id_robot = flags.id or racecar.HOSTNAME
 assert(id_robot, "No name provided!")
 math.randomseed(123)
-
-local grid = require'grid'
 local atan = require'math'.atan
-local usleep = require'unix'.usleep
 local vector = require'vector'
 
-local has_logger, logger = pcall(require, 'logger')
+local control = require'control'
 
+local log_announce = racecar.log_announce
+local has_logger, logger = pcall(require, 'logger')
 local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racecar.ROBOT_HOME.."/logs"))
 
--- Test the control library
-local control = require'control'
-local path = require'path'
+-- Initialize the system
+racecar.init()
 
 -- Globally accessible variables
 local desired_path = flags.path or 'outer'
 -- TODO: Paths should come from a separate program
-local pp_params = {
-  path = false,
-  lookahead = 0.5, --0.33, -- 0.6
-  threshold_close = 0.25
-}
+local pp_params
+do
+  local velocity = tonumber(flags.vel_lane) or 0.5
+  local velocity_stddev = velocity * 0.1
+  local vel_max = 0.75
+  local vel_min = 0.2
+  local lookahead = tonumber(flags.lookahead) or 0.325 -- 0.425, 0.65
+  pp_params = {
+    path = false,
+    lookahead = lookahead,
+    threshold_close = 0.25,
+    leader = {false, false},
+    velocity = velocity,
+    velocity_stddev = velocity_stddev,
+    velocity_max = vel_max,
+    velocity_min = vel_min,
+  }
+end
 local pp_control = false
+local pp_result = false
+--
 local veh_poses = {}
-local vel_lane0 = tonumber(flags.vel_lane) or 0.5
-local vel_lane = vel_lane0
-local vel_max = 0.75 -- 1 --0.75
-local vel_min = 0.2
 -- Simulation parameters
 local wheel_base = 0.3
 -- Parameters for trajectory following
@@ -48,21 +54,17 @@ local function cb_debug(t_us)
   local px, py, pa = unpack(pose_rbt)
   local info = {
     string.format("Path: %s", desired_path),
-    string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa))
+    string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa)),
+    string.format("Leader: %s [%s]", unpack(pp_params.leader)),
   }
+  if pp_result then
+    table.insert(info, string.format("Control: %.2f m/s, %.2f°",
+      pp_result.velocity, math.deg(pp_result.steering)))
+  else
+    table.insert(info, "Control not available")
+  end
   return table.concat(info, "\n")
 end
-
--- For grid drawing
-local function set_mid(map, idx) map[idx] = 127 end
-local function set_quarter(map, idx) map[idx] = 63 end
-
--- Holodeck Grid
-local g_holo = assert(grid.new{
-  scale = 0.01,
-  xmin = 0, xmax = 4.5,
-  ymin = -1, ymax = 6
-})
 
 local function find_lead(path_lane, id_path)
   if type(path_lane)~='table' then
@@ -83,8 +85,8 @@ local function find_lead(path_lane, id_path)
     return false, "Nobody in my lane"
   end
   local name_lead, d_lead = false, math.huge
-  local pose_rbt = veh_poses[id_robot]
-  local p_x, p_y, p_a = unpack(pose_rbt)
+  -- local pose_rbt = veh_poses[id_robot]
+  -- local p_x, p_y, p_a = unpack(pose_rbt)
   -- print("Monitoring my lane: ", table.concat(in_my_lane, ", "))
   for _, name_info in ipairs(in_my_lane) do
     local name_veh, info_veh = unpack(name_info)
@@ -123,18 +125,14 @@ local function cb_loop(t_us)
     return
   end
   if not pp_control then
-    return
+    return false, "No controller"
   end
   -- Find our control policy
   local result, err = pp_control(pose_rbt)
-  if not result then return false, err end
-  -- for k, v in pairs(result) do
-  --   if type(v)=='table' then
-  --     print(k, table.concat(v, ', '))
-  --   else
-  --     print(k, v)
-  --   end
-  -- end
+  pp_result = result
+  if not result then
+    return false, err
+  end
   if result.err then
     return false, result.err
   end
@@ -147,6 +145,8 @@ local function cb_loop(t_us)
   --------------------------------
   -- Check the obstacles around us
   local name_lead, d_lead = find_lead(pp_params.path, result.id_path)
+  -- Allow for printing
+  pp_params.leader = {name_lead, d_lead}
   -- Slow for a lead vehicle
   if name_lead then
     -- print("Lane leader | ", name_lead, d_lead)
@@ -157,11 +157,17 @@ local function cb_loop(t_us)
       -- Bound the ratio
       ratio = math.max(0, math.min(ratio, 1))
     end
-    print("Leader", name_lead, d_lead)
-  else
-    print("No leader", d_lead)
   end
   --------------------------------
+
+  -- When looping, update the velocity
+  local vel_sample = pp_params.velocity
+  -- Just update all the time, now
+  if true or result.id_path == 1 then
+    local sample = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity)
+    -- Bound the sample
+    vel_sample = math.max(pp_params.velocity_min, math.min(sample[1], pp_params.velocity_max))
+  end
 
   if result.done then
     result.steering = 0
@@ -171,19 +177,10 @@ local function cb_loop(t_us)
     local steering = atan(result.kappa * wheel_base)
     result.steering = steering
     -- TODO: Set the speed based on curvature? Lookahead point's curvature?
-    result.velocity = vel_lane * ratio
+    result.velocity = vel_sample * ratio
   end
 
-  -- When looping, update the velocity
-  if result.id_path == 1 then
-    print("vel_lane0", vel_lane0)
-    vel_lane = unpack(vector.randn(1, vel_lane0 * 0.1, vel_lane0))
-    print("vel_lane", vel_lane)
-    assert (type(vel_lane)=='number')
-
-  end
-
-  -- Should we broadcast?
+  -- Broadcast
   log_announce(log, result, "control")
 end
 -- Update the pure pursuit
@@ -216,18 +213,8 @@ end
 -- Update the poses
 -------------------
 
--- TODO: Houston stop/pause of simulation
--- TODO: Check that no risk is accumulated when veoxels beyond t_clear
-
 local function parse_plan(msg)
-  -- print("Message:", type(msg))
-  -- for k, v in pairs(msg) do
-  --   print(k, v)
-  -- end
-  -- for _, path_lane in pairs(msg.paths) do
-
-  -- end
-  local my_path = msg.paths[desired_path] or false
+  local my_path = msg.paths[desired_path]
   if type(my_path)=='table' then
     -- We've found our table
     if pp_params.path ~= my_path or not pp_control then
@@ -249,10 +236,6 @@ local cb_tbl = {
 local function exit()
   if log then log:close() end
   log_announce(log, {id = id_robot, steering = 0, velocity = 0}, "control")
-  -- assert(g_holo:save"/tmp/simulated.pgm")
-  -- assert(g_loop:save(string.format("/tmp/loop%02d.pgm", loop_counter)))
-  -- print("p_history", #p_history)
-  -- assert(require'fileformats'.save_ply("/tmp/simulation.ply", p_history))
   return 0
 end
 racecar.handle_shutdown(exit)

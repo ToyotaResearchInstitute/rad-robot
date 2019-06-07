@@ -5,13 +5,13 @@
   "main": "view_racecar.js",
   "dependencies": {
     "finalhandler": "^1.1.2",
-    "msgpack5": "^4.2.0",
+    "msgpack5": "^4.2.1",
     "npm": "^6.9.0",
     "plotly.js": "^1.48.1",
     "serve-static": "^1.14.1",
     "smoothie": "^1.35.0",
-    "three": "^0.101.1",
-    "ws": "^6.2.1",
+    "three": "^0.105.2",
+    "ws": "^7.0.0",
     "zeromq": "^5.1.0"
   },
   "devDependencies": {},

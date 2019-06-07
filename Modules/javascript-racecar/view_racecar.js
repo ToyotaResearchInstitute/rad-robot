@@ -46,8 +46,16 @@ const mcl_transport = dgram.createSocket({type : 'udp4', reuseAddr : true});
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({port : 9001});
 
+// Store the fragments of received messages
 const getn = (arr) => arr.reduce((n, v) => n + (Buffer.isBuffer(v) ? 1 : 0), 0);
 var fragments = new Map();
+
+// Store the latest fully formed messages.
+var latest = new Map();
+// Broadcast at a consistent rate. (10Hz is 100ms)
+const CONSISTENT_RATE_MS = 100;
+// Should we send consistently or immediately?
+const SEND_CONSISTENTLY = true;
 
 // Multicast logic
 mcl_transport.bind(MCL_PORT, MCL_ADDRESS, () => {
@@ -77,7 +85,7 @@ mcl_transport.on('message', (msg, rinfo) => {
   case 0x4c43: // LCM message type
     break;
   }
-  var ch; // Channel
+  var ch = false; // Channel
   switch (msg.readUInt16BE(2)) {
   case 0x3032: // Decode LCM single: 0x4c43 3032
     const seq_id0 = msg.readUInt32BE(4);
@@ -87,10 +95,14 @@ mcl_transport.on('message', (msg, rinfo) => {
     const msg_mp =
         Buffer.concat([ Buffer.from([ 0x81, 0xd9, ch.length ]), ch, payload ]);
     // console.log(`LCM0 [${seq_id0}]`, ch.toString('utf8'), msg_mp.length);
-    if (ch.toString('utf8') != 'vicon') {
+    if (SEND_CONSISTENTLY) {
+      // Wait for the interval
+      latest.set(ch, msg_mp);
+    } else {
+      // Send now
       wss.broadcast(msg_mp);
     }
-    break;
+    return;
   case 0x3033: // Decode LCM multiple: 0x4c43 3033
     const seq_id = msg.readUInt32BE(4);
     const seq_len = msg.readUInt32BE(8);
@@ -106,9 +118,8 @@ mcl_transport.on('message', (msg, rinfo) => {
       if (ch.length > 255) {
         ch = ch.slice(0, 255);
       }
-      frag = Buffer.concat([
-        new Buffer.from([ 0x81, 0xd9, ch.length ]), ch, msg.slice(ch_off + 1)
-      ]);
+      frag = Buffer.concat(
+          [ Buffer.from([ 0xd9, ch.length ]), ch, msg.slice(ch_off + 1) ]);
     } else {
       frag = msg.slice(offset);
     }
@@ -117,21 +128,33 @@ mcl_transport.on('message', (msg, rinfo) => {
     const uuid = `${seq_id}-${nfrag}`;
     if (fragments.has(uuid)) {
       const fragment = fragments.get(uuid);
-      fragment[0] = t; // Update the time of the latest packet
+      // Update the time of the latest packet
+      fragment[0] = t;
+      // Grab the list of fragments
       frag_list = fragment[1];
+      // Grab the channel
+      ch = fragment[2];
     } else {
       frag_list = [];
-      fragments.set(uuid, [ t, frag_list ]);
+      fragments.set(uuid, [ t, frag_list, ch ]);
     }
     frag_list[frag_id] = frag;
     // Check for a full packet to send
+    // NOTE: A full packet must have the channel set
     const n = getn(frag_list);
     if (n === nfrag) {
       fragments.delete(uuid);
-      const msg_mp = Buffer.concat(frag_list);
+      const map_prefix = Buffer.from([ 0x81 ]);
+      const msg_mp = Buffer.concat([ map_prefix ] + frag_list);
       // console.log(`LCM1 [${seq_id}]`, ch.toString('utf8'), msg_mp.length,
       // fragments.size);
-      wss.broadcast(msg_mp);
+      if (SEND_CONSISTENTLY) {
+        // Wait for the interval
+        latest.set(ch, msg_mp);
+      } else {
+        // Send now
+        wss.broadcast(msg_mp);
+      }
     }
     break;
   default:
@@ -190,6 +213,21 @@ wss.on('connection', (ws) => {
   ws.on('close', function close() { console.log('disconnected'); });
   ws.on('error', console.error);
 });
+
+// Consistenty send messages to the web socket servers
+if (SEND_CONSISTENTLY) {
+  setInterval(() => {
+    // No need to broadcast, if there is no data
+    if (latest.size === 0) {
+      return;
+    }
+    // Broadcast each element
+    // console.log("Sending consistently");
+    latest.forEach(wss.broadcast);
+    // Clear the dictionary
+    latest.clear();
+  }, CONSISTENT_RATE_MS);
+}
 
 // Create server
 const server = http.createServer(
