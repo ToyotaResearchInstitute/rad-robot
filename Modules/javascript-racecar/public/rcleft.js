@@ -957,7 +957,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     var msg = munpack(new Uint8Array(e.data));
     Object.assign(cur, msg);
 
-    console.log(msg);
+    // console.log(msg);
     if (msg.risk !== undefined) {
       msg = msg.risk;
     }
