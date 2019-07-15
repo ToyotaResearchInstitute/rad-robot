@@ -77,6 +77,8 @@ polyline {
   stroke: #333;
   stroke-width: 0.01;
 }
+.lane {
+}
 
 path.black {
   fill:#000000;

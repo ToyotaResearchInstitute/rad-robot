@@ -85,7 +85,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
   });
   */
 
-  const d3colors = Plotly.d3.scale.category10();
+  // const d3colors = Plotly.d3.scale.category10();
+  const d3colors = Plotly.d3.scale.category20();
 
   var likelihood_selection = 'beliefs';
 
@@ -236,11 +237,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
   var length = 12, width = 8;
 
-  let has_road = false;
+  // let has_road = false;
   const update_road = (msg) => {
-    if (has_road) {
-      return;
-    }
+    // if (has_road) {
+    //   return;
+    // }
     const lanes = msg.paths;
     if (!lanes) {
       return;
@@ -251,21 +252,24 @@ document.addEventListener("DOMContentLoaded", function(event) {
     var lanes_els = lanes_svg.getElementsByClassName('lane');
     // console.log(lanes_els);
     // Iterate the names of the lanes
-    Object.keys(lanes).forEach(function(name) {
+    Object.keys(lanes).forEach((name, ilane) => {
       const l = lanes[name];
       // console.log(name, l);
       // console.log("l['points']", l['points']);
       const points = l['points'].map(pt_to_pair).join(' ');
-      var el = lanes_els.namedItem(name);
+      const lane_id = 'lane_' + name;
+      var el = lanes_els.namedItem(lane_id);
       if (!el) {
         el = document.createElementNS("http://www.w3.org/2000/svg", 'polyline');
-        el.setAttributeNS(null, 'id', 'lane_' + name);
+        el.setAttributeNS(null, 'id', lane_id);
         el.setAttributeNS(null, 'class', 'lane');
         el.style.fill = "none";
         // el.style.stroke = "#0F0";
-        el.style.stroke = d3colors(i);
+        el.style.stroke = d3colors(ilane);
         el.style.strokeWidth = "0.1";
-        el.style.opacity = "0.25";
+        el.style.opacity = "0.3";
+        // el.setAttributeNS(null, 'marker-start', 'url(#arrow)');
+        el.setAttributeNS(null, 'marker-end', 'url(#arrow)');
         lanes_svg.appendChild(el);
       }
       el.setAttributeNS(null, 'points', points);
@@ -301,7 +305,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     // let road_mesh = new THREE.Mesh(geometry, material);
     // scene.add(road_mesh);
 
-    has_road = true;
+    // has_road = true;
   };
 
   let has_obstacles = false;

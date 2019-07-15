@@ -43,10 +43,6 @@ end
 -- Path increments: one inch
 local ds = 0.10
 
--- For grid drawing
-local function set_mid(map, idx) map[idx] = 127 end
-local function set_quarter(map, idx) map[idx] = 63 end
-
 -- Holodeck Grid
 local g_holo = assert(grid.new{
   scale = 0.01,
@@ -57,34 +53,154 @@ local g_holo = assert(grid.new{
 local routes = {}
 -- Inner and outer are merely two different lanes
 -- On the same road
-routes.inner = {
-  {1.25, -0.25, math.rad(90)},
-  {1.25, 5.25, math.rad(0)},
-  {3.5, 5.25, math.rad(270)},
-  {3.5, -0.25, math.rad(180)},
-  turning_radius = 0.3,
-  closed = true
-}
-routes.outer = {
+-- routes.lane_outer = {
+--   {0.75, -0.75, math.rad(0)},
+--   {4, -0.75, math.rad(90)},
+--   {4, 5.75, math.rad(180)},
+--   {0.75, 5.75, math.rad(270)},
+--   turning_radius = 0.3,
+--   closed = true
+-- }
+
+routes.lane_outer_1 = {
+  {0.75, 2.25, math.rad(270)},
   {0.75, -0.75, math.rad(0)},
   {4, -0.75, math.rad(90)},
-  {4, 5.75, math.rad(180)},
-  {0.75, 5.75, math.rad(270)},
-  turning_radius = 0.3,
-  closed = true
-}
-routes.driveway = {
-  -- Starting point
-  {-0.6, 2.5, math.rad(0)},
-  -- {-0.25, 2.5, math.rad(0)},
-  -- {0.05, 2.5, math.rad(0)},
-  {0.15, 2.5, math.rad(0)},
-  -- {0.25, 2.5, math.rad(0)},
-  -- {0.35, 2.5, math.rad(0)}, -- Just before entering
-  -- {0.4, 2.5, math.rad(0)},
+  {4, 2.25, math.rad(180)},
   turning_radius = 0.3,
   closed = false
 }
+routes.lane_outer_2 = {
+  {4, 2.75, math.rad(90)},
+  {4, 5.75, math.rad(180)},
+  {0.75, 5.75, math.rad(270)},
+  {0.75, 2.75, math.rad(0)},
+
+  turning_radius = 0.3,
+  closed = false
+}
+
+routes.lane_inner_1 = {
+  {1.25, 3.25, math.rad(90)},
+  {1.25, 5.25, math.rad(0)},
+  {3.5, 5.25, math.rad(270)},
+  {3.5, 3.25, math.rad(180)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+routes.lane_inner_2 = {
+  {3.5, 1.75, math.rad(270)},
+  {3.5, -0.25, math.rad(180)},
+  {1.25, -0.25, math.rad(90)},
+  {1.25, 1.75, math.rad(0)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+-- Middle lanes
+routes.lane_middle_1 = {
+  {1.75, 2.25, math.rad(0)},
+  {3.0, 2.25, math.rad(0)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.lane_middle_2 = {
+  {3.0, 2.75, math.rad(180)},
+  {1.75, 2.75, math.rad(180)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+-- Start turns
+routes.turn_outer_outer_A = {
+  {0.75, 2.75, math.rad(270)},
+  {0.75, 2.25, math.rad(270)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_outer_outer_B = {
+  {4.0, 2.25, math.rad(90)},
+  {4.0, 2.75, math.rad(90)},
+  turning_radius = 0.3,
+  closed = false
+}
+--
+routes.turn_inner_inner_A = {
+  {1.25, 1.75, math.rad(270)},
+  {1.25, 3.25, math.rad(270)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_inner_inner_B = {
+  {3.5, 3.25, math.rad(90)},
+  {3.5, 1.75, math.rad(90)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+-- Turn options from outer
+routes.turn_outer_A = {
+  {0.75, 2.75, math.rad(270)},
+  {0.75, 2.25, math.rad(0)},
+  {1.75, 2.25, math.rad(90)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_outer_B = {
+  {4, 2.25, math.rad(90)},
+  {4, 2.75, math.rad(180)},
+  {3.0, 2.75, math.rad(270)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+-- From inner
+routes.turn_inner_A = {
+  {1.25, 1.75, math.rad(90)},
+  {1.25, 2.25, math.rad(0)},
+  {1.75, 2.25, math.rad(0)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_inner_B = {
+  {3.5, 3.25, math.rad(270)},
+  {3.5, 2.75, math.rad(180)},
+  {3.0, 2.75, math.rad(180)},
+  turning_radius = 0.3,
+  closed = false
+}
+
+-- From middle to inner
+routes.turn_middle_inner_A = {
+  {1.75, 2.75, math.rad(0)},
+  {1.25, 2.75, math.rad(0)},
+  {1.25, 3.25, math.rad(90)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_middle_outer_A = {
+  {1.75, 2.75, math.rad(0)},
+  {0.75, 2.75, math.rad(0)},
+  {0.75, 2.25, math.rad(270)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_middle_inner_B = {
+  {3.0, 2.25, math.rad(0)},
+  {3.5, 2.25, math.rad(0)},
+  {3.5, 1.75, math.rad(90)},
+  turning_radius = 0.3,
+  closed = false
+}
+routes.turn_middle_outer_B = {
+  {3.0, 2.25, math.rad(0)},
+  {4, 2.25, math.rad(0)},
+  {4, 2.75, math.rad(90)},
+  turning_radius = 0.3,
+  closed = false
+}
+
 
 -- local radius_roundabout1 = 1.5
 -- local radius_roundabout2 = 2.5
@@ -130,27 +246,7 @@ routes.driveway = {
 --   closed = true
 -- }
 
--- Smaller loops
---[[
-routes.outerA = {
-  {0.75, -0.75, math.rad(0)},
-  {4, -0.75, math.rad(90)},
-  {4, 2.5, math.rad(180)},
-  {0.75, 2.5, math.rad(270)},
-  turning_radius = 0.3,
-  closed = true
-}
---]]
---[[
-routes.outerB = {
-  {4, 5.75, math.rad(180)},
-  {0.75, 5.75, math.rad(270)},
-  {0.75, 2.5, math.rad(0)},
-  {4, 2.5, math.rad(90)},
-  turning_radius = 0.3,
-  closed = true
-}
---]]
+
 
 -- Generate the knots
 -- These show the points before and after a turn

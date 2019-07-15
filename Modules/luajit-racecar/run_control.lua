@@ -19,7 +19,7 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 racecar.init()
 
 -- Globally accessible variables
-local desired_path = flags.path or 'outer'
+local desired_path = flags.path or 'lane_outer'
 -- TODO: Paths should come from a separate program
 local pp_params
 do

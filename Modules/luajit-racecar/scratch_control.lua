@@ -1,4 +1,7 @@
 -- Purely simulation below
+-- For grid drawing
+local function set_mid(map, idx) map[idx] = 127 end
+local function set_quarter(map, idx) map[idx] = 63 end
 -- Show how well the path performs
 g_holo:fill(0)
 -- Show the closeness for the nearby lookup

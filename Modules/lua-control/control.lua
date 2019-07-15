@@ -209,7 +209,7 @@ local function pure_pursuit(params)
           id_lookahead = n_points
         end
       end
-      -- print("id_path", id_path)
+      -- print("id_path", id_path
       -- print("id_lookahead", id_lookahead)
       p_lookahead = points[id_lookahead]
       -- print("p_path", unpack(p_path))
