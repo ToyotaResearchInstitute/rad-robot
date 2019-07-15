@@ -269,7 +269,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
         el.style.strokeWidth = "0.1";
         el.style.opacity = "0.3";
         // el.setAttributeNS(null, 'marker-start', 'url(#arrow)');
-        el.setAttributeNS(null, 'marker-end', 'url(#arrow)');
+        el.setAttributeNS(null, 'marker-end', 'url(#marker-arrow)');
+        if (name.startsWith('turn_')) {
+          el.setAttributeNS(null, 'marker-mid', 'url(#marker-dot)');
+        }
         lanes_svg.appendChild(el);
       }
       el.setAttributeNS(null, 'points', points);
