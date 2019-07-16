@@ -19,7 +19,8 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 racecar.init()
 
 -- Globally accessible variables
-local desired_path = flags.path or 'lane_outer1'
+local desired_path = flags.path or 'lane_outer1' -- TODO: Should simply find the nearest lane
+local next_path = false -- Needs map information
 -- TODO: Paths should come from a separate program
 local pp_params
 do
@@ -54,7 +55,7 @@ local function cb_debug(t_us)
   if not pose_rbt then return end
   local px, py, pa = unpack(pose_rbt)
   local info = {
-    string.format("Path: %s", desired_path),
+    string.format("Path: %s | Next: %s", desired_path, next_path),
     string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa)),
     string.format("Leader: %s [%s]", unpack(pp_params.leader)),
   }
@@ -115,6 +116,22 @@ local function find_lead(path_lane, id_path)
   return name_lead, d_lead
 end
 
+local function update_path()
+  if not planner_state then
+    return false, "No planner information"
+  end
+  if not desired_path then
+    -- TODO: Find the nearest path
+    print("Finding nearest path...")
+    return false, "No desired path"
+  end
+  local my_path = planner_state.paths[desired_path]
+  if not my_path then
+    return false, "Desired path not found in the planner"
+  end
+  return my_path
+end
+
 --------------------------
 -- Update the pure pursuit
 local function cb_loop(t_us)
@@ -127,18 +144,29 @@ local function cb_loop(t_us)
   end
 
   -- Find our plan
-  local my_path = planner_state and planner_state.paths[desired_path]
-  if type(my_path)=='table' then
-    -- We've found our table
-    if pp_params.path ~= my_path or not pp_control then
-      -- KD Tree of points
-      local pt_tree = control.generate_kdtree(my_path.points)
-      my_path.tree = pt_tree
-      -- Update the parameters
-      pp_params.path = my_path
-      pp_control = assert(control.pure_pursuit(pp_params))
+  local my_path = update_path()
+  if planner_state and not next_path then
+    print("Currently", desired_path)
+    local available = planner_state.transitions[desired_path]
+    print("available", available)
+    local tp_available = type(available)
+    if tp_available == 'string' then
+      next_path = available
+    elseif tp_available=='table' then
+      -- Just take the first :P
+      next_path = available[1]
     end
   end
+
+  if my_path and (pp_params.path ~= my_path or not pp_control) then
+    -- KD Tree of points
+    local pt_tree = control.generate_kdtree(my_path.points)
+    my_path.tree = pt_tree
+    -- Update the parameters
+    pp_params.path = my_path
+    pp_control = assert(control.pure_pursuit(pp_params))
+  end
+
   -- Check if there is a controller
   if not pp_control then
     return false, "No controller"
@@ -155,16 +183,8 @@ local function cb_loop(t_us)
   end
   -- Check if we are done, and then set the next path
   if result.done then
-    print("Currently", desired_path)
-    local available = planner_state.transitions[desired_path]
-    print("available", available)
-    local tp_available = type(available)
-    if tp_available == 'string' then
-      desired_path = available
-    elseif tp_available=='table' then
-      -- Just take the first :P
-      desired_path = available[1]
-    end
+    desired_path = next_path
+    next_path = false
   end
   -- Ensure we add our ID to the result
   result.id = id_robot
