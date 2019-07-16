@@ -51,17 +51,6 @@ local g_holo = assert(grid.new{
 })
 
 local routes = {}
--- Inner and outer are merely two different lanes
--- On the same road
--- routes.lane_outer = {
---   {0.75, -0.75, math.rad(0)},
---   {4, -0.75, math.rad(90)},
---   {4, 5.75, math.rad(180)},
---   {0.75, 5.75, math.rad(270)},
---   turning_radius = 0.3,
---   closed = true
--- }
-
 routes['lane_outerA+1'] = {
   {0.75, 2.25, math.rad(270)},
   {0.75, -0.75, math.rad(0)},
@@ -200,6 +189,16 @@ routes['turn_middleA+1_outerB+1'] = {
   closed = false
 }
 
+-- Inner and outer are merely two different lanes
+-- On the same road
+-- routes.lane_outer = {
+--   {0.75, -0.75, math.rad(0)},
+--   {4, -0.75, math.rad(90)},
+--   {4, 5.75, math.rad(180)},
+--   {0.75, 5.75, math.rad(270)},
+--   turning_radius = 0.3,
+--   closed = true
+-- }
 
 -- local radius_roundabout1 = 1.5
 -- local radius_roundabout2 = 2.5
