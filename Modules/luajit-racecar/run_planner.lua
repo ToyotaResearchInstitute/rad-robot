@@ -62,7 +62,7 @@ local routes = {}
 --   closed = true
 -- }
 
-routes.lane_outer1 = {
+routes.lane_outerA = {
   {0.75, 2.25, math.rad(270)},
   {0.75, -0.75, math.rad(0)},
   {4, -0.75, math.rad(90)},
@@ -70,7 +70,7 @@ routes.lane_outer1 = {
   turning_radius = 0.3,
   closed = false
 }
-routes.lane_outer2 = {
+routes.lane_outerB = {
   {4, 2.75, math.rad(90)},
   {4, 5.75, math.rad(180)},
   {0.75, 5.75, math.rad(270)},
@@ -80,7 +80,7 @@ routes.lane_outer2 = {
   closed = false
 }
 
-routes.lane_inner1 = {
+routes.lane_innerA = {
   {1.25, 3.25, math.rad(90)},
   {1.25, 5.25, math.rad(0)},
   {3.5, 5.25, math.rad(270)},
@@ -89,7 +89,7 @@ routes.lane_inner1 = {
   closed = false
 }
 
-routes.lane_inner2 = {
+routes.lane_innerB = {
   {3.5, 1.75, math.rad(270)},
   {3.5, -0.25, math.rad(180)},
   {1.25, -0.25, math.rad(90)},
@@ -113,26 +113,26 @@ routes.lane_middle2 = {
 }
 
 -- Start turns
-routes.turn_outer2_outer1 = {
+routes.turn_outerB_outerA = {
   {0.75, 2.75, math.rad(270)},
   {0.75, 2.25, math.rad(270)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_outer1_outer2 = {
+routes.turn_outerA_outerB = {
   {4.0, 2.25, math.rad(90)},
   {4.0, 2.75, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
 --
-routes.turn_inner2_inner1 = {
+routes.turn_innerB_innerA = {
   {1.25, 1.75, math.rad(270)},
   {1.25, 3.25, math.rad(270)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_inner1_inner2 = {
+routes.turn_innerA_innerB = {
   {3.5, 3.25, math.rad(90)},
   {3.5, 1.75, math.rad(90)},
   turning_radius = 0.3,
@@ -140,14 +140,14 @@ routes.turn_inner1_inner2 = {
 }
 
 -- Turn options from outer
-routes.turn_outer2_middle1 = {
+routes.turn_outerB_middle1 = {
   {0.75, 2.75, math.rad(270)},
   {0.75, 2.25, math.rad(0)},
   {1.75, 2.25, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_outer1_middle2 = {
+routes.turn_outerA_middle2 = {
   {4, 2.25, math.rad(90)},
   {4, 2.75, math.rad(180)},
   {3.0, 2.75, math.rad(270)},
@@ -156,14 +156,14 @@ routes.turn_outer1_middle2 = {
 }
 
 -- From inner
-routes.turn_inner2_middle1 = {
+routes.turn_innerB_middle1 = {
   {1.25, 1.75, math.rad(90)},
   {1.25, 2.25, math.rad(0)},
   {1.75, 2.25, math.rad(0)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_inner1_middle2 = {
+routes.turn_innerA_middle2 = {
   {3.5, 3.25, math.rad(270)},
   {3.5, 2.75, math.rad(180)},
   {3.0, 2.75, math.rad(180)},
@@ -172,28 +172,28 @@ routes.turn_inner1_middle2 = {
 }
 
 -- From middle to inner
-routes.turn_middle2_inner1 = {
+routes.turn_middle2_innerA = {
   {1.75, 2.75, math.rad(0)},
   {1.25, 2.75, math.rad(0)},
   {1.25, 3.25, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_middle2_outer1 = {
+routes.turn_middle2_outerA = {
   {1.75, 2.75, math.rad(0)},
   {0.75, 2.75, math.rad(0)},
   {0.75, 2.25, math.rad(270)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_middle1_inner2 = {
+routes.turn_middle1_innerB = {
   {3.0, 2.25, math.rad(0)},
   {3.5, 2.25, math.rad(0)},
   {3.5, 1.75, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_middle1_outer2 = {
+routes.turn_middle1_outerB = {
   {3.0, 2.25, math.rad(0)},
   {4, 2.25, math.rad(0)},
   {4, 2.75, math.rad(90)},
@@ -309,18 +309,21 @@ end
 
 local transitions = {}
 -- All names are alphanumeric
+local name_regex = "%l+%u*%d*"
+local lane_fmt = "^lane_(%s)$"
+local turn_fmt = "^turn_(%s)_(%s)$"
 for name_l, path_l in pairs(paths) do
-  print()
-  local lane_name = name_l:match"^lane_(%w+)$"
-  local end_turn = name_l:match"^turn_%w+_(%w+)$"
+  -- print()
+  local lane_name = name_l:match(string.format(lane_fmt, name_regex))
+  local start_turn, end_turn = name_l:match(string.format(turn_fmt, name_regex, name_regex))
   if lane_name then
     local list_t = {}
-    print("lane_name", lane_name)
+    -- print("lane_name", lane_name)
     if path_l.closed then table.insert(list_t, name_l) end
-    local turn_candidate = string.format("^turn_%s_(%%w+)$", lane_name)
+    local turn_candidate_regex = string.format(turn_fmt, lane_name, name_regex)
     -- print("turn_candidate", turn_candidate)
     for name_t, path_t in pairs(paths) do
-      if name_t:match(turn_candidate) then
+      if name_t:match(turn_candidate_regex) then
         -- print("name_t", name_t)
         local xa, ya = unpack(path_l.points[#path_l.points])
         local xb, yb = unpack(path_t.points[1])
@@ -347,10 +350,6 @@ for name_l, path_l in pairs(paths) do
   end
 end
 
-for k, v in pairs(transitions) do
-  print(string.format("%s:\t%s", k, type(v)=='table' and table.concat(v, ", ") or v))
-end
-
 -- Set the environment for displaying in-browser
 local env = {
   viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
@@ -368,8 +367,11 @@ local function cb_loop(t_us)
   for k, v in pairs(env) do
     print(k, v)
   end
-  for k, v in pairs(env.paths) do
-    print(k, v)
+  -- for k, v in pairs(env.paths) do
+  --   print(k, v)
+  -- end
+  for k, v in pairs(env.transitions) do
+    print(string.format("%s:\t%s", k, type(v)=='table' and table.concat(v, ", ") or v))
   end
   assert(log_announce(log, env, "risk"))
 end
