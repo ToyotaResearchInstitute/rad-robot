@@ -62,7 +62,7 @@ local routes = {}
 --   closed = true
 -- }
 
-routes.lane_outerA = {
+routes['lane_outerA+1'] = {
   {0.75, 2.25, math.rad(270)},
   {0.75, -0.75, math.rad(0)},
   {4, -0.75, math.rad(90)},
@@ -70,17 +70,16 @@ routes.lane_outerA = {
   turning_radius = 0.3,
   closed = false
 }
-routes.lane_outerB = {
+routes['lane_outerB+1'] = {
   {4, 2.75, math.rad(90)},
   {4, 5.75, math.rad(180)},
   {0.75, 5.75, math.rad(270)},
   {0.75, 2.75, math.rad(0)},
-
   turning_radius = 0.3,
   closed = false
 }
 
-routes.lane_innerA = {
+routes['lane_innerA+1'] = {
   {1.25, 3.25, math.rad(90)},
   {1.25, 5.25, math.rad(0)},
   {3.5, 5.25, math.rad(270)},
@@ -89,7 +88,7 @@ routes.lane_innerA = {
   closed = false
 }
 
-routes.lane_innerB = {
+routes['lane_innerB+1'] = {
   {3.5, 1.75, math.rad(270)},
   {3.5, -0.25, math.rad(180)},
   {1.25, -0.25, math.rad(90)},
@@ -99,13 +98,13 @@ routes.lane_innerB = {
 }
 
 -- Middle lanes
-routes.lane_middle1 = {
+routes['lane_middleA+1'] = {
   {1.75, 2.25, math.rad(0)},
   {3.0, 2.25, math.rad(0)},
   turning_radius = 0.3,
   closed = false
 }
-routes.lane_middle2 = {
+routes['lane_middleA-1'] = {
   {3.0, 2.75, math.rad(180)},
   {1.75, 2.75, math.rad(180)},
   turning_radius = 0.3,
@@ -113,26 +112,26 @@ routes.lane_middle2 = {
 }
 
 -- Start turns
-routes.turn_outerB_outerA = {
+routes['turn_outerB+1_outerA+1'] = {
   {0.75, 2.75, math.rad(270)},
   {0.75, 2.25, math.rad(270)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_outerA_outerB = {
+routes['turn_outerA+1_outerB+1'] = {
   {4.0, 2.25, math.rad(90)},
   {4.0, 2.75, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
 --
-routes.turn_innerB_innerA = {
+routes['turn_innerB+1_innerA+1'] = {
   {1.25, 1.75, math.rad(270)},
   {1.25, 3.25, math.rad(270)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_innerA_innerB = {
+routes['turn_innerA+1_innerB+1'] = {
   {3.5, 3.25, math.rad(90)},
   {3.5, 1.75, math.rad(90)},
   turning_radius = 0.3,
@@ -140,14 +139,14 @@ routes.turn_innerA_innerB = {
 }
 
 -- Turn options from outer
-routes.turn_outerB_middle1 = {
+routes['turn_outerB+1_middleA+1'] = {
   {0.75, 2.75, math.rad(270)},
   {0.75, 2.25, math.rad(0)},
   {1.75, 2.25, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_outerA_middle2 = {
+routes['turn_outerA+1_middleA-1'] = {
   {4, 2.25, math.rad(90)},
   {4, 2.75, math.rad(180)},
   {3.0, 2.75, math.rad(270)},
@@ -156,14 +155,14 @@ routes.turn_outerA_middle2 = {
 }
 
 -- From inner
-routes.turn_innerB_middle1 = {
+routes['turn_innerB+1_middleA+1'] = {
   {1.25, 1.75, math.rad(90)},
   {1.25, 2.25, math.rad(0)},
   {1.75, 2.25, math.rad(0)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_innerA_middle2 = {
+routes['turn_innerA+1_middleA-1'] = {
   {3.5, 3.25, math.rad(270)},
   {3.5, 2.75, math.rad(180)},
   {3.0, 2.75, math.rad(180)},
@@ -172,28 +171,28 @@ routes.turn_innerA_middle2 = {
 }
 
 -- From middle to inner
-routes.turn_middle2_innerA = {
+routes['turn_middleA-1_innerA+1'] = {
   {1.75, 2.75, math.rad(0)},
   {1.25, 2.75, math.rad(0)},
   {1.25, 3.25, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_middle2_outerA = {
+routes['turn_middleA-1_outerA+1'] = {
   {1.75, 2.75, math.rad(0)},
   {0.75, 2.75, math.rad(0)},
   {0.75, 2.25, math.rad(270)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_middle1_innerB = {
+routes['turn_middleA+1_innerB+1'] = {
   {3.0, 2.25, math.rad(0)},
   {3.5, 2.25, math.rad(0)},
   {3.5, 1.75, math.rad(90)},
   turning_radius = 0.3,
   closed = false
 }
-routes.turn_middle1_outerB = {
+routes['turn_middleA+1_outerB+1'] = {
   {3.0, 2.25, math.rad(0)},
   {4, 2.25, math.rad(0)},
   {4, 2.75, math.rad(90)},
@@ -308,22 +307,21 @@ end
 -- end
 
 local transitions = {}
--- All names are alphanumeric
-local name_regex = "%l+%u*%d*"
-local lane_fmt = "^lane_(%s)$"
-local turn_fmt = "^turn_(%s)_(%s)$"
+-- All names are alphanumeric nameSEGMENT#lane#, where lane is positive or negative
+local name_regex = "%l+%u+[+-]?%d+"
+local lane_capture = string.format("^lane_(%s)$", name_regex)
+local turn_capture = string.format("^turn_(%s)_(%s)$", name_regex, name_regex)
 for name_l, path_l in pairs(paths) do
   -- print()
-  local lane_name = name_l:match(string.format(lane_fmt, name_regex))
-  local start_turn, end_turn = name_l:match(string.format(turn_fmt, name_regex, name_regex))
+  local lane_name = name_l:match(lane_capture)
+  local start_turn, end_turn = name_l:match(turn_capture)
   if lane_name then
     local list_t = {}
     -- print("lane_name", lane_name)
     if path_l.closed then table.insert(list_t, name_l) end
-    local turn_candidate_regex = string.format(turn_fmt, lane_name, name_regex)
     -- print("turn_candidate", turn_candidate)
     for name_t, path_t in pairs(paths) do
-      if name_t:match(turn_candidate_regex) then
+      if name_t:match(turn_capture)==lane_name then
         -- print("name_t", name_t)
         local xa, ya = unpack(path_l.points[#path_l.points])
         local xb, yb = unpack(path_t.points[1])
@@ -346,7 +344,7 @@ for name_l, path_l in pairs(paths) do
     assert(type(paths[lane_next])=='table', "Bad turn endpoint")
     transitions[name_l] = lane_next
   else
-    print("!! BAD NAME !!")
+    print("!! BAD NAME !!", name_l)
   end
 end
 
