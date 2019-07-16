@@ -19,7 +19,7 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 racecar.init()
 
 -- Globally accessible variables
-local desired_path = flags.path or 'lane_outer'
+local desired_path = flags.path or 'lane_outer1'
 -- TODO: Paths should come from a separate program
 local pp_params
 do
@@ -42,6 +42,7 @@ end
 local pp_control = false
 local pp_result = false
 --
+local planner_state = false
 local veh_poses = {}
 -- Simulation parameters
 local wheel_base = 0.3
@@ -124,9 +125,25 @@ local function cb_loop(t_us)
     log_announce(log, control_inp, "control")
     return
   end
+
+  -- Find our plan
+  local my_path = planner_state and planner_state.paths[desired_path]
+  if type(my_path)=='table' then
+    -- We've found our table
+    if pp_params.path ~= my_path or not pp_control then
+      -- KD Tree of points
+      local pt_tree = control.generate_kdtree(my_path.points)
+      my_path.tree = pt_tree
+      -- Update the parameters
+      pp_params.path = my_path
+      pp_control = assert(control.pure_pursuit(pp_params))
+    end
+  end
+  -- Check if there is a controller
   if not pp_control then
     return false, "No controller"
   end
+
   -- Find our control policy
   local result, err = pp_control(pose_rbt)
   pp_result = result
@@ -135,6 +152,19 @@ local function cb_loop(t_us)
   end
   if result.err then
     return false, result.err
+  end
+  -- Check if we are done, and then set the next path
+  if result.done then
+    print("Currently", desired_path)
+    local available = planner_state.transitions[desired_path]
+    print("available", available)
+    local tp_available = type(available)
+    if tp_available == 'string' then
+      desired_path = available
+    elseif tp_available=='table' then
+      -- Just take the first :P
+      desired_path = available[1]
+    end
   end
   -- Ensure we add our ID to the result
   result.id = id_robot
@@ -214,18 +244,8 @@ end
 -------------------
 
 local function parse_plan(msg)
-  local my_path = msg.paths[desired_path]
-  if type(my_path)=='table' then
-    -- We've found our table
-    if pp_params.path ~= my_path or not pp_control then
-      -- KD Tree of points
-      local pt_tree = control.generate_kdtree(my_path.points)
-      my_path.tree = pt_tree
-      -- Update the parameters
-      pp_params.path = my_path
-      pp_control = assert(control.pure_pursuit(pp_params))
-    end
-  end
+  -- Update the information available
+  planner_state = msg
 end
 
 local cb_tbl = {
