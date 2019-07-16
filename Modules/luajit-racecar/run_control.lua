@@ -146,15 +146,14 @@ local function cb_loop(t_us)
   -- Find our plan
   local my_path = update_path()
   if planner_state and not next_path then
-    print("Currently", desired_path)
     local available = planner_state.transitions[desired_path]
-    print("available", available)
     local tp_available = type(available)
     if tp_available == 'string' then
       next_path = available
     elseif tp_available=='table' then
       -- Just take the first :P
-      next_path = available[1]
+      local ind_rand = math.random(#available)
+      next_path = available[ind_rand]
     end
   end
 
@@ -164,6 +163,7 @@ local function cb_loop(t_us)
     my_path.tree = pt_tree
     -- Update the parameters
     pp_params.path = my_path
+    pp_params.path_next = next_path
     pp_control = assert(control.pure_pursuit(pp_params))
   end
 
