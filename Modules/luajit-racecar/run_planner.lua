@@ -57,7 +57,8 @@ routes['lane_outerA+1'] = {
   {4, -0.75, math.rad(90)},
   {4, 2.25, math.rad(180)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['lane_outerB+1'] = {
   {4, 2.75, math.rad(90)},
@@ -65,7 +66,8 @@ routes['lane_outerB+1'] = {
   {0.75, 5.75, math.rad(270)},
   {0.75, 2.75, math.rad(0)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 routes['lane_innerA+1'] = {
@@ -74,7 +76,8 @@ routes['lane_innerA+1'] = {
   {3.5, 5.25, math.rad(270)},
   {3.5, 3.25, math.rad(180)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 routes['lane_innerB+1'] = {
@@ -83,7 +86,8 @@ routes['lane_innerB+1'] = {
   {1.25, -0.25, math.rad(90)},
   {1.25, 1.75, math.rad(0)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 -- Middle lanes
@@ -91,13 +95,15 @@ routes['lane_middleA+1'] = {
   {1.75, 2.25, math.rad(0)},
   {3.0, 2.25, math.rad(0)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['lane_middleA-1'] = {
   {3.0, 2.75, math.rad(180)},
   {1.75, 2.75, math.rad(180)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 -- Start turns
@@ -105,26 +111,30 @@ routes['turn_outerB+1_outerA+1'] = {
   {0.75, 2.75, math.rad(270)},
   {0.75, 2.25, math.rad(270)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_outerA+1_outerB+1'] = {
   {4.0, 2.25, math.rad(90)},
   {4.0, 2.75, math.rad(90)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 --
 routes['turn_innerB+1_innerA+1'] = {
   {1.25, 1.75, math.rad(270)},
   {1.25, 3.25, math.rad(270)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_innerA+1_innerB+1'] = {
   {3.5, 3.25, math.rad(90)},
   {3.5, 1.75, math.rad(90)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 -- Turn options from outer
@@ -133,14 +143,16 @@ routes['turn_outerB+1_middleA+1'] = {
   {0.75, 2.25, math.rad(0)},
   {1.75, 2.25, math.rad(90)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_outerA+1_middleA-1'] = {
   {4, 2.25, math.rad(90)},
   {4, 2.75, math.rad(180)},
   {3.0, 2.75, math.rad(270)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 -- From inner
@@ -149,14 +161,16 @@ routes['turn_innerB+1_middleA+1'] = {
   {1.25, 2.25, math.rad(0)},
   {1.75, 2.25, math.rad(0)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_innerA+1_middleA-1'] = {
   {3.5, 3.25, math.rad(270)},
   {3.5, 2.75, math.rad(180)},
   {3.0, 2.75, math.rad(180)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 -- From middle to inner
@@ -165,28 +179,32 @@ routes['turn_middleA-1_innerA+1'] = {
   {1.25, 2.75, math.rad(0)},
   {1.25, 3.25, math.rad(90)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_middleA-1_outerA+1'] = {
   {1.75, 2.75, math.rad(0)},
   {0.75, 2.75, math.rad(0)},
   {0.75, 2.25, math.rad(270)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_middleA+1_innerB+1'] = {
   {3.0, 2.25, math.rad(0)},
   {3.5, 2.25, math.rad(0)},
   {3.5, 1.75, math.rad(90)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 routes['turn_middleA+1_outerB+1'] = {
   {3.0, 2.25, math.rad(0)},
   {4, 2.25, math.rad(0)},
   {4, 2.75, math.rad(90)},
   turning_radius = 0.3,
-  closed = false
+  closed = false,
+  speed_limit = 1.0,
 }
 
 -- Inner and outer are merely two different lanes
@@ -275,7 +293,8 @@ for name, knots in pairs(route_knots) do
     points = points,
     length = length,
     ds = ds,
-    closed = routes[name].closed
+    closed = routes[name].closed,
+    speed_limit = routes[name].speed_limit,
   }
   print(string.format("Route [%s] Length [%.2f meters] Points [%d]",
   name, length, #points))

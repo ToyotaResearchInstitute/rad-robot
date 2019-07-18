@@ -1,7 +1,7 @@
 #!/usr/bin/env luajit
 local osqp = require'osqp'
 local demo = osqp.new()
-print("MPC", demo)
+print("Demo", demo)
 
 local P = {
   4, 1,
@@ -28,7 +28,7 @@ assert(demo:set_problem{
   u = u,
   q = q
 })
-print("MPC", demo)
+print("Demo", demo)
 
 local solution = assert(demo:solve())
 print("Solution", type(solution))
@@ -36,9 +36,12 @@ for k, v in pairs(solution) do
   print(k, v)
 end
 
+os.exit()
+
 -- MPC
 local has_matrix, matrix = pcall(require, 'matrix')
 local mpc = osqp.new()
+print("MPC", mpc)
 -- Number of timesteps
 -- Say 5 seconds at 10Hz
 local nSteps = 50

@@ -21,6 +21,9 @@ racecar.init()
 -- Globally accessible variables
 local desired_path = flags.path or 'lane_outerA' -- TODO: Should simply find the nearest lane
 local next_path = false -- Needs map information
+local path_list = {} -- Path list now and into the future. Should hold path_rollout_time seconds
+local path_rollout_time = 5 -- How far ahead to look given the speed limit of each path
+
 -- TODO: Paths should come from a separate program
 local pp_params
 do
