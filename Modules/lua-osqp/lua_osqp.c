@@ -198,6 +198,7 @@ static int lua_osqp_get_n_nonzero(lua_State *L) {
   c_int nnz = 0;
   // If not a table, then badness
   if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
     return 0;
   }
   // Iterate through the table
@@ -225,6 +226,10 @@ static int lua_osqp_set_P(lua_State *L) {
   int P_updated = 0;
   //
   lua_getfield(L, 2, "P");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
 
   // Find the number of zeros
   lua_osqp_get_n_nonzero(L);
@@ -340,6 +345,223 @@ static int lua_osqp_set_P(lua_State *L) {
   return 0;
 }
 
+// Quadratic State costs
+static int lua_osqp_set_A(lua_State *L) {
+  struct osqp_ud *ud = lua_checkosqp(L, 1);
+  OSQPData *data = ud->data;
+  int A_updated = 0;
+  //
+  lua_getfield(L, 2, "A");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+
+  // Find the number of zeros
+  lua_osqp_get_n_nonzero(L);
+  c_int A_nnz = lua_tointeger(L, -1);
+  lua_pop(L, 1);
+
+  if (A_nnz == 0) {
+    // Pop off the A table
+    lua_pop(L, 1);
+    return 0;
+  }
+
+  for (int i = 0; i < data->m * data->n; i++) {
+#ifdef DEBUG
+    fprintf(stderr, "Inspect [%d]\n", i);
+#endif
+    lua_rawgeti(L, -1, i + 1);
+    if (lua_tonumber(L, -1) != 0) {
+      A_nnz++;
+    }
+    lua_pop(L, 1);
+  }
+#ifdef DEBUG
+  fprintf(stderr, "Found [%lld] non-zeros\n", A_nnz);
+#endif
+  // Check if we need to update
+  c_float *Av;
+  c_int *Ai;
+  c_int *Ap;
+#ifdef DEBUG
+  fprintf(stderr, "A_values: [%p] A: [%p]\n", ud->A_values, data->A);
+#endif
+  Av = realloc(ud->A_values, A_nnz * sizeof(c_float));
+  if (!Av) {
+    if (ud->A_values) {
+      free(ud->A_values);
+      ud->A_values = NULL;
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+  ud->A_values = Av;
+  Ai = realloc(ud->A_indices, A_nnz * sizeof(c_int));
+  if (!Ai) {
+    if (ud->A_indices) {
+      free(ud->A_indices);
+      ud->A_indices = NULL;
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+  ud->A_indices = Ai;
+  //
+  Ap = realloc(ud->A_icol, (data->m + 1) * sizeof(c_int));
+  if (!Ap) {
+    if (ud->A_icol) {
+      free(ud->A_icol);
+      ud->A_icol = NULL;
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+  ud->A_icol = Ap;
+  // Now, populate
+  Av = ud->A_values;
+  Ai = ud->A_indices;
+  Ap = ud->A_icol;
+#ifdef DEBUG
+  fprintf(stderr, "Populating [%p] [%p]\n", Av, Ai);
+#endif
+  int i_row, i_col;
+  Ap[0] = 0;
+  // Run via column major, access via row major
+  for (i_col = 0; i_col < data->n; i_col++) {
+    int n_set = 0;
+    for (i_row = 0; i_row < data->m; i_row++) {
+      int i_el_rowmaj = i_row * data->n + i_col;
+      int i_el_colmaj = i_col * data->m + i_row;
+      lua_rawgeti(L, -1, i_el_rowmaj + 1);
+      double v = lua_tonumber(L, -1);
+      lua_pop(L, 1);
+      if (v != 0) {
+        *Av++ = v;
+        *Ai++ = i_row;
+        n_set++;
+      }
+    }
+    Ap[i_col + 1] = Ap[i_col] + n_set;
+  }
+
+#ifdef DEBUG
+  Ai = ud->A_indices;
+  fprintf(stderr, "Ai = ");
+  for (int i = 0; i < A_nnz; i++)
+    fprintf(stderr, "[%lld] ", Ai[i]);
+  fprintf(stderr, "\n");
+  //
+  Ap = ud->A_icol;
+  fprintf(stderr, "Ap = ");
+  for (int i = 0; i <= data->n; i++)
+    fprintf(stderr, "[%lld] ", Ap[i]);
+  fprintf(stderr, "\n");
+#endif
+  c_free(data->A);
+  data->A = csc_matrix(data->m, data->n, A_nnz, ud->A_values, ud->A_indices,
+                       ud->A_icol);
+  lua_pop(L, 1);
+  return 0;
+}
+
+void *lua_osqp_table_to_array(lua_State *L, c_float *dst, int n) {
+  // A table must be on the stack
+  if (!lua_istable(L, -1)) {
+    return NULL;
+  }
+
+  // Must have the same number of elements
+#if LUA_VERSION_NUM == 501
+  if (lua_objlen(L, -1) != (size_t)n)
+#else
+  if (lua_rawlen(L, -1) != (size_t)n)
+#endif
+  {
+    return NULL;
+  }
+
+  // Make the array have the correct size
+  c_float *dst2 = realloc(dst, n * sizeof(c_float));
+  if (!dst2) {
+    if (dst) {
+      free(dst);
+    }
+    // No copy performed... we free'd since an error :(
+    return NULL;
+  }
+  for (int i = 0; i < n; i++) {
+#ifdef DEBUG
+    fprintf(stderr, "Inspect array [%d]\n", i);
+#endif
+    lua_rawgeti(L, -1, i + 1);
+    dst2[i] = lua_tonumber(L, -1);
+    lua_pop(L, 1);
+  }
+  return dst2;
+}
+
+static int lua_osqp_set_l(lua_State *L) {
+  struct osqp_ud *ud = lua_checkosqp(L, 1);
+  OSQPData *data = ud->data;
+  int l_updated = 0;
+  //
+  lua_getfield(L, 2, "l");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  // Check if we could not set the data
+  if ((data->l = lua_osqp_table_to_array(L, data->l, data->m)) == NULL) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  // Pop off the table of vector l
+  lua_pop(L, 1);
+  return 0;
+}
+
+static int lua_osqp_set_u(lua_State *L) {
+  struct osqp_ud *ud = lua_checkosqp(L, 1);
+  OSQPData *data = ud->data;
+  int u_updated = 0;
+  //
+  lua_getfield(L, 2, "u");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  // Check if we could not set the data
+  if ((data->u = lua_osqp_table_to_array(L, data->u, data->m)) == NULL) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  // Pop off the table of vector u
+  lua_pop(L, 1);
+  return 0;
+}
+
+static int lua_osqp_set_q(lua_State *L) {
+  struct osqp_ud *ud = lua_checkosqp(L, 1);
+  OSQPData *data = ud->data;
+  int q_updated = 0;
+  //
+  lua_getfield(L, 2, "q");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  // Check if we could not set the data
+  if ((data->q = lua_osqp_table_to_array(L, data->q, data->n)) == NULL) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  // Pop off the table of vector q
+  lua_pop(L, 1);
+  return 0;
+}
+
 // https://arxiv.org/pdf/1711.08013.pdf
 // P is n by n
 // q is n by 1
@@ -349,238 +571,22 @@ static int lua_osqp_set_P(lua_State *L) {
 // min 0.5 xT P x + qT x
 // s.t. l <= A x <= u
 static int lua_osqp_setproblem(lua_State *L) {
-  struct osqp_ud *ud = lua_checkosqp(L, 1);
-  OSQPData *data = ud->data;
+  // struct osqp_ud *ud = lua_checkosqp(L, 1);
+  // OSQPData *data = ud->data;
   // Now, utilize the table of params
   lua_osqp_set_n(L);
   lua_osqp_set_m(L);
-  // Setup the matrices in Compressed Column Storage
-  int i = 0;
-
-  //////////////////////////////////////////
   // Quadratic State costs
   lua_osqp_set_P(L);
-
-  //////////////////////////////////////////
   // Control limits
-  lua_getfield(L, 2, "A");
-  if (lua_istable(L, -1)) {
-    c_int A_nnz = 0;
-    for (i = 0; i < data->m * data->n; i++) {
-#ifdef DEBUG
-      fprintf(stderr, "Inspect [%d]\n", i);
-#endif
-      lua_rawgeti(L, -1, i + 1);
-      if (lua_tonumber(L, -1) != 0) {
-        A_nnz++;
-      }
-      lua_pop(L, 1);
-    }
-#ifdef DEBUG
-    fprintf(stderr, "Found [%lld] non-zeros\n", A_nnz);
-#endif
-    // Check if we need to update
-    c_float *Av;
-    c_int *Ai;
-    c_int *Ap;
-#ifdef DEBUG
-    fprintf(stderr, "A_values: [%p] A: [%p]\n", ud->A_values, data->A);
-#endif
-    Av = realloc(ud->A_values, A_nnz * sizeof(c_float));
-    if (!Av) {
-      if (ud->A_values) {
-        free(ud->A_values);
-        ud->A_values = NULL;
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-    }
-    ud->A_values = Av;
-    Ai = realloc(ud->A_indices, A_nnz * sizeof(c_int));
-    if (!Ai) {
-      if (ud->A_indices) {
-        free(ud->A_indices);
-        ud->A_indices = NULL;
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-    }
-    ud->A_indices = Ai;
-    //
-    Ap = realloc(ud->A_icol, (data->m + 1) * sizeof(c_int));
-    if (!Ap) {
-      if (ud->A_icol) {
-        free(ud->A_icol);
-        ud->A_icol = NULL;
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-    }
-    ud->A_icol = Ap;
-    // Now, populate
-    Av = ud->A_values;
-    Ai = ud->A_indices;
-    Ap = ud->A_icol;
-#ifdef DEBUG
-    fprintf(stderr, "Populating [%p] [%p]\n", Av, Ai);
-#endif
-    int i_row, i_col;
-    Ap[0] = 0;
-    // Run via column major, access via row major
-    for (i_col = 0; i_col < data->n; i_col++) {
-      int n_set = 0;
-      for (i_row = 0; i_row < data->m; i_row++) {
-        int i_el_rowmaj = i_row * data->n + i_col;
-        int i_el_colmaj = i_col * data->m + i_row;
-        lua_rawgeti(L, -1, i_el_rowmaj + 1);
-        double v = lua_tonumber(L, -1);
-        lua_pop(L, 1);
-        if (v != 0) {
-          *Av++ = v;
-          *Ai++ = i_row;
-          n_set++;
-        }
-      }
-      Ap[i_col + 1] = Ap[i_col] + n_set;
-    }
-
-#ifdef DEBUG
-    Ai = ud->A_indices;
-    fprintf(stderr, "Ai = ");
-    for (i = 0; i < A_nnz; i++)
-      fprintf(stderr, "[%lld] ", Ai[i]);
-    fprintf(stderr, "\n");
-    //
-    Ap = ud->A_icol;
-    fprintf(stderr, "Ap = ");
-    for (i = 0; i <= data->n; i++)
-      fprintf(stderr, "[%lld] ", Ap[i]);
-    fprintf(stderr, "\n");
-#endif
-    c_free(data->A);
-    data->A = csc_matrix(data->m, data->n, A_nnz, ud->A_values, ud->A_indices,
-                         ud->A_icol);
-  }
-  // Pop off the table of matrix P
-  lua_pop(L, 1);
-
-  //////////////////////////////////////////
+  lua_osqp_set_A(L);
   // Lower control limit
-  lua_getfield(L, 2, "l");
-  if (lua_istable(L, -1)) {
-#if LUA_VERSION_NUM == 501
-    if (lua_objlen(L, -1) != (size_t)data->m)
-#else
-    if (lua_rawlen(L, -1) != (size_t)data->m)
-#endif
-    {
-      lua_pushboolean(L, 0);
-      lua_pushliteral(L, "Incorrect lower limit dimension");
-      return 2;
-    }
-
-    c_float *l = realloc(data->l, data->m * sizeof(c_float));
-    if (!l) {
-      if (data->l) {
-        free(data->l);
-        data->l = NULL;
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-    }
-    data->l = l;
-    // Set our values
-    for (i = 0; i < data->m; i++) {
-#ifdef DEBUG
-      fprintf(stderr, "Inspect l [%d]\n", i);
-#endif
-      lua_rawgeti(L, -1, i + 1);
-      data->l[i] = lua_tonumber(L, -1);
-      lua_pop(L, 1);
-    }
-    // Done setting values
-  }
-  // Pop off the table of vector l
-  lua_pop(L, 1);
-
-  //////////////////////////////////////////
+  lua_osqp_set_l(L);
   // Upper control limit
-  lua_getfield(L, 2, "u");
-  if (lua_istable(L, -1)) {
-
-#if LUA_VERSION_NUM == 501
-    if (lua_objlen(L, -1) != (size_t)data->m)
-#else
-    if (lua_rawlen(L, -1) != (size_t)data->m)
-#endif
-    {
-      lua_pushboolean(L, 0);
-      lua_pushliteral(L, "Incorrect upper limit dimension");
-      return 2;
-    }
-
-    c_float *u = realloc(data->u, data->m * sizeof(c_float));
-    if (!u) {
-      if (data->u) {
-        free(data->u);
-        data->u = NULL;
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-    }
-    data->u = u;
-    // Set our values
-    for (i = 0; i < data->m; i++) {
-#ifdef DEBUG
-      fprintf(stderr, "Inspect u [%d]\n", i);
-#endif
-      lua_rawgeti(L, -1, i + 1);
-      data->u[i] = lua_tonumber(L, -1);
-      lua_pop(L, 1);
-    }
-    // Done setting values
-  }
-  // Pop off the table of vector u
-  lua_pop(L, 1);
-
-  //////////////////////////////////////////
+  lua_osqp_set_u(L);
   // Linear State costs
-  lua_getfield(L, 2, "q");
-  if (lua_istable(L, -1)) {
-#if LUA_VERSION_NUM == 501
-    if (lua_objlen(L, -1) != (size_t)data->n)
-#else
-    if (lua_rawlen(L, -1) != (size_t)data->n)
-#endif
-    {
-      lua_pushboolean(L, 0);
-      lua_pushliteral(L, "Incorrect linear cost dimension");
-      return 2;
-    }
-    c_float *q = realloc(data->q, data->n * sizeof(c_float));
-    if (!q) {
-      if (data->q) {
-        free(data->q);
-        data->q = NULL;
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-    }
-    data->q = q;
-    // Set our values
-    for (i = 0; i < data->n; i++) {
-#ifdef DEBUG
-      fprintf(stderr, "Inspect q [%d]\n", i);
-#endif
-      lua_rawgeti(L, -1, i + 1);
-      data->q[i] = lua_tonumber(L, -1);
-      lua_pop(L, 1);
-    }
-    // Done setting values
-  }
-  // Pop off the table of vector q
-  lua_pop(L, 1);
-
+  lua_osqp_set_q(L);
+  // Return true, for now
   lua_pushboolean(L, 1);
   return 1;
 }
