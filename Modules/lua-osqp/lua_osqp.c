@@ -6,6 +6,7 @@ Author: Stephen McGill <stephen.mcgill@tri.global> 2018
 #include <lualib.h>
 
 #include <osqp/osqp.h>
+#include <osqp/types.h>
 
 #define MT_NAME "osqp_mt"
 
@@ -219,6 +220,114 @@ static int lua_osqp_get_n_nonzero(lua_State *L) {
   return 1;
 }
 
+int lua_osqp_prepare_csc(lua_State *L, csc *ccs) {
+  // Find the number of zeros
+  lua_osqp_get_n_nonzero(L);
+  ccs->nzmax = lua_tointeger(L, -1);
+  lua_pop(L, 1);
+  // Non zero values
+  c_float *values = realloc(ccs->x, ccs->nzmax * sizeof(c_float));
+  if (values) {
+    ccs->x = values;
+  } else {
+    if (ccs->x) {
+      free(ccs->x);
+      ccs->x = NULL;
+    }
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "Bad realloc of values");
+    fprintf(stderr, "Bad realloc of values");
+    return 2;
+  }
+
+  // Non zero indices
+  c_int *indices = realloc(ccs->i, ccs->nzmax * sizeof(c_int));
+  if (indices) {
+    ccs->i = indices;
+  } else {
+    if (ccs->i) {
+      free(ccs->i);
+      ccs->i = NULL;
+    }
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "Bad realloc of indices");
+    fprintf(stderr, "Bad realloc of indices");
+    return 2;
+  }
+
+  // Column indices
+  c_int *indices_col = realloc(ccs->p, (ccs->n + 1) * sizeof(c_int));
+  if (indices_col) {
+    ccs->p = indices_col;
+  } else {
+    if (ccs->p) {
+      free(ccs->p);
+      ccs->p = NULL;
+    }
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "Bad realloc of column indices");
+    fprintf(stderr, "Bad realloc of column indices");
+    return 2;
+  }
+  return 0;
+}
+
+void *lua_osqp_table_to_csc(lua_State *L, c_int m, c_int n, csc *ccs) {
+
+  // Assume that the arrays have the proper size
+#ifdef DEBUG
+  fprintf(stderr, "Populating | values: [%p] indices: [%p]\n", ccs->x, ccs->i);
+#endif
+  // m is nrow, n is ncol
+  // i, for row major storage, is i = ic * nr + ir
+  // for col major, then,
+  c_int i_row, i_col;
+  ccs->p[0] = 0;
+  // Run via column major, access via row major
+  for (i_col = 0; i_col < n; i_col++) {
+    int n_set = 0;
+    for (i_row = 0; i_row < m; i_row++) {
+      int i_el_rowmaj = i_row * n + i_col;
+      int i_el_colmaj = i_col * m + i_row;
+      lua_rawgeti(L, -1, i_el_rowmaj + 1);
+      double v = lua_tonumber(L, -1);
+      lua_pop(L, 1);
+      if (v != 0) {
+#ifdef DEBUG
+        fprintf(stderr, "Idx [%d] (%lld, %lld) = %f\n", i_el_rowmaj, i_row,
+                i_col, v);
+#endif
+        *ccs->x++ = v;
+        *ccs->i++ = i_row;
+        n_set++;
+      }
+    }
+#ifdef DEBUG
+    fprintf(stderr, "nSet (i_col %lld) = %d\n", i_col, n_set);
+#endif
+    ccs->p[i_col + 1] = n_set + ccs->p[i_col];
+  }
+
+#ifdef DEBUG
+  if (ccs->p[n] != ccs->nzmax) {
+    fprintf(stderr, "Bad CSC conversion!\n");
+  }
+  // fprintf(stderr, "indices_col = ");
+  // for (int i = 0; i <= data->n; i++) {
+  //   fprintf(stderr, "[%lld] ", ccs->indices_col[i]);
+  // }
+  fprintf(stderr, "\n");
+  //
+  fprintf(stderr, "indices = ");
+  for (int i = 0; i < ccs->nzmax; i++) {
+    fprintf(stderr, "[%lld] ", ccs->i[i]);
+  }
+  fprintf(stderr, "\n");
+#endif
+  // Done
+  return 0;
+}
+
 // Quadratic State costs
 static int lua_osqp_set_P(lua_State *L) {
   struct osqp_ud *ud = lua_checkosqp(L, 1);
@@ -231,6 +340,17 @@ static int lua_osqp_set_P(lua_State *L) {
     return 0;
   }
 
+  // csc *csc_P = malloc(sizeof(csc));
+  // bzero(csc_P, sizeof(csc));
+  // if (lua_osqp_prepare_csc(L, csc_P) > 0) {
+  //   fprintf(stderr, "Badness\n");
+  // };
+  // lua_osqp_table_to_csc(L, data->m, data->n, csc_P);
+  // c_free(data->P);
+  // data->P =
+  //     csc_matrix(data->n, data->n, csc_P->nzmax, csc_P->x, csc_P->i,
+  //     csc_P->p);
+  // free(csc_P);
   // Find the number of zeros
   lua_osqp_get_n_nonzero(L);
   c_int P_nnz = lua_tointeger(L, -1);
@@ -242,14 +362,12 @@ static int lua_osqp_set_P(lua_State *L) {
     return 0;
   }
 
-  // Populate
-  // Check if we need to update
-  // Non zero indices
-  c_float *Pv;
-
+  // Prepare: Check if we need to update sizes
 #ifdef DEBUG
   fprintf(stderr, "P_values: [%p] P: [%p]\n", ud->P_values, data->P);
 #endif
+  // Non zero values
+  c_float *Pv;
   Pv = realloc(ud->P_values, P_nnz * sizeof(c_float));
   if (!Pv) {
     if (ud->P_values) {
@@ -340,7 +458,6 @@ static int lua_osqp_set_P(lua_State *L) {
   c_free(data->P);
   data->P = csc_matrix(data->n, data->n, P_nnz, ud->P_values, ud->P_indices,
                        ud->P_icol);
-
   lua_pop(L, 1);
   return 0;
 }
@@ -640,9 +757,15 @@ static int lua_osqp_tostring(lua_State *L) {
 static const struct luaL_Reg osqp_lib[] = {{"new", lua_osqp_new}, {NULL, NULL}};
 
 static const struct luaL_Reg osqp_methods[] = {
-    {"__index", lua_osqp_index},       {"__gc", lua_osqp_free},
-    {"__tostring", lua_osqp_tostring}, {"set_problem", lua_osqp_setproblem},
-    {"solve", lua_osqp_solve},         {NULL, NULL}};
+    {"__index", lua_osqp_index},
+    {"__gc", lua_osqp_free},
+    {"__tostring", lua_osqp_tostring},
+    {"set_problem", lua_osqp_setproblem},
+    {"set_lower", lua_osqp_set_l},
+    {"set_upper", lua_osqp_set_u},
+    {"set_q", lua_osqp_set_q},
+    {"solve", lua_osqp_solve},
+    {NULL, NULL}};
 
 #ifdef __cplusplus
 extern "C"
