@@ -11,11 +11,7 @@ endif
 
 PY_SUFFIX=$(shell python3-config --extension-suffix)
 
-ifeq ($(OSTYPE),darwin)
-LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(5\.?[123])" | sort -r | head -n1)
-else
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
-endif
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
 LUA_LIBS ?= $(shell pkg-config $(LUA) --libs-only-l)
@@ -49,9 +45,10 @@ all: $(TARGET) lua
 	@echo LUA_BINDIR: $(LUA_BINDIR)
 	@echo LUA_INCDIR: $(LUA_INCDIR)
 
-ifeq ($(OSTYPE),darwin)
 %.o: %.c
 	$(CC) -c -o $@ $< -I$(LUA_INCDIR) $(CFLAGS) $(PYTHON_CFLAGS)
+
+ifeq ($(OSTYPE),darwin)
 $(TARGET): $(ALL_OBJS)
 	$(LD) $(LIBFLAG) $(PYTHON_LIBS) -L$(PYTHON_LIBDIR) -L$(LUA_LIBDIR) -rpath $(PYTHON_LIBDIR) -o $@ $(ALL_OBJS)
 lua: $(ALL_OBJS)

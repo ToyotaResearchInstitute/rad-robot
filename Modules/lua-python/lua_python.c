@@ -56,8 +56,8 @@ static int py_object_call(lua_State *L) {
     lua_pushnil(L);  /* first key */
     while (lua_next(L, 2) != 0) {
       if (lua_isnumber(L, -2)) {
-        int i = lua_tointeger(L, -2);
-        nargs = i < nargs ? nargs : i;
+        int iargs = lua_tointeger(L, -2);
+        nargs = iargs < nargs ? nargs : iargs;
       }
       lua_pop(L, 1);
     }
