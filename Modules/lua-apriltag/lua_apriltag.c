@@ -28,7 +28,7 @@ static apriltag_data *lua_checkapriltags(lua_State *L, int narg) {
   return (apriltag_data *)ud;
 }
 
-static int lua_apriltags_index(lua_State *L) {
+static int lua_apriltag_index(lua_State *L) {
   if (!lua_getmetatable(L, 1)) {
     /* push metatable */
     lua_pop(L, 1);
@@ -40,7 +40,7 @@ static int lua_apriltags_index(lua_State *L) {
   return 1;
 }
 
-static int lua_apriltags_delete(lua_State *L) {
+static int lua_apriltag_delete(lua_State *L) {
 #ifdef DEBUG
   fprintf(stderr, "Cleaning...\n");
 #endif
@@ -61,7 +61,7 @@ static int lua_apriltags_delete(lua_State *L) {
   return 0;
 }
 
-static int lua_apriltags_init(lua_State *L) {
+static int lua_apriltag_init(lua_State *L) {
   apriltag_data *ud = lua_newuserdata(L, sizeof(apriltag_data));
   // Zero the data so that any initial access is NULL
   bzero(ud, sizeof(apriltag_data));
@@ -105,7 +105,7 @@ static int lua_apriltags_init(lua_State *L) {
   return 1;
 }
 
-static int lua_apriltags_detect(lua_State *L) {
+static int lua_apriltag_detect(lua_State *L) {
   apriltag_data *ud = lua_checkapriltags(L, 1);
 // lua_pushboolean(L, 0);
 // lua_pushliteral(L, "apriltags_start_streaming: unable to start stream");
@@ -133,19 +133,19 @@ static int lua_apriltags_detect(lua_State *L) {
 }
 
 static const struct luaL_Reg apriltags_functions[] = {
-    {"init", lua_apriltags_init}, {NULL, NULL}};
+    {"init", lua_apriltag_init}, {NULL, NULL}};
 
 static const struct luaL_Reg apriltags_methods[] = {
-    {"detect", lua_apriltags_detect},
-    {"__index", lua_apriltags_index},
-    {"__gc", lua_apriltags_delete},
+    {"detect", lua_apriltag_detect},
+    {"__index", lua_apriltag_index},
+    {"__gc", lua_apriltag_delete},
     {NULL, NULL}};
 
 #ifdef __cplusplus
 extern "C"
 #endif
     int
-    luaopen_apriltags(lua_State *L) {
+    luaopen_apriltag(lua_State *L) {
   /* create metatable for apriltags module */
   luaL_newmetatable(L, MT_NAME);
 #if LUA_VERSION_NUM == 501
