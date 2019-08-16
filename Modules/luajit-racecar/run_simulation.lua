@@ -22,8 +22,8 @@ local wheel_base = 0.325
 
 -- Start configurations - this is a JSON file
 local has_cjson, cjson = pcall(require, 'cjson')
-local configuration = has_cjson and flags.configuration or false
-if type(configuration) == 'string' then
+local configuration = has_cjson and flags.config
+if type(configuration) == 'string' and configuration:match"%.json$" then
   local f_conf = assert(io.open(configuration))
   configuration = cjson.decode(f_conf:read"*all")
   f_conf:close()
