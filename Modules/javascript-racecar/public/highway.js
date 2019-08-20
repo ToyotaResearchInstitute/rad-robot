@@ -121,43 +121,48 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!planner) {
       return;
     }
-    const lanes = planner.paths;
-    if (!lanes) {
-      return;
-    }
-    const pt_to_pair = (coord, i) => {
-      return coord2svg(coord)
-        .slice(0, 2)
-        .join();
-    };
-    // Grab the SVG of each lane
-    var lanes_els = environment_svg.getElementsByClassName("lane");
-    // console.log(lanes_els);
-    // Iterate the names of the lanes
-    Object.keys(lanes).forEach((name, ilane) => {
-      const l = lanes[name];
-      // console.log(name, l);
-      // console.log("l['points']", l['points']);
-      const points = l["points"].map(pt_to_pair).join(" ");
-      const lane_id = "lane_" + name;
-      var el = lanes_els.namedItem(lane_id);
-      if (!el) {
-        el = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-        el.setAttributeNS(null, "id", lane_id);
-        el.setAttributeNS(null, "class", "lane");
-        el.style.fill = "none";
-        el.style.stroke = "#0F0";
-        el.style.strokeWidth = "0.1";
-        el.style.opacity = "0.3";
-        // el.setAttributeNS(null, 'marker-start', 'url(#arrow)');
-        el.setAttributeNS(null, "marker-end", "url(#marker-arrow)");
-        if (name.startsWith("turn_")) {
-          el.setAttributeNS(null, "marker-mid", "url(#marker-dot)");
+
+    if (planner.paths) {
+      const lanes = planner.paths;
+      const pt_to_pair = (coord, i) => {
+        return coord2svg(coord)
+          .slice(0, 2)
+          .join();
+      };
+      // Grab the SVG of each lane
+      var lanes_els = environment_svg.getElementsByClassName("lane");
+      // Iterate the names of the lanes
+      Object.keys(lanes).forEach((name, ilane) => {
+        const l = lanes[name];
+        const points = l["points"].map(pt_to_pair).join(" ");
+        const lane_id = "lane_" + name;
+        var el = lanes_els.namedItem(lane_id);
+        if (!el) {
+          el = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "polyline"
+          );
+          el.setAttributeNS(null, "id", lane_id);
+          el.setAttributeNS(null, "class", "lane");
+          el.style.fill = "none";
+          el.style.stroke = "#0F0";
+          el.style.strokeWidth = "0.1";
+          el.style.opacity = "0.3";
+          // el.setAttributeNS(null, 'marker-start', 'url(#arrow)');
+          el.setAttributeNS(null, "marker-end", "url(#marker-arrow)");
+          if (name.startsWith("turn_")) {
+            el.setAttributeNS(null, "marker-mid", "url(#marker-dot)");
+          }
+          environment_svg.appendChild(el);
         }
-        environment_svg.appendChild(el);
-      }
-      el.setAttributeNS(null, "points", points);
-    });
+        el.setAttributeNS(null, "points", points);
+      });
+    } // end of checking for lanes
+
+    // Try highways
+    if (planner.highways) {
+      console.log(planner.highways);
+    }
   };
   // Add to the processor
   visualizers.set(update_road, false);
@@ -178,7 +183,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
     };
     // SVG
-    // console.log("vehicles", vehicles);
     Object.keys(vehicles).forEach((vehicle_name, ilane) => {
       const vehicle = vehicles[vehicle_name];
       const vehicle_el_id = "vehicle_" + vehicle_name;
@@ -237,14 +241,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!ctrl) {
       return;
     }
-
-    if (true) {
-      return;
-    }
-
-    // console.log("control", Object.keys(ctrl));
-    console.log("ctrl", ctrl);
-
     const id_robot = ctrl.id;
 
     // Lookahead
@@ -261,7 +257,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         pla_el.setAttributeNS(null, "class", "lookahead");
         pla_el.style.fill = "red";
         pla_el.style.stroke = "none";
-        observer_svg.appendChild(pla_el);
+        environment_svg.appendChild(pla_el);
       }
       const pla = coord2svg(p_lookahead);
       pla_el.setAttributeNS(null, "cx", pla[0]);
@@ -282,7 +278,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         pn_el.setAttributeNS(null, "class", "near");
         pn_el.style.fill = "yellow";
         pn_el.style.stroke = "none";
-        observer_svg.appendChild(pn_el);
+        environment_svg.appendChild(pn_el);
       }
       const pn = coord2svg(p_near);
       const xn = pn[0] || 0;

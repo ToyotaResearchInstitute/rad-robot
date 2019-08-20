@@ -56,7 +56,7 @@ local function events_by_name(self, name)
 end
 local function events_at_marker(self, i_marker)
   -- Given the mile marker index
-  if i_marker < 1 or i_marker > self.n_markers then
+  if i_marker < 1 or i_marker > #self.markers then
     return false, "Marker is out-of-bounds"
   end
   -- Ensure integer
@@ -98,7 +98,6 @@ function lib.new(options)
   local obj = {
     length = length,
     marker_interval = marker_interval,
-    n_markers = n_markers,
     markers = markers,
     events = events,
     -- Methods

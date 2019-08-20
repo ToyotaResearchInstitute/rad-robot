@@ -27,6 +27,15 @@ local g_holo = assert(grid.new{
   ymin = -1, ymax = 6
 })
 
+-- Start configurations - this is a JSON file
+local has_cjson, cjson = pcall(require, 'cjson')
+local configuration = has_cjson and flags.config
+if type(configuration) == 'string' and configuration:match"%.json$" then
+  local f_conf = assert(io.open(configuration))
+  configuration = cjson.decode(f_conf:read"*all")
+  f_conf:close()
+end
+
 local routes = {}
 routes['lane_outerA+1'] = {
   {0.75, 2.25, math.rad(270)},
@@ -334,7 +343,6 @@ for name_l, path_l in pairs(paths) do
     transitions[name_l] = list_t
   elseif end_turn then
     -- Add turn transition
-    -- print("end_turn", end_turn)
     local lane_next = "lane_"..end_turn
     assert(type(paths[lane_next])=='table', "Bad turn endpoint")
     transitions[name_l] = lane_next

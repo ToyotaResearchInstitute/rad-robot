@@ -20,12 +20,12 @@ local my_highways = {
 -- Add an exit _to_ I-76 at 100 kilometers
 assert(interstate95:add_event(101.5, "exit", {
   id = 1, -- Exit 1
-  highway = {'i95', 505.25} -- the connecting highway, id and distance
+  highway = {'i76', 25.25} -- the connecting highway, id and distance
 }))
 -- Add an entrance _from_ I-76
 assert(interstate95:add_event(101.6, "entrance", {
   id = 1, -- Entrance 1
-  highway = {'i76', 505.25} -- the connecting highway, id and distance
+  highway = {'i76', 25.25} -- the connecting highway, id and distance
 }))
 
 -- Add a lane before the exit

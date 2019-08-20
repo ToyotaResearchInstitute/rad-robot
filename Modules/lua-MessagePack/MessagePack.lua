@@ -64,8 +64,8 @@ local packers = setmetatable({}, {
         if k == 1 then return end   -- allows ipairs
         local err_msg = "pack '" .. k .. "' is unimplemented"
         -- TODO: Safer table packing
-        -- return false, err_msg
-        error(err_msg)
+        return false, err_msg
+        -- error(err_msg)
     end
 })
 m.packers = packers
@@ -231,23 +231,34 @@ packers['array'] = function (buffer, tbl, n)
     end
 end
 
+local function count_table_members(tbl)
+    local is_map, n, max = false, 0, 0
+    for k, v in pairs(tbl) do
+        -- Skip unecondable items :)
+        local tk = type(k)
+        local tv = type(v)
+        local can_encode = tv~='function' and tv~='userdata'
+        if can_encode then
+            if tk == 'number' and k > 0 then
+                if k > max then
+                    max = k
+                end
+            else
+                is_map = true
+            end
+            n = n + 1
+        end
+    end
+    if max ~= n then    -- there are holes
+        is_map = true
+    end
+    return n, is_map, max
+end
+
 local set_array = function (array)
     if array == 'without_hole' then
         packers['_table'] = function (buffer, tbl)
-            local is_map, n, max = false, 0, 0
-            for k in pairs(tbl) do
-                if type(k) == 'number' and k > 0 then
-                    if k > max then
-                        max = k
-                    end
-                else
-                    is_map = true
-                end
-                n = n + 1
-            end
-            if max ~= n then    -- there are holes
-                is_map = true
-            end
+            local n, is_map = count_table_members(tbl)
             if is_map then
                 packers['map'](buffer, tbl, n)
             else
@@ -256,17 +267,7 @@ local set_array = function (array)
         end
     elseif array == 'with_hole' then
         packers['_table'] = function (buffer, tbl)
-            local is_map, n, max = false, 0, 0
-            for k in pairs(tbl) do
-                if type(k) == 'number' and k > 0 then
-                    if k > max then
-                        max = k
-                    end
-                else
-                    is_map = true
-                end
-                n = n + 1
-            end
+            local n, is_map, max = count_table_members(tbl)
             if is_map then
                 packers['map'](buffer, tbl, n)
             else
