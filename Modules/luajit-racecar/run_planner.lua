@@ -4,9 +4,6 @@ local unpack = unpack or require'table'.unpack
 local racecar = require'racecar'
 racecar.init()
 local flags = racecar.parse_arg(arg)
-local id_robot = flags.id or racecar.HOSTNAME
-assert(id_robot, "No name provided!")
-math.randomseed(123)
 
 local grid = require'grid'
 local vector = require'vector'
@@ -19,26 +16,6 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('plan', racecar.
 local path = require'path'
 local generate_waypoints = require'path'.generate_waypoints
 local path_from_waypoints = require'path'.path_from_waypoints
-
--- Globally accessible variables
-local veh_poses = {}
-local desired_path = flags.path or 'outer'
-local vel_lane0 = tonumber(flags.vel_lane) or 0.5
-local vel_lane = vel_lane0
-
--- Parameters for trajectory following
-local dt = 0.1
-
-local function cb_debug(t_us)
-  local pose_rbt = veh_poses[id_robot]
-  if not pose_rbt then return end
-  local px, py, pa = unpack(pose_rbt)
-  local info = {
-    string.format("Path: %s", desired_path),
-    string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa))
-  }
-  return table.concat(info, "\n")
-end
 
 -- Path increments: one inch
 local ds = 0.10
@@ -369,9 +346,6 @@ end
 -- Set the environment for displaying in-browser
 local env = {
   viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
-  observer = false,
-  time_interval = dt,
-  speed = vel_lane,
   paths = paths,
   transitions = transitions
 }
@@ -379,50 +353,26 @@ local env = {
 --------------------------
 -- Update the pure pursuit
 local function cb_loop(t_us)
-  local pose_rbt = veh_poses[id_robot]
-  for k, v in pairs(env) do
-    print(k, v)
-  end
   -- for k, v in pairs(env.paths) do
   --   print(k, v)
   -- end
   for k, v in pairs(env.transitions) do
     print(string.format("%s:\t%s", k, type(v)=='table' and table.concat(v, ", ") or v))
   end
-  assert(log_announce(log, env, "risk"))
+  assert(log_announce(log, env, "planner"))
 end
 -- Update the pure pursuit
 --------------------------
 
--------------------
--- Update the vehicle poses
-local function vicon2pose(vp)
-  return {
-    vp.translation[1] / 1e3,
-    vp.translation[2] / 1e3,
-    vp.rotation[3]
-  }
-end
-local last_frame = -math.huge
-local function parse_vicon(msg)
-  -- Check that the data is not stale
-  -- TODO: Stale for each ID...
-  local frame = msg.frame
-  msg.frame = nil
-  if frame <= last_frame then
-    return false, "Stale data"
-  end
-  last_frame = frame
-  -- Find the pose for each robot
-  for id, vp in pairs(msg) do
-    veh_poses[id] = vicon2pose(vp)
+local function cb_debug(t_us)
+  print("Env")
+  for k, v in pairs(env) do
+    print(k, v)
   end
 end
--- Update the poses
--------------------
 
 local cb_tbl = {
-  vicon = parse_vicon,
+  
 }
 
 local function exit()

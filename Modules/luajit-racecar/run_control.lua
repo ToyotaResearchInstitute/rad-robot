@@ -19,7 +19,7 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 racecar.init()
 
 -- Globally accessible variables
-local desired_path = flags.path or 'lane_outerA' -- TODO: Should simply find the nearest lane
+local desired_path = flags.path or 'lane_outerA+1' -- TODO: Should simply find the nearest lane
 local next_path = false -- Needs map information
 local path_list = {} -- Path list now and into the future. Should hold path_rollout_time seconds
 local path_rollout_time = 5 -- How far ahead to look given the speed limit of each path
@@ -50,8 +50,6 @@ local planner_state = false
 local veh_poses = {}
 -- Simulation parameters
 local wheel_base = 0.3
--- Parameters for trajectory following
-local dt = 0.1
 --
 local function cb_debug(t_us)
   local pose_rbt = veh_poses[id_robot]
@@ -62,11 +60,11 @@ local function cb_debug(t_us)
     string.format("Pose: x=%.2fm, y=%.2fm, a=%.2f°", px, py, math.deg(pa)),
     string.format("Leader: %s [%s]", unpack(pp_params.leader)),
   }
-  if pp_result then
+  if type(pp_result)=='table' then
     table.insert(info, string.format("Control: %.2f m/s, %.2f°",
       pp_result.velocity, math.deg(pp_result.steering)))
   else
-    table.insert(info, "Control not available")
+    table.insert(info, "Control not available: "..tostring(pp_result))
   end
   return table.concat(info, "\n")
 end
@@ -172,18 +170,24 @@ local function cb_loop(t_us)
 
   -- Check if there is a controller
   if not pp_control then
-    return false, "No controller"
+    pp_result = "No controller"
+    return false, pp_result
   end
 
   -- Find our control policy
   local result, err = pp_control(pose_rbt)
-  pp_result = result
   if not result then
-    return false, err
+    pp_result = err
+    return false, pp_result
   end
   if result.err then
-    return false, result.err
+    pp_result = result.err
+    return false, pp_result
   end
+
+  -- Found!
+  pp_result = result
+
   -- Check if we are done, and then set the next path
   if result.done then
     desired_path = next_path
@@ -273,7 +277,7 @@ end
 
 local cb_tbl = {
   vicon = parse_vicon,
-  risk = parse_plan
+  planner = parse_plan
 }
 
 local function exit()

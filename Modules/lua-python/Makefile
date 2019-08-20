@@ -31,7 +31,7 @@ endif
 
 
 ifeq ($(OSTYPE),darwin)
-LIBFLAG ?= -bundle -undefined dynamic_lookup -all_load -macosx_version_min 10.13
+LIBFLAG ?= -bundle -undefined dynamic_lookup -all_load -macosx_version_min 10.14
 else # Linux linking and installation
 LIBFLAG ?= -shared
 endif

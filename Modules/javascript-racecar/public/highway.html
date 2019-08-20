@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TRI & MIT Highway Guardian</title>
+<link rel="stylesheet" type="text/css" href="highway.css" media="screen" />
+<script type="application/javascript" src="/msgpack5.min.js"></script>
+<script type="application/javascript" src="/plotly.min.js"></script>
+<script type="application/javascript" src="/three.min.js"></script>
+<script type="application/javascript" src="/highway.js"></script>
+</head>
+<body>
+  <div class="row">
+    <div id="left" class="column">
+      <div id="three"></div>
+    </div>
+    <div id="right" class="column">
+      <div id="info"></div>
+      <!-- <div id="three"></div> -->
+      <div id="topdown">
+        <!--  width="576" height="720" -->
+        <!--  viewBox: min-x, min-y, width and height -->
+        <!-- viewBox visualization scale of meters -->
+        <svg id="environment" viewBox="-5 -5 10 10">
+          <!-- preserveAspectRatio="xMidYMid meet" -->
+          <defs>
+              <!-- arrowhead marker definition orient="auto-start-reverse" -->
+              <marker id="marker-arrow" viewBox="0 0 10 10" refX="5" refY="5"
+                  markerWidth="2" markerHeight="2"
+                  orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" />
+              </marker>
+              <marker id="marker-dot" viewBox="0 0 10 10" refX="5" refY="5"
+                  markerWidth="1" markerHeight="1">
+                <circle cx="5" cy="5" r="5" fill="red" />
+              </marker>
+              <marker id="marker-square" markerWidth="1" markerHeight="1" refx="4" refy="4"orient="auto">
+                <rect x="1" y="1" width="5" height="5" class="marker"/>
+              </marker>
+              <polygon id='basevehicle' points="0.25,0 0,0.1 0,-0.1" />
+              <!-- 32.5 cm axel-axle distance and 25cm width tire center-tire center -->
+              <!-- 10 cm front axle to front bumper -->
+              <!-- 12 cm rear axle to rear bumper -->
+              <g id='automobile'>
+                <!-- Scale from centimenters to visualization scale (meters) -->
+                <g transform="scale(0.01,0.01)translate(0 0)" id="carKinematics">
+                  <!-- x must be offset between hull and kinematic part -->
+                  <!-- y must be centered for the hull and kine -->
+                  <rect id="hull" x="-12" y="-12.5" width="54.5" height="25" stroke-width="0"/>
+                  <rect id="kine" class='noncollision' x="0" y="-12.5" width="32.5" height="25" stroke-width="0"/>
+                  <path id="visor" class='noncollision' d="M27.5 -8 C 32.5 -2, 32.5 2, 27.5 8" />
+                  <path id="seat" class='noncollision' d="M 20 -8 L 20 0" />
+                </g>
+              </g>
+          </defs>
+          <!-- <g id="lanes"></g>
+          <g id="obstacles"></g>
+          <g id="vehicles"></g> -->
+        </svg>
+        <canvas id="stage"></canvas>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
