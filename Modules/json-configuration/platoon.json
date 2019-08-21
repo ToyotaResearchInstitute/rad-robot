@@ -1,0 +1,65 @@
+{
+  "highways": {
+    "i95": {
+      "length": 51.7,
+      "marker_interval": 0.1,
+      "events": [
+        {
+          "km": 0.0,
+          "name": "speed_limit"
+        },
+        {
+          "km": 0.0,
+          "name": "lane",
+          "info": {
+            "n_lanes": 3
+          }
+        },
+        {
+          "km": 0.01,
+          "name": "exit",
+          "id": 1,
+          "info": {
+            "highway": "i76",
+            "entrance": 1
+          }
+        },
+        {
+          "km": 0.02,
+          "name": "entrance",
+          "id": 1,
+          "info": {
+            "highway": "i76",
+            "exit": 1
+          }
+        },
+        {
+          "km": 10.0,
+          "name": "exit",
+          "id": 1,
+          "info": {
+            "highway": "i90",
+            "entrance": 6,
+            "on_far_side": true
+          }
+        },
+        {
+          "km": 10.01,
+          "name": "entrance",
+          "id": 1,
+          "info": {
+            "highway": "i90",
+            "exit": 6,
+            "on_far_side": true
+          }
+        }
+      ]
+    },
+    "i76": {
+      "length": 3.8,
+      "marker_interval": 0.1,
+      "events": []
+    }
+  },
+  "pose0": [0, 0, 0]
+}

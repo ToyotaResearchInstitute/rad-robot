@@ -289,6 +289,9 @@ end
 
 -- TODO: Make this coroutine based
 local function frag3(self, channel, ch_sz, message, msg_len, msg_seq)
+  if type(msg_seq)~='number' then
+    return false, "Need a message sequence number"
+  end
   -- TODO: Maximum channel size
   -- TODO: Is this wrong?
   local fragments_in_msg = ceil((msg_len + ch_sz) / self.LCM3_MAX_FRAGMENT_SZ)

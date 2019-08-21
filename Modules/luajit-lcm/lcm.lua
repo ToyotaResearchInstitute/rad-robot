@@ -1,7 +1,42 @@
-local unpack = unpack or require'table'.unpack
-local skt = require'skt'
-local lcm_packet = require'lcm_packet'
 local lib = {}
+local nan = 0/0
+local min = require'math'.min
+local max = require'math'.max
+local sformat = require'string'.format
+local tinsert = require'table'.insert
+local tremove = require'table'.remove
+local unpack = unpack or require'table'.unpack
+
+local skt = require'skt'
+local has_unix, unix = pcall(require, 'unix')
+local time_us = has_unix and unix.time_us
+local lcm_packet = require'lcm_packet'
+
+-- Calculate the jitter in milliseconds
+local function get_jitter(times_us)
+  if #times_us<2 then return nan, nan, nan end
+  local diffs, adiff = {}, 0
+  for i=2,#times_us do
+    local d = tonumber(times_us[i] - times_us[i-1])
+    adiff = adiff + d
+    tinsert(diffs, d)
+  end
+  adiff = adiff / #diffs
+  local jMin, jMax = min(unpack(diffs)), max(unpack(diffs))
+  -- milliseconds: Average, minimum and maximum
+  return adiff/1e3, (jMin - adiff)/1e3, (jMax - adiff)/1e3
+end
+local function jitter_info(self, use_send)
+  local info = {}
+  local jitter_times = use_send and self.jitter_times_send or self.jitter_times_recv
+  for ch, ts in pairs(jitter_times) do
+    local avg, jitterA, jitterB = get_jitter(ts)
+    tinsert(info, sformat(
+      "%s\t%5.1f Hz\t%+6.2f ms\t%6.2f ms\t%+6.2f ms",
+      ch, 1e3/avg, jitterA, avg, jitterB))
+  end
+  return info
+end
 
 -- Add a callback for a channel
 local function lcm_register(self, channel, fn, decode)
@@ -41,25 +76,58 @@ end
 -- Should poll before this
 local function lcm_receive(self, timeout)
   local str, address, port = self.skt:recv(timeout)
-  if type(str)~='string' then
-    return false, "No data"
-  end
+  local t_us = time_us()
+  if type(str)~='string' then return false, "No data" end
   local id = port and lcm_packet.gen_id(address, port)
   local channel, data = self.partitioner:assemble(str, #str, id)
   if not channel then return false, "Bad assemble" end
-  -- Run the callback
+  -- If not a string, then there is no full message
+  if type(data)~='string' then return end
+  -- Update the message count
+  local count = (self.count_recv[channel] or 0) + 1
+  self.count_recv[channel] = count
+  -- Run the callback, if it exists
   local fn = self.callbacks[channel]
-  if fn and type(data)=='string' then
+  if fn then
     local decode = self.decoders[channel]
     local msg = decode and decode(data) or data
-    fn(msg)
+    fn(msg, channel, t_us, count)
+  end
+  -- Update the jitter information
+  local jitter_times = self.jitter_times_recv[channel]
+  if not jitter_times then
+    self.jitter_times_recv[channel] = {t_us}
+  else
+    tinsert(jitter_times, t_us)
+    if #jitter_times > self.jitter_window then
+      tremove(jitter_times, 1)
+    end
   end
 end
 
 local function lcm_send(self, channel, msg)
-  local enc = msg:encode()
-  local frag = self.partitioner:fragment(channel, enc)
-  return self.skt:send_all(frag)
+  -- Allow a custom encoding
+  local enc = type(msg)=='string' and msg or msg:encode()
+  -- The count is required for encoding
+  local count = (self.count_send[channel] or 0) + 1
+  -- Fragment, now, and grab the count
+  local frag = self.partitioner:fragment(channel, enc, #enc, count)
+  -- Return the number of bytes sent
+  local n_bytes_sent, err = self.skt:send_all(frag)
+  local t_us = time_us()
+  -- Update the jitter information
+  local jitter_times = self.jitter_times_send[channel]
+  if not jitter_times then
+    self.jitter_times_send[channel] = {t_us}
+  else
+    tinsert(jitter_times, t_us)
+    if #jitter_times > self.jitter_window then
+      tremove(jitter_times, 1)
+    end
+  end
+  -- Update the count
+  self.count_send[channel] = count
+  return n_bytes_sent, err
 end
 
 -- TODO: Add other file descriptors to listen for
@@ -110,6 +178,13 @@ function lib.init(options)
     skt = skt_lcm,
     callbacks = {},
     decoders = {},
+    count_send = {},
+    count_recv = {},
+    -- Jitter information
+    jitter_times_send = {},
+    jitter_times_recv = {},
+    jitter_window = 100,
+    jitter_info = jitter_info,
     -- Exposed functions
     cb_register = lcm_register,
     send = lcm_send,

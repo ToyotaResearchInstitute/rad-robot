@@ -14,7 +14,6 @@ local tinsert = require'table'.insert
 local tremove = require'table'.remove
 local has_logger, logger = pcall(require, 'logger')
 local has_lcm, lcm = pcall(require, 'lcm')
-local has_packet, lcm_packet = pcall(require, 'lcm_packet')
 local has_signal, signal = pcall(require, 'signal')
 local time_us = require'unix'.time_us
 local usleep = require'unix'.usleep
@@ -30,9 +29,8 @@ local function mp_fragment(ch, str, str_sz, cnt)
   }
 end
 
-local HOSTNAME = io.popen"hostname":read"*line"
-
 local nan = 0/0
+local HOSTNAME = io.popen"hostname":read"*line"
 local ROBOT_HOME = os.getenv"ROBOT_HOME" or '.'
 local lib = {
   nan = nan,
@@ -41,40 +39,27 @@ local lib = {
   ROBOT_HOME = ROBOT_HOME
 }
 
--- Jitter information
-local jitter_counts, jitter_times = {}, {}
-
-local skt_mcl, skt_lcm, msg_partitioner
+local mcl_obj = false
+local lcm_obj = false
 local function init(options)
+  if not has_lcm then return false, "No MCL" end
   if type(options)~='table' then options = {} end
   -- MCL: localhost with ttl of 0, LCM: subnet with ttl of 1
-  if not has_lcm then return false, "No MCL" end
-  local err
-  local has_skt, skt = pcall(require, 'skt')
-  if has_skt then
-    local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
-    skt_mcl, err = skt.open{
-      address = MCL_ADDRESS,
-      port = MCL_PORT,
-      ttl = IS_MAIN and 1 or 0
-    }
-    if skt_mcl then
-      local mtu = options.mtu or 'localhost'
-      msg_partitioner = lcm_packet.new_partitioning(mtu)
-    else
-      io.stderr:write(string.format("MCL not available: %s\n",
-                                    tostring(err)))
-    end
+  local MCL_ADDRESS, MCL_PORT = "239.255.65.56", 6556
+  --
+  mcl_obj = assert(lcm.init{
+    _LCM_ADDRESS=MCL_ADDRESS,
+    _LCM_PORT=MCL_PORT,
+    -- TTL does not broadcast, unless we are houston
+    ttl = IS_MAIN and 1 or 0,
+    mtu = 'localhost'
+  })
+  if options.enable_lcm then
     local LCM_ADDRESS, LCM_PORT = "239.255.76.67", 7667
-    skt_lcm, err = skt.open{
-      address = LCM_ADDRESS,
-      port = LCM_PORT,
-      -- ttl = 1
-    }
-    if not skt_lcm then
-      io.stderr:write(string.format("LCM not available: %s\n",
-                                    tostring(err)))
-    end
+    lcm_obj = assert(lcm.init{
+      _LCM_ADDRESS=LCM_ADDRESS,
+      _LCM_PORT=LCM_PORT
+    })
   end
   return true
 end
@@ -104,92 +89,41 @@ function lib.handle_shutdown(fn)
   exit_handler = fn
 end
 
-local function update_jitter(channel, t_us)
-  local t_s = tonumber(t_us or time_us()) / 1e6
-  local t_c = jitter_times[channel]
-  if t_c then
-    if #t_c >= 100 then tremove(t_c, 1) end
-    tinsert(t_c, t_s)
-    jitter_counts[channel] = jitter_counts[channel] + 1
-  else
-    jitter_times[channel] = {t_s}
-    jitter_counts[channel] = 1
-  end
-end
-
-local function announce(channel, str, cnt, t_us)
-  if not skt_mcl then
+local function announce(channel, str, cnt)
+  if not mcl_obj then
     return false, "No socket"
   elseif type(channel)~='string' then
     return false, "No channel"
   elseif type(str)=='table' then
     str = has_logger and logger.encode(str)
   end
-  if type(str)~='string' then
-    return false, "Bad serialize"
-  end
-  cnt = tonumber(cnt) or jitter_counts[channel] or 0
-  local msg = msg_partitioner:fragment(channel, str, #str, cnt)
-  local ret, err = skt_mcl:send_all(msg)
+  -- Ensure that we have a string to send
+  if type(str)~='string' then return false, "Bad serialize" end
+  -- Use LCM to send
+  local ret, err = mcl_obj:send(channel, str, tonumber(cnt))
   if not ret then return false, err end
-  update_jitter(channel, t_us)
   return #str
 end
 lib.announce = announce
 
 function lib.log_announce(log, obj, channel)
-  local str, cnt, t_us
-  if log then
-    if not channel then channel = log.channel end
-    str, cnt, t_us = log:write(obj, channel)
-  end
-  local ret, err = announce(channel, str or obj, cnt, t_us)
-  if log and not str then
-    -- Logging error
+  if not log then return announce(channel, obj) end
+  if not channel then channel = log.channel end
+  local str, cnt = log:write(obj, channel)
+  local ret, err = announce(channel, str or obj, cnt)
+  if not str then
     return false, cnt
   elseif not ret then
-    -- Sending error
     return false, err
-  else
-    -- OK
-    return true
   end
+  return ret
 end
-
--- Calculate the jitter in milliseconds
-local function get_jitter(ts)
-  if #ts<2 then return nan, nan, nan end
-  local diffs, adiff = {}, 0
-  for i=2,#ts do
-    local d = ts[i] - ts[i-1]
-    adiff = adiff + d
-    tinsert(diffs, d)
-  end
-  adiff = adiff / #diffs
-  local jMin, jMax = min(unpack(diffs)), max(unpack(diffs))
-  -- milliseconds
-  return adiff*1e3, (jMin - adiff)*1e3, (jMax - adiff)*1e3
-end
-lib.get_jitter = get_jitter
-
-local function jitter_tbl(info)
-  info = info or {}
-  for ch, ts in pairs(jitter_times) do
-    local avg, jitterA, jitterB = get_jitter(ts)
-    tinsert(info, sformat(
-      "%s\t%5.1f Hz\t%+6.2f ms\t%6.2f ms\t%+6.2f ms",
-      ch, 1e3/avg, jitterA, avg, jitterB))
-  end
-  -- TODO: Remove stale entries
-  return info
-end
-lib.jitter_tbl = jitter_tbl
 
 -- Automatic device finding of the IMU, vesc and joystick
 local function populate_dev()
   local devices = {}
   for devname in io.popen"ls -1 /dev":lines() do
-    local fullname = string.format("/dev/%s", devname)
+    local fullname = sformat("/dev/%s", devname)
     local is_valid = false
     if devname=="imu" then
       devices.imu = fullname
@@ -222,6 +156,7 @@ local function parse_arg(arguments, use_dev)
       local a = arguments[i]
       local flag = a:match"^%-%-([%w_]+)"
       if flag then
+        -- Flag arguments have a value
         local val = arguments[i + 1]
         if not val then break end
         if val:lower() == 'true' then
@@ -233,6 +168,7 @@ local function parse_arg(arguments, use_dev)
         end
         i = i + 2
       else
+        -- Simply a positional argument
         tinsert(flags, a)
         i = i + 1
       end
@@ -278,22 +214,20 @@ end
 --]]
 
 -- Rate: loop rate in milliseconds
-function lib.listen(options)
-  assert(has_lcm, lcm)
-  local lcm_obj = assert(lcm.init{skt = skt_mcl})
+local function listen(options)
   if type(options)~='table' then options = {} end
   -- Add LCM channels to poll
   if type(options.channel_callbacks)=='table' then
     assert(has_logger, logger)
     for ch, cb in pairs(options.channel_callbacks) do
       print("Listening for", ch)
-      assert(lcm_obj:cb_register(ch, cb, logger.decode))
+      assert(mcl_obj:cb_register(ch, cb, logger.decode))
     end
   end
   -- Add extra file descriptors to poll
   if type(options.fd_updates)=='table' then
     for fd, update in pairs(options.fd_updates) do
-      assert(lcm_obj:fd_register(fd, update))
+      assert(mcl_obj:fd_register(fd, update))
     end
   end
   local loop_rate = tonumber(options.loop_rate)
@@ -305,7 +239,7 @@ function lib.listen(options)
   local t_fn = 0
   local dt_fn
   local t_debug = 0
-  local debug_rate = tonumber(options.debug_rate) or 1e3
+  local debug_timeout = tonumber(options.debug_timeout) or 1e3
   local status = true
   local err
   while lib.running do
@@ -316,19 +250,18 @@ function lib.listen(options)
     else
       loop_rate1 = -1
     end
-    status, err = lcm_obj:update(loop_rate1)
+    status, err = mcl_obj:update(loop_rate1)
     t_update = time_us()
     if not status then lib.running = false; break end
     dt_fn = tonumber(t_update - t_fn)/1e3
     if fn_loop and dt_fn >= loop_rate then
       t_fn = t_update
-      -- update_jitter("lcm_loop", t_fn)
       fn_loop(t_fn)
     end
     local dt_debug = tonumber(t_update - t_debug)
-    if dt_debug / 1e3 > debug_rate then
+    if dt_debug / 1e6 > debug_timeout then
       t_debug = t_update
-      local jt = jitter_tbl()
+      local jt = mcl_obj:jitter_info()
       if fn_debug then
         local msg_debug = fn_debug(t_debug)
         if type(msg_debug)=='string' then
@@ -343,13 +276,14 @@ function lib.listen(options)
   end
   return status, err
 end
+lib.listen = listen
 
 local function replay(fnames, options)
   if type(options)~='table' then options = {} end
   local realtime = options.realtime
   local fn_loop = type(options.fn_loop)=='function' and options.fn_loop
   local fn_debug = type(options.fn_debug)=='function' and options.fn_debug
-  local debug_rate = tonumber(options.debug_rate) or 1e3
+  local debug_timeout = tonumber(options.debug_timeout) or 1e3
   -- TODO: Add fn_loop, fn_debug
   local channel_callbacks = {}
   if type(options.channel_callbacks)=='table' then
@@ -372,7 +306,7 @@ local function replay(fnames, options)
     if costatus(co_play)~='suspended' then break end
     local ok, str, ch, t_us = coresume(co_play)
     if not ok then
-      io.stderr:write(string.format("Error: %s\n", str))
+      io.stderr:write(sformat("Error: %s\n", str))
       break
     elseif not str then
       break
@@ -385,9 +319,9 @@ local function replay(fnames, options)
     end
     if fn_loop then fn_loop(t_us) end
     local dt_debug = tonumber(t_us - t_debug)
-    if dt_debug / 1e3 > debug_rate then
+    if dt_debug / 1e3 > debug_timeout then
       t_debug = t_us
-      local jt = jitter_tbl()
+      local jt = mcl_obj:jitter_info(true)
       if fn_debug then
         local msg_debug = fn_debug(t_debug)
         if type(msg_debug)=='string' then
@@ -417,6 +351,7 @@ end
 lib.replay = replay
 
 if IS_MAIN then
+  -- Always initialize
   init()
   local flags = parse_arg(arg, false)
   if flags.replay then
@@ -425,11 +360,32 @@ if IS_MAIN then
       {
         realtime = flags.realtime,
       })
-  end
-  local msg = flags[1]
-  if msg then
-    print("Sending", msg)
-    assert(announce('houston', {evt=msg}))
+  elseif flags.spy then
+    local function print_message(msg, ch)
+      local str = sformat("== [%s]", tostring(ch))
+      local tbl = {str}
+      for k, v in pairs(msg) do
+        local str = sformat("[%s] = [%s]", tostring(k), tostring(v))
+        table.insert(tbl, str)
+      end
+      print(table.concat(tbl, '\n'))
+    end
+    -- Print messages as they come
+    if type(flags.spy)=='string' then
+      listen{
+        channel_callbacks = {
+          [flags.spy] = print_message
+        },
+      }
+    elseif type(flags.spy)=='number' then
+      listen{
+        debug_timeout = flags.spy
+      }
+    end
+  elseif flags[1] then
+    -- Send houston message
+    local msg = flags[1]
+    return announce('houston', {evt=msg})
   end
 end
 
