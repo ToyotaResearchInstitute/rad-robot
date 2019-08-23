@@ -134,16 +134,9 @@ local function update_path()
     end
     return my_path
   elseif planner_state.highways then
-    local my_highway = planner_state.highways[desired_path]
-    for i, v in ipairs(my_highway.events) do
-      print("EVT", i, v)
-      -- for kk, vv in pairs(v) do
-      --   print("EvT", kk, vv)
-      -- end
-    end
-    print(highway.new(my_highway))
-    -- print("my_highway", my_highway)
-    
+    -- TODO: Do not create too often
+    local my_highway = highway.new(planner_state.highways[desired_path])
+    return my_highway
   end
 end
 
@@ -159,8 +152,11 @@ local function cb_loop(t_us)
   end
 
   -- Find our plan
-  local my_path = update_path()
-  if planner_state and not next_path then
+  local my_path, path_err = update_path()
+  if not my_path then return false, path_err end
+
+  -- Look ahead
+  if planner_state.transitions and not next_path then
     local available = planner_state.transitions[desired_path]
     local tp_available = type(available)
     if tp_available == 'string' then
@@ -172,61 +168,88 @@ local function cb_loop(t_us)
     end
   end
 
-  if my_path and (pp_params.path ~= my_path or not pp_control) then
-    -- KD Tree of points
-    local pt_tree = control.generate_kdtree(my_path.points)
-    my_path.tree = pt_tree
-    -- Update the parameters
-    pp_params.path = my_path
-    pp_params.path_next = next_path
-    pp_control = assert(control.pure_pursuit(pp_params))
+  -- New path implies a new controller
+  if pp_params.path ~= my_path or not pp_control then
+
+    -- Highway points are different
+    if my_path.markers then
+      pp_control, pp_result = control.simple_pursuit(pp_params)
+    else
+      -- Path of points
+      if my_path.points then
+        -- KD Tree of points
+        my_path.tree = control.generate_kdtree(my_path.points)
+      end
+      -- Update the parameters
+      pp_params.path = my_path
+      -- If we can see the next path, use it
+      if next_path then
+        pp_params.path_next = next_path
+      end
+      -- Form our new controller
+      pp_control, pp_result = control.pure_pursuit(pp_params)
+    end
   end
 
   -- Check if there is a controller
-  if not pp_control then
-    pp_result = "No controller"
-    return false, pp_result
-  end
+  if not pp_control then return false, pp_result end
 
   -- Find our control policy
-  local result, err = pp_control(pose_rbt)
-  if not result then
-    pp_result = err
-    return false, pp_result
-  end
-  if result.err then
-    pp_result = result.err
-    return false, pp_result
+  local pp_err
+  if my_path.markers then
+    -- The points are the lanes. All angles are 0
+    -- TODO: Make rigorous
+    -- Make speed dependent, like 3 seconds ahead at 1 m/s
+    -- 3 meters of highway lookahead.
+    local seconds_lookahead = 3
+    local px_lookahead = pose_rbt[1] + seconds_lookahead * pp_params.velocity
+    -- local p_lookahead = {px_lookahead, 0, 0} -- Center lane
+    local p_lookahead = {px_lookahead, 1, 0} -- Left
+    -- local p_lookahead = {px_lookahead, -1, 0} -- Right
+    pp_result, pp_err = pp_control(pose_rbt, p_lookahead)
+  else
+    pp_result, pp_err = pp_control(pose_rbt)
   end
 
-  -- Found!
-  pp_result = result
+  -- Check for errors
+  if not pp_result then
+    pp_result = pp_err
+    return false, pp_result
+  end
+  if pp_result.err then
+    pp_result = pp_result.err
+    return false, pp_result
+  end
 
   -- Check if we are done, and then set the next path
-  if result.done then
+  if pp_result.done then
     desired_path = next_path
     next_path = false
   end
+
   -- Ensure we add our ID to the result
-  result.id = id_robot
-  result.pathname = desired_path
+  pp_result.id = id_robot
+  pp_result.pathname = desired_path
   -- Save the pose, just because
-  result.pose = pose_rbt
+  pp_result.pose = pose_rbt
   local ratio = 1
+
   --------------------------------
-  -- Check the obstacles around us
-  local name_lead, d_lead = find_lead(pp_params.path, result.id_path)
-  -- Allow for printing
-  pp_params.leader = {name_lead, d_lead}
-  -- Slow for a lead vehicle
-  if name_lead then
-    -- print("Lane leader | ", name_lead, d_lead)
-    local d_stop = 1.5 * wheel_base
-    local d_near = 3 * wheel_base
-    if d_lead < d_near then
-      ratio = (d_lead - d_stop) / (d_near - d_stop)
-      -- Bound the ratio
-      ratio = math.max(0, math.min(ratio, 1))
+  -- Check the obstacles around us, if not a highway, for now
+  if not my_path.markers then
+    local name_lead, d_lead = find_lead(pp_params.path, pp_result.id_path)
+    -- Allow for printing
+    pp_params.leader = {name_lead, d_lead}
+    -- Slow for a lead vehicle
+    if name_lead then
+      -- print("Lane leader | ", name_lead, d_lead)
+      local d_stop = 1.5 * wheel_base
+      local d_near = 3 * wheel_base
+      if d_lead < d_near then
+        ratio = (d_lead - d_stop) / (d_near - d_stop)
+        -- Bound the ratio
+        ratio = math.max(0, math.min(ratio, 1))
+      end
     end
   end
   --------------------------------
@@ -234,25 +257,25 @@ local function cb_loop(t_us)
   -- When looping, update the velocity
   local vel_sample = pp_params.velocity
   -- Just update all the time, now
-  if true or result.id_path == 1 then
+  if true or pp_result.id_path == 1 then
     local sample = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity)
     -- Bound the sample
     vel_sample = math.max(pp_params.velocity_min, math.min(sample[1], pp_params.velocity_max))
   end
 
-  if result.done then
-    result.steering = 0
-    result.velocity = 0
+  if pp_result.done then
+    pp_result.steering = 0
+    pp_result.velocity = 0
   else
     -- Set the steering based on the car dimensions
-    local steering = atan(result.kappa * wheel_base)
-    result.steering = steering
+    local steering = atan(pp_result.kappa * wheel_base)
+    pp_result.steering = steering
     -- TODO: Set the speed based on curvature? Lookahead point's curvature?
-    result.velocity = vel_sample * ratio
+    pp_result.velocity = vel_sample * ratio
   end
 
   -- Broadcast
-  log_announce(log, result, "control")
+  log_announce(log, pp_result, "control")
 end
 -- Update the pure pursuit
 --------------------------

@@ -133,6 +133,38 @@ local function find_in_paths(p_vehicle, paths, closeness, skip_angle)
 end
 lib.find_in_paths = find_in_paths
 
+local function get_inverse_curvature(pose_rbt, p_lookahead_path)
+  local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
+  local x_ref, y_ref = unpack(p_lookahead_path)
+  -- Lookahead distance
+  local dx, dy = x_ref - x_rbt, y_ref - y_rbt
+  local lookahead = sqrt(dx*dx + dy*dy)
+  -- Relative angle towards the lookahead reference point
+  local alpha = atan2(y_ref - y_rbt, x_ref - x_rbt)
+  alpha = alpha - th_rbt
+  -- kappa is curvature (inverse of the radius of curvature)
+  local two_sa = 2 * sin(alpha)
+  local kappa = two_sa / lookahead
+  local radius_of_curvature = lookahead / two_sa
+  -- Returns the inverse curvature and radius of curvature
+  return kappa, radius_of_curvature
+end
+
+local function simple_pursuit(params)
+  local function controller(pose_rbt, p_lookahead)
+    local kappa, radius_of_curvature, alpha = get_inverse_curvature(
+      pose_rbt, p_lookahead)
+    return {
+      kappa = kappa,
+      radius_of_curvature = radius_of_curvature,
+      alpha = alpha,
+    }
+    
+  end
+  return controller
+end
+lib.simple_pursuit = simple_pursuit
+
 -- Usage:
 -- lookahead distance
 -- threshold_close is how far away from the path before we give up
@@ -209,12 +241,7 @@ local function pure_pursuit(params)
           id_lookahead = n_points
         end
       end
-      -- print("id_path", id_path
-      -- print("id_lookahead", id_lookahead)
       p_lookahead = points[id_lookahead]
-      -- print("p_path", unpack(p_path))
-      -- print("p_lookahead", unpack(p_lookahead))
-      -- error("OOPS")
     end
     result.p_lookahead = p_lookahead
     -- Find delta between robot and lookahead path point
@@ -224,21 +251,16 @@ local function pure_pursuit(params)
     if not id_lookahead then
       result.p_lookahead = p_lookahead_path
     end
-    local x_ref, y_ref = unpack(p_lookahead_path)
-    -- Relative angle towards the lookahead reference point
-    local alpha = atan2(y_ref - y_rbt, x_ref - x_rbt)
-    alpha = alpha - th_rbt
-    -- kappa is curvature (inverse of the radius of curvature)
-    local two_sa = 2 * sin(alpha)
-    local kappa = two_sa / lookahead
-    local radius_of_curvature = lookahead / two_sa
+    local kappa, radius_of_curvature, alpha = get_inverse_curvature(
+      pose_rbt, p_lookahead_path)
     -- Add results
     result.kappa = kappa
     result.radius_of_curvature = radius_of_curvature
+    result.alpha = alpha
+    --
     result.id_lookahead = id_lookahead
     result.p_lookahead_path = p_lookahead_path
     -- result.d_lookahead = d_lookahead
-    result.alpha = alpha
     result.err = nil
     -- Save the nearby point for next time
     id_lookahead_last = id_lookahead
