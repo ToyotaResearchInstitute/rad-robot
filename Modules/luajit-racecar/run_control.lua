@@ -24,6 +24,7 @@ local desired_path = flags.path or 'lane_outerA+1' -- TODO: Should simply find t
 local next_path = false -- Needs map information
 local path_list = {} -- Path list now and into the future. Should hold path_rollout_time seconds
 local path_rollout_time = 5 -- How far ahead to look given the speed limit of each path
+local houston_event = false
 
 -- TODO: Paths should come from a separate program
 local pp_params
@@ -204,9 +205,16 @@ local function cb_loop(t_us)
     -- 3 meters of highway lookahead.
     local seconds_lookahead = 3
     local px_lookahead = pose_rbt[1] + seconds_lookahead * pp_params.velocity
-    -- local p_lookahead = {px_lookahead, 0, 0} -- Center lane
-    local p_lookahead = {px_lookahead, 1*lane_to_lane_dist, 0} -- Left
-    -- local p_lookahead = {px_lookahead, -1*lane_to_lane_dist, 0} -- Right
+
+    local ind_lane
+    if houston_event == 'left' then
+      ind_lane = 1
+    elseif houston_event == 'right' then
+      ind_lane = -1
+    else
+      ind_lane = 0
+    end
+    local p_lookahead = {px_lookahead, ind_lane*lane_to_lane_dist, 0}
     pp_result, pp_err = pp_control(pose_rbt, p_lookahead)
   else
     pp_result, pp_err = pp_control(pose_rbt)
@@ -313,9 +321,14 @@ local function parse_plan(msg)
   planner_state = msg
 end
 
+local function parse_houston(msg)
+  houston_event = id_robot=='tri1' and msg.evt
+end
+
 local cb_tbl = {
   vicon = parse_vicon,
-  planner = parse_plan
+  planner = parse_plan,
+  houston = parse_houston
 }
 
 local function exit()

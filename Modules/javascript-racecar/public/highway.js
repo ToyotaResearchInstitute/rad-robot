@@ -188,8 +188,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
     };
 
-    if (vehicles["tri1"]) {
-      frame_of_reference = vicon2pose(vehicles["tri1"]);
+    if (vehicles[reference_vehicle]) {
+      frame_of_reference = vicon2pose(vehicles[reference_vehicle]);
     }
 
     // SVG
@@ -210,10 +210,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
         );
         vehicle_el.setAttributeNS(null, "id", vehicle_el_id);
         vehicle_el.setAttributeNS(null, "class", "vehicle");
-        // If a certain vehicle
-        // if (vehicle_name == reference_vehicle) {
-        //   vehicle_el.setAttribute("fill", "brown");
-        // }
         environment_svg.appendChild(vehicle_el);
       }
       // Update the properties
