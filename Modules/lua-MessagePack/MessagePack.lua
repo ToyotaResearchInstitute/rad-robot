@@ -227,14 +227,16 @@ packers['array'] = function (buffer, tbl, n)
     end
     for i = 1, n do
         local v = tbl[i]
-        packers[type(v)](buffer, v)
+        local tv = type(v)
+        -- local can_encode = tv~='function' and tv~='userdata'
+        packers[tv](buffer, v)
     end
 end
 
 local function count_table_members(tbl)
     local is_map, n, max = false, 0, 0
     for k, v in pairs(tbl) do
-        -- Skip unecondable items :)
+        -- Skip unencodable items
         local tk = type(k)
         local tv = type(v)
         local can_encode = tv~='function' and tv~='userdata'

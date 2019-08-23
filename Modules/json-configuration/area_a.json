@@ -1,0 +1,48 @@
+{
+  "legend": {
+    "lane_range": "Array of [right most lane ID, left lane most ID]. Zero is never included. Uses the right hand rule for +/-"
+  },
+  "roads": {
+    "outer": {
+      "A": {
+        "lane_range": [-1, 1],
+        "speed_limit": 1.0,
+        "turning_radius": 0.3,
+        "path_se2": [
+          [0.75, 2.25, -1.5707963267949],
+          [0.75, -0.75, 0],
+          [4, -0.75, 1.5707963267949],
+          [4, 2.25, 3.1415926535898]
+        ]
+      },
+      "B": {
+        "speed_limit": 1.0,
+        "turning_radius": 0.3,
+        "path_se2": [
+          [4, 2.75, 90],
+          [4, 5.75, 180],
+          [0.75, 5.75, 270],
+          [0.75, 2.75, 0]
+        ]
+      }
+    },
+    "middle": {
+      "A": {
+        "speed_limit": 1.0,
+        "turning_radius": 0.3,
+        "path_se2": [
+          [1.75, 2.25, 0],
+          [3.0, 2.25, 0]
+        ]
+      }
+    }
+  },
+  "initialization": {
+    "tri1": {
+      "pose": [-1.0, 2.5, 0]
+    },
+    "": {
+      "pose": [4.125, 2.5, 1.5707963267949]
+    }
+  }
+}

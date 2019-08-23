@@ -239,7 +239,8 @@ local function listen(options)
   local t_fn = 0
   local dt_fn
   local t_debug = 0
-  local debug_timeout = tonumber(options.debug_timeout) or 1e3
+  -- debug_timeout measured in seconds
+  local debug_timeout = tonumber(options.debug_timeout) or 1.0
   local status = true
   local err
   while lib.running do

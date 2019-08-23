@@ -27,29 +27,29 @@
         {
           "km": 0.02,
           "name": "entrance",
-          "id": 1,
           "info": {
+            "id": 1,
             "highway": "i76",
-            "exit": 1
+            "exit_id": 1
           }
         },
         {
           "km": 10.0,
           "name": "exit",
-          "id": 1,
           "info": {
+            "id": 1,
             "highway": "i90",
-            "entrance": 6,
+            "entrance_id": 6,
             "on_far_side": true
           }
         },
         {
           "km": 10.01,
           "name": "entrance",
-          "id": 1,
           "info": {
+            "id": 1,
             "highway": "i90",
-            "exit": 6,
+            "exit_id": 6,
             "on_far_side": true
           }
         }

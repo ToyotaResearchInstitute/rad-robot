@@ -5,15 +5,31 @@ local function tostring_highway(hw)
   return string.format("Highway with %d events", hw.n_events)
 end
 
+local function export(hw)
+  local evts = {}
+  for _, v in pairs(hw.events) do
+    for _, evt in ipairs(v) do
+      table.insert(evts, evt)
+    end
+  end
+  print("n_events exported", #evts, "of", hw.n_events)
+  return {
+    length = hw.length,
+    marker_interval = hw.marker_interval,
+    events = evts
+  }
+end
+
 -- Add an event, for instance:
 -- change in the number of lanes, exit, oncoming lane pass zone
 -- All markers after this event have the same properties, until a new event changes that
 -- Info: an optional table of information
 local function add_event(self, evt)
 
-  local distance = assert(tonumber(evt.km), "Bad kilometer marker!")
-  local name = assert(type(evt.name)=='string', "Bad name of event!")
-  local info = evt.info or {}
+  local distance = assert(tonumber(evt.km or evt[1]), "Bad kilometer marker!")
+  local name = assert(evt.name or evt[2], "No name of event!")
+  assert(type(name)=='string', "Bad name of event!")
+  local info = evt.info or evt[3] or {}
   assert(type(info)=='table', "Bad information for event!")
   -- Form our canonical event to track
   evt = {distance, name, info}
@@ -46,12 +62,17 @@ local function add_event(self, evt)
     named_event = {evt}
     self.events[name] = named_event
   else
+    local did_insert = false
     for i_event=1,#named_event do
       local d = named_event[i_event][1]
       if distance < d then
+        did_insert = true
         table.insert(named_event, i_event, evt)
         break
       end
+    end
+    if not did_insert then
+      table.insert(named_event, evt)
     end
   end
   -- Track the number of events in the highway
@@ -95,6 +116,12 @@ function lib.new(options)
   if n_markers > 2048 then
     return false, "Too fine of a discretization"
   end
+  do
+    local n_markers0 = tonumber(options.n_markers)
+    if n_markers0 and n_markers0~=n_markers then
+      return false, "Bad n_markers checksum"
+    end
+  end
   -- Each marker links to a list of events
   -- Default of no events simply means a single lane
   -- markers[i_marker] = {distance, information}
@@ -120,12 +147,20 @@ function lib.new(options)
     events_by_name = events_by_name,
     events_at_marker = events_at_marker,
     events_at_distance = events_at_distance,
+    export = export
   }
 
   -- Add events, if given
   if type(options.events) == 'table' then
     for _, evt in ipairs(options.events) do
-      obj:add_event(evt)
+      assert(obj:add_event(evt))
+    end
+    assert(obj.n_events==#options.events, "Bad digest")
+  end
+  do
+    local n_events0 = tonumber(options.n_events)
+    if n_events0 and n_events0~=obj.n_events then
+      return false, string.format("Bad n_events checksum: %s != %s", n_events0, obj.n_events)
     end
   end
 

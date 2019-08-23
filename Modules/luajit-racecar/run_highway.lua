@@ -28,14 +28,8 @@ if type(configuration["highways"])=='table' then
   for hw_name, hw_config in pairs(configuration["highways"]) do
     highways[hw_name] = highway.new(hw_config)
   end
-  
 else
   -- TODO: Can listen to events that add/update highways
-end
-
--- Print the highways
-for k, v in pairs(highways) do
-  print(k, v)
 end
 
 -- Highway frame of reference (xmin, ymin, xlength, ylength)
@@ -48,11 +42,14 @@ local env = {
   viewBox = viewBox_H,
   highways = highways,
 }
+for k, v in pairs(highways) do
+  env.highways[k] = v:export()
+end
 
 --------------------------
 -- Update the pure pursuit
 local function cb_loop(t_us)
-  assert(log_announce(log, env, "planner"))
+  log_announce(log, env, "planner")
 end
 -- Update the pure pursuit
 --------------------------
@@ -62,6 +59,9 @@ local function cb_debug(t_us)
   for k, v in pairs(env) do
     print(k, v)
   end
+  -- for k, v in pairs(env.highways.events) do
+  --   print(k, v)
+  -- end
 end
 
 local cb_tbl = {

@@ -2,6 +2,8 @@ local vector  = {}
 local mt      = {}
 
 local math = require'math'
+local max = require'math'.max
+local min = require'math'.min
 local log = require'math'.log
 local PI = require'math'.pi
 local pow = require'math'.pow
@@ -427,9 +429,33 @@ vector.mod_angle = mod_angle
 
 local function relative_se2(b, a)
   -- b in frame of a
-  local ca, sa = cos(a[3]), sin(a[3])
-  return setmetatable({b[1] - a[1], b[2] - a[2], mod_angle(b[3] - a[3])}, mt_pose)
+  return setmetatable({b[1] - a[1], b[2] - a[2], mod_angle(b[3] - a[3])},
+    mt_pose)
 end
+
+-- TODO: Process noise and measurement noise functions
+local function randn_pose(std_pose, mu_pose)
+  -- Limit the noise
+  local dx_noise_max = 0.01
+  local dy_noise_max = 0.01
+  local da_noise_max = math.rad(1)
+  -- Add some noise (randn gives two putputs)
+  local dx_noise = randn(std_pose[1], 0)
+  local dy_noise = randn(std_pose[2], 0)
+  local da_noise = randn(std_pose[3], 0)
+  -- Clamp the noise
+  dx_noise = min(max(-dx_noise_max, dx_noise), dx_noise_max)
+  dy_noise = min(max(-dy_noise_max, dy_noise), dy_noise_max)
+  da_noise = min(max(-da_noise_max, da_noise), da_noise_max)
+  -- Return a new pose
+  local pose_w_noise = {
+    mu_pose[1] + dx_noise,
+    mu_pose[2] + dy_noise,
+    mu_pose[3] + da_noise
+  }
+  return pose_w_noise
+end
+vector.randn_pose = randn_pose
 
 -- Pose vector
 mt_pose.__add = add

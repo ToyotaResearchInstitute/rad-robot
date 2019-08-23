@@ -10,6 +10,7 @@ local atan = require'math'.atan
 local vector = require'vector'
 
 local control = require'control'
+local highway = require'highway'
 
 local log_announce = racecar.log_announce
 local has_logger, logger = pcall(require, 'logger')
@@ -126,11 +127,24 @@ local function update_path()
     print("Finding nearest path...")
     return false, "No desired path"
   end
-  local my_path = planner_state.paths[desired_path]
-  if not my_path then
-    return false, "Desired path not found in the planner"
+  if planner_state.paths then
+    local my_path = planner_state.paths[desired_path]
+    if not my_path then
+      return false, "Desired path not found in the planner"
+    end
+    return my_path
+  elseif planner_state.highways then
+    local my_highway = planner_state.highways[desired_path]
+    for i, v in ipairs(my_highway.events) do
+      print("EVT", i, v)
+      -- for kk, vv in pairs(v) do
+      --   print("EvT", kk, vv)
+      -- end
+    end
+    print(highway.new(my_highway))
+    -- print("my_highway", my_highway)
+    
   end
-  return my_path
 end
 
 --------------------------

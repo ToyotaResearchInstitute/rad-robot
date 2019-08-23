@@ -6,7 +6,6 @@ racecar.init()
 local flags = racecar.parse_arg(arg)
 local log_announce = racecar.log_announce
 
-local has_control, control = pcall(require, 'control')
 local transform = require'transform'
 local t0_us = require'unix'.time_us()
 local vector = require'vector'
@@ -32,6 +31,19 @@ end
 -- Globally accessible variables
 local veh_states = {}
 
+local function new_state(state0)
+  -- Copy
+  local px, py, pa
+  if state0 and state0.pose then
+    px, py, pa = unpack(state0.pose)
+  else
+    px, py, pa = 0, 0, 0
+  end
+  return {
+    pose = {px, py, pa}
+  }
+end
+
 --
 local function cb_debug(t_us)
   local info = {
@@ -45,29 +57,6 @@ local function cb_debug(t_us)
     )
   end
   return table.concat(info, "\n")
-end
-
--- TODO: Process noise and measurement noise functions
-local function noisy_pose(pose, dt)
-  local pose_x, pose_y, pose_a = unpack(pose)
-  -- Add some noise
-  local dx_noise, dy_noise = unpack(vector.randn(2, 0.01 * dt, 0))
-  local da_noise = unpack(vector.randn(1, math.rad(1) * dt, 0))
-  -- Limit the noise
-  local dx_noise_max = 0.01
-  local dy_noise_max = 0.01
-  local da_noise_max = math.rad(1)
-  dx_noise = math.min(math.max(-dx_noise_max, dx_noise), dx_noise_max)
-  dy_noise = math.min(math.max(-dy_noise_max, dy_noise), dy_noise_max)
-  da_noise = math.min(math.max(-da_noise_max, da_noise), da_noise_max)
-  -- Return a new pose
-  local pose_w_noise = {
-    pose_x + dx_noise,
-    pose_y + dy_noise,
-    pose_a + da_noise
-  }
-  -- pose_w_noise[3] = transform.mod_angle(pose_w_noise[2])
-  return pose_w_noise
 end
 
 local function simulate_vehicle(state, dt)
@@ -85,42 +74,23 @@ local function simulate_vehicle(state, dt)
     pose_y + dpose_y,
     pose_a + dpose_a
   }
-  -- pose_process[3] = transform.mod_angle(pose_process[2])
   -- Add noise to the process
   -- Only if moving!
   local use_noise = velocity > 0
-  local pose_noisy = use_noise and noisy_pose(pose_process, dt) or pose_process
+  local pose_noisy
+  if use_noise then
+    pose_noisy = vector.randn_pose(
+      {0.01 * dt, 0.01 * dt, math.rad(1) * dt},
+      pose_process)
+  else
+    pose_noisy = pose_process
+  end
   return {
     pose = pose_noisy,
     controls = control_inp
   }
-
 end
 
-local function new_state()
-  return {
-    pose = {0,0,0}
-  }
-end
-
--- TODO: Configuration file should give this...
-local function set_start_state(id_robot, state_robot)
-  if id_robot=='tri1' then
-    -- Roundabout
-    state_robot.pose = {-1.0, 2.5, 0}
-    -- Merge
-    -- state_robot.pose = {-1.0, 2.5, 0}
-    -- Left
-    -- state_robot.pose =  {-1.0, 2.75, 0}
-  else
-    -- Roundabout
-    state_robot.pose = {4.125, 2.5, math.rad(90)}
-    -- Merge
-    -- state_robot.pose = {-1.0, 3.5, 0}
-    -- Left
-    -- state_robot.pose = pose={0, 0, 0}
-  end
-end
 local function cb_control(inp)
   local id_robot = inp.id
   if not id_robot then return false, "No ID to simulate" end
@@ -129,9 +99,12 @@ local function cb_control(inp)
   -- TODO: Maybe randomly select until the pose is collision free, w.r.t to other poses?
   local state_robot = veh_states[id_robot]
   if not state_robot then
-    state_robot = new_state()
     -- Special start state, based on the name
-    set_start_state(id_robot, state_robot)
+    local config_initial = configuration["initialization"]
+    if type(config_initial)=='table' then
+      config_initial = config_initial[id_robot] or config_initial[""]
+    end
+    state_robot = new_state(config_initial)
     veh_states[id_robot] = state_robot
   end
   -- TODO: Break out the steering, etc.
@@ -171,7 +144,9 @@ local function cb_loop(t_us)
     -- Update the internal state
     veh_states[id_rbt] = state_new
     -- Give noisy measurements
-    local pose_noisy = noisy_pose(state_new.pose, dt)
+    local pose_noisy = vector.randn_pose(
+      {0.01 * dt, 0.01 * dt, math.rad(1) * dt},
+      state_new.pose)
     -- Set the publishing message
     msg_vicon[id_rbt] = pose2vicon(pose_noisy)
   end
@@ -187,7 +162,6 @@ local cb_tbl = {
 
 local function exit()
   if log then log:close() end
-  racecar.announce("control", {steering = 0, velocity = 0})
   return 0
 end
 racecar.handle_shutdown(exit)
