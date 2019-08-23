@@ -199,13 +199,14 @@ local function cb_loop(t_us)
   if my_path.markers then
     -- The points are the lanes. All angles are 0
     -- TODO: Make rigorous
+    local lane_to_lane_dist = 0.5
     -- Make speed dependent, like 3 seconds ahead at 1 m/s
     -- 3 meters of highway lookahead.
     local seconds_lookahead = 3
     local px_lookahead = pose_rbt[1] + seconds_lookahead * pp_params.velocity
     -- local p_lookahead = {px_lookahead, 0, 0} -- Center lane
-    local p_lookahead = {px_lookahead, 1, 0} -- Left
-    -- local p_lookahead = {px_lookahead, -1, 0} -- Right
+    local p_lookahead = {px_lookahead, 1*lane_to_lane_dist, 0} -- Left
+    -- local p_lookahead = {px_lookahead, -1*lane_to_lane_dist, 0} -- Right
     pp_result, pp_err = pp_control(pose_rbt, p_lookahead)
   else
     pp_result, pp_err = pp_control(pose_rbt)

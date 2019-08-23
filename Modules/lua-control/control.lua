@@ -159,7 +159,6 @@ local function simple_pursuit(params)
       radius_of_curvature = radius_of_curvature,
       alpha = alpha,
     }
-    
   end
   return controller
 end

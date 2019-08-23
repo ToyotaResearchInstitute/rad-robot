@@ -78,6 +78,9 @@ polyline {
   fill: black;
   fill-opacity: 0.75;
 }
+.vehicle#vehicle_tri1 {
+  fill: brown;
+}
 .obstacle {
   fill: #AAA;
   stroke: #333;

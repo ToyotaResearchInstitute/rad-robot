@@ -35,7 +35,7 @@ end
 -- Highway frame of reference (xmin, ymin, xlength, ylength)
 -- Look 50 meters, behind (@ 1/10th scale) and 100m ahead
 local viewBox_H = {
-  -5, -2, 15, 6
+  -2, -2, 8, 4
 }
 
 local env = {

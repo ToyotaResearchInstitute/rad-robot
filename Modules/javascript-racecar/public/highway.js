@@ -1,5 +1,10 @@
 document.addEventListener("DOMContentLoaded", function(event) {
   const DEG_PER_RAD = 180 / Math.PI;
+
+  const reference_vehicle = "tri1";
+  // From where to draw everything
+  let frame_of_reference = false;
+
   ///////////////////////////
   // Identifying the SVG size
   const environment_div = document.getElementById("topdown");
@@ -174,7 +179,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     }
     // Check if we have seen this frame, before
     const frame = vehicles.frame;
-    if (frame == info_previous) {
+    if (frame === info_previous) {
       return;
     }
     delete vehicles.frame;
@@ -182,8 +187,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const vicon2pose = p => {
       return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
     };
+
+    if (vehicles["tri1"]) {
+      frame_of_reference = vicon2pose(vehicles["tri1"]);
+    }
+
     // SVG
-    Object.keys(vehicles).forEach((vehicle_name, ilane) => {
+    Object.keys(vehicles).forEach((vehicle_name, ivehicle) => {
       const vehicle = vehicles[vehicle_name];
       const vehicle_el_id = "vehicle_" + vehicle_name;
       let vehicle_el = document.getElementById(vehicle_el_id);
@@ -201,12 +211,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
         vehicle_el.setAttributeNS(null, "id", vehicle_el_id);
         vehicle_el.setAttributeNS(null, "class", "vehicle");
         // If a certain vehicle
-        // vehicle_el.setAttribute("fill", "brown");
-        // vehicle_el.setAttribute("stroke", "white");
+        // if (vehicle_name == reference_vehicle) {
+        //   vehicle_el.setAttribute("fill", "brown");
+        // }
         environment_svg.appendChild(vehicle_el);
       }
       // Update the properties
-      const pose = vicon2pose(vehicle);
+      let pose = vicon2pose(vehicle);
+      if (frame_of_reference) {
+        // NOTE: For highway, do not use angles, so OK
+        pose[0] = pose[0] - frame_of_reference[0] + 1;
+      }
       const coord_svg = coord2svg(pose);
       vehicle_el.setAttributeNS(null, "x", coord_svg[0]);
       vehicle_el.setAttributeNS(null, "y", coord_svg[1]);
