@@ -362,9 +362,8 @@ if IS_MAIN then
         realtime = flags.realtime,
       })
   elseif flags.spy then
-    local function print_message(msg, ch)
-      local str = sformat("== [%s]", tostring(ch))
-      local tbl = {str}
+    local function print_message(msg, ch, t_us)
+      local tbl = {sformat("== [%s] @ %f", tostring(ch), tonumber(t_us) / 1.0e6)}
       for k, v in pairs(msg) do
         local str = sformat("[%s] = [%s]", tostring(k), tostring(v))
         table.insert(tbl, str)
@@ -377,6 +376,7 @@ if IS_MAIN then
         channel_callbacks = {
           [flags.spy] = print_message
         },
+        debug_timeout = math.huge
       }
     elseif type(flags.spy)=='number' then
       listen{

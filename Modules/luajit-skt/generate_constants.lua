@@ -26,7 +26,6 @@ local c_constants = {
   SO_REUSEPORT = true,
   IPPROTO_IP = true,
   IP_ADD_MEMBERSHIP = true,
-  SOCK_DGRAM = true,
   IP_MULTICAST_TTL = true,
   IP_MULTICAST_LOOP = true,
   SO_RCVBUF = true,

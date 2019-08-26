@@ -53,38 +53,66 @@ local function lcm_register(self, channel, fn, decode)
 end
 
 -- Update this LCM channel
---[[
-local function update0(self, timeout)
-  if timeout~=0 then skt.poll({self.skt_lcm.fd}, timeout) end
-  local pkts, err = self.skt_lcm:recvmmsg(false)
+-- NOTE: Should poll before this
+local function lcm_receive0(self)
+  local pkts, err = self.skt:recvmmsg(false)
   if not pkts then return false, err end
   for _, pkt in ipairs(pkts) do
-    local str, address, port = unpack(pkt)
-    local id = port and packet.gen_id(address, port)
-    local channel, data = packet.assemble(str, #str, id)
+    local str, address, port, ts = unpack(pkt)
+    -- Grab the time in microseconds
+    local t_us = time_us(ts)
+    local id = port and lcm_packet.gen_id(address, port)
+    local channel, data = self.partitioner:assemble(str, #str, id)
     -- Run the callback
-    if data then
-      local decode = self.decoders[channel]
-      local msg = decode and decode(data) or data
+    if channel and data then
+      local count = (self.count_recv[channel] or 0) + 1
+      self.count_recv[channel] = count
       local fn = self.callbacks[channel]
-      local ret = fn and fn(msg)
-    end
-  end
+      if fn then
+        local decode = self.decoders[channel]
+        local msg = decode and decode(data) or data
+        fn(msg, channel, t_us, count)
+      end
+      -- Update the jitter information
+      local jitter_times = self.jitter_times_recv[channel]
+      if not jitter_times then
+        self.jitter_times_recv[channel] = {t_us}
+      else
+        tinsert(jitter_times, t_us)
+        if #jitter_times > self.jitter_window then
+          tremove(jitter_times, 1)
+        end
+      end
+    end -- if ch and data
+  end -- loop each message
 end
---]]
 
 -- Should poll before this
-local function lcm_receive(self, timeout)
-  local str, address, port = self.skt:recv(timeout)
-  local t_us = time_us()
+local function lcm_receive(self)
+  -- io.stderr:write("\n== lcm_receive start ==\n")
+  -- local str, address, port, ts = self.skt:recvmsg()
+  -- print(#str, "str", str)
+  local str, address, port, ts = self.skt:recv()
+  -- io.stderr:write("ts: ", tostring(ts), "\n")
+  -- Grab the time in microseconds
+  local t_us = time_us(ts)
+  -- io.stderr:write("t_us: ", tostring(t_us), "\n")
   if type(str)~='string' then return false, "No data" end
+  -- io.stderr:write("port: ", port, "\n")
+  -- io.stderr:write("address: ", address, "\n")
   local id = port and lcm_packet.gen_id(address, port)
+  -- io.stderr:write("id: ", tostring(id), "\n")
   local channel, data = self.partitioner:assemble(str, #str, id)
-  if not channel then return false, "Bad assemble" end
+  -- io.stderr:write("assemble: ", tostring(channel), "\n")
+  -- if not channel then
+  --   io.stderr:write("assemble err: ", tostring(data), "\n")
+  -- end
+  if type(channel)~='string' then return false, "Bad assemble" end
   -- If not a string, then there is no full message
   if type(data)~='string' then return end
   -- Update the message count
   local count = (self.count_recv[channel] or 0) + 1
+  -- io.stderr:write("count: ", tostring(count), "\n")
   self.count_recv[channel] = count
   -- Run the callback, if it exists
   local fn = self.callbacks[channel]
@@ -103,17 +131,22 @@ local function lcm_receive(self, timeout)
       tremove(jitter_times, 1)
     end
   end
+  -- io.stderr:write("\n== lcm_receive finish ==\n")
 end
 
 local function lcm_send(self, channel, msg)
+  -- io.stderr:write("\n== lcm_send start ==\n")
   -- Allow a custom encoding
   local enc = type(msg)=='string' and msg or msg:encode()
   -- The count is required for encoding
   local count = (self.count_send[channel] or 0) + 1
   -- Fragment, now, and grab the count
+  -- io.stderr:write("Fragment\n")
   local frag = self.partitioner:fragment(channel, enc, #enc, count)
   -- Return the number of bytes sent
+  -- io.stderr:write("Send\n")
   local n_bytes_sent, err = self.skt:send_all(frag)
+  -- io.stderr:write("Sent", tostring(n_bytes_sent),"\n")
   local t_us = time_us()
   -- Update the jitter information
   local jitter_times = self.jitter_times_send[channel]
@@ -127,6 +160,7 @@ local function lcm_send(self, channel, msg)
   end
   -- Update the count
   self.count_send[channel] = count
+  -- io.stderr:write("\n== lcm_send finish ==\n")
   return n_bytes_sent, err
 end
 

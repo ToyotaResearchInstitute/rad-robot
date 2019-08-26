@@ -24,3 +24,5 @@ test ! $MAXDGRAM -eq $MAXDGRAM_LCM ; and sudo sysctl -w net.inet.udp.maxdgram=$M
 # sudo route add -net 224.0.0.0 -interface lo0 240.0.0.0
 # sudo route del -net 224.0.0.0 -interface lo0 240.0.0.0
 # sudo route change -net 224.0.0.0 -interface en4 240.0.0.0
+
+set -x DYLD_LIBRARY_PATH "$DYLD_LIBRARY_PATH:$ROBOT_HOME/luajit-skt:$ROBOT_HOME/luajit-proj"

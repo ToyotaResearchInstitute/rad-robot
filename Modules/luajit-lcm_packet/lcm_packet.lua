@@ -9,19 +9,6 @@ local tinsert = require'table'.insert
 
 local lib = {}
 
---[[
-luajit: ...a/dev/tri-robot/Modules/luajit-lcm_packet/lcm_packet.lua:211: attempt to perform arithmetic on field 'fragments_remaining' (a nil value)
-stack traceback:
-        ...a/dev/tri-robot/Modules/luajit-lcm_packet/lcm_packet.lua:211: in function 'assemble'
-        /home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:48: in function 'lcm_receive'
-        /home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:118: in function </home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:118>
-        /home/nvidia/dev/tri-robot/Modules/luajit-lcm/lcm.lua:77: in function 'update'
-        .../nvidia/dev/tri-robot/Modules/luajit-racecar/racecar.lua:299: in function 'listen'
-        ./run_joystick.lua:64: in main chunk
-        [C]: at 0x00404e30
-
-]]
-
 -- Packet reassembly
 local MAGIC_LCM2 = 0x4c433032
 local MAGIC_LCM3 = 0x4c433033
@@ -43,9 +30,9 @@ local partition_sizes = setmetatable({
   ['OSX'] = 1443, -- Not sure why smaller... 1435 in lcm udpm
   ['wifi'] = 1500 - IP_HEADER_SZ - UDP_HEADER_SZ,
   -- ['lite'] = 8192, -- In lcm-lite
-  ['localhost'] = math.pow(2, 14) - IP_HEADER_SZ - UDP_HEADER_SZ,
+  ['localhost'] = require'math'.pow(2, 14) - IP_HEADER_SZ - UDP_HEADER_SZ,
   -- (math.pow(2, 16) - 1) is 0xFFFF
-  ['jumbo'] = (math.pow(2, 16) - 1) - IP_HEADER_SZ - UDP_HEADER_SZ,
+  ['jumbo'] = (require'math'.pow(2, 16) - 1) - IP_HEADER_SZ - UDP_HEADER_SZ,
 }, {
 __call = function(self, mtu)
   if type(mtu) == 'number' then
@@ -94,8 +81,6 @@ size_t strnlen(const char *s, size_t maxlen);
 local function assemble2(self, buf, buf_len, msg_id, msg_seq)
   local buf_pos = 8
   -- copy zero-terminated string holding the channel #
-
-  -- TODO: Use size_t strnlen(const char *s, size_t maxlen);
   local cap_sz = min(buf_len - buf_pos, self.LCM_MAX_CHANNEL_LENGTH)
   local ch_sz = tonumber(C.strnlen(buf + buf_pos, cap_sz))
   if ch_sz == cap_sz then
@@ -104,7 +89,10 @@ local function assemble2(self, buf, buf_len, msg_id, msg_seq)
   local channel = ffi.string(buf + buf_pos)
   buf_pos = buf_pos + ch_sz + 1 -- Plus the null terminator
   -- Return the Channel and Payload
-  return channel, ffi.string(buf + buf_pos, buf_len - buf_pos)
+  local payload_sz = buf_len - buf_pos
+  if payload_sz < 0 then return false, "Bad payload" end
+  local payload = ffi.string(buf + buf_pos, payload_sz)
+  return channel, payload
 end
 
 local function get_buffer(fragment_buffers, msg_id, msg_seq, msg_size, fragments_in_msg)
@@ -238,7 +226,8 @@ end
 -- Buffer is a uint8_t*
 local function assemble(self, buffer, buf_len, msg_id)
   if not buffer then return false, "Bad input" end
-  if buf_len < 4 then return false, "Header too small" end
+  -- if buf_len < 4 then return false, "Header too small" end
+  if buf_len < 8 then return false, "Header too small" end
   local buf = ffi.cast('uint8_t*', buffer)
   local magic = decode_u32(buf)
   local msg_seq = decode_u32(buf + 4)

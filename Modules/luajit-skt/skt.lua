@@ -3,6 +3,8 @@ local lib = {}
 local ffi = require'ffi'
 local C = ffi.C
 
+local tinsert = require'table'.insert
+
 -- local time = require'unix'.time
 
 local function C_has(f_name)
@@ -64,10 +66,13 @@ if ffi.os=='OSX' then
   SO_TIMESTAMP = 0x400 -- 4 bytes
 end
 
+local has_sotimestamp, sotimestamp = pcall(ffi.load, "sotimestamp")
+if not has_sotimestamp then print(sotimestamp) end
+
 local UDP_HEADER_SZ = 20
 local BATCH_SZ = 8
 local MAX_LENGTH = 65535 -- Jumbo UDP packet
-local SKT_BUFFER_SZ = math.pow(2, 20)
+local SKT_BUFFER_SZ = require'math'.pow(2, 20)
 local UNIX_PATH_MAX = 108
 
 ffi.cdef[[
@@ -117,6 +122,7 @@ uint16_t htons(uint16_t hostshort);
 uint32_t ntohl(uint32_t netlong);
 uint16_t ntohs(uint16_t netshort);
 int inet_aton(const char *cp, struct in_addr *pin);
+char *inet_ntoa(struct in_addr in);
 
 int socket(int domain, int type, int protocol);
 int fcntl(int fildes, int cmd, ...);
@@ -178,6 +184,13 @@ ssize_t sendmsg(int socket, const struct msghdr *message, int flags);
 ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
 ]]
 
+if has_sotimestamp then
+  ffi.cdef[[
+    void set_msg_controllen(struct msghdr *msgh);
+    int get_msg_timestamp(struct timeval* tv_msg, struct msghdr *msgh);
+  ]]
+end
+
 -- Add poll mechanism
 local POLLIN = 0x0001
 if not C_has"poll" then
@@ -235,9 +248,7 @@ local function send(self, data, len)
 end
 
 local function sendto(self, buffer, length)
-  if type(buffer)~="string" then
-    return false, "Bad buffer"
-  end
+  if type(buffer)~="string" then return false, "Bad buffer" end
   length = length or #buffer
   local res = C.sendto(self.fd, buffer, length, 0,
                        ffi.cast("const struct sockaddr*", self.send_addr),
@@ -256,13 +267,12 @@ local function send_all(self, msg)
     return false, "Need a table of strings"
   end
   local n = 0
-  for i, frag in ipairs(msg) do
+  for ifrag, frag in ipairs(msg) do
     local ret, err = self:send(frag)
     if ret then
       n = n + ret
-    -- Silently ignore for now
-    -- else
-    --   return false, string.format("Pkt %d: %s", i, err)
+    else
+      return false, string.format("Pkt fragment %d: %s", ifrag, err)
     end
   end
   return n
@@ -283,14 +293,44 @@ end
 local function recvfrom(self, block)
   local buf_len = C.recvfrom(self.fd, self.buffer, ffi.sizeof(self.buffer),
     block and 0 or MSG_DONTWAIT, self.addr, self.addr_sz)
+  -- io.stderr:write("buf_len: ", tostring(buf_len), "\n")
   if buf_len < 0 then
     -- C.perror"recvfrom"
     return false, "recvfrom"
   end
   -- Get the address and port information
-  local address = self.recv_addr.sin_addr.s_addr
-  local port = self.recv_addr.sin_port
-  return ffi.string(self.buffer, buf_len), address, port
+  -- print("recvfrom Address:", ffi.string(C.inet_ntoa(self.recv_addr.sin_addr)))
+  local address = C.ntohl(self.recv_addr.sin_addr.s_addr)
+  local port = C.ntohs(self.recv_addr.sin_port)
+  local str = ffi.string(self.buffer, buf_len)
+  return str, address, port
+end
+
+local function recvmsg(self, block)
+  -- io.stderr:write("recvmsg", "\n")
+  local buf_len = C.recvmsg(self.fd, self.msg_hdr, block and 0 or MSG_DONTWAIT)
+  if buf_len < 0 then
+    C.perror"recvmsg"
+    return false, "recvmsg"
+  end
+  -- io.stderr:write("buf_len: ", tostring(buf_len), "\n")
+  -- print("iov", self.msg_hdr.msg_iov[0].iov_base)
+  -- print("buffer", self.buffer, buf_len)
+  local ts
+  if has_sotimestamp then
+    ts = ffi.new'timeval'
+    local ret = sotimestamp.get_msg_timestamp(ts, self.msg_hdr)
+    if ret < 0 then ts = nil end
+    -- io.stderr:write("get_msg_timestamp: ", tostring(ret), "\n")
+  end
+  -- Get the address and port information
+  local sockaddr = ffi.cast('sockaddr_in*', self.msg_hdr.msg_name)
+  -- print("recvmsg Address", ffi.string(C.inet_ntoa(sockaddr[0].sin_addr)))
+  local address = C.ntohl(sockaddr[0].sin_addr.s_addr)
+  local port = C.ntohs(sockaddr[0].sin_port)
+  local str = ffi.string(self.msg_hdr.msg_iov[0].iov_base, buf_len)
+  -- io.stderr:write("#str: ", #str, "\n")
+  return str, address, port, ts
 end
 
 -- Just allow for macOS and Linux
@@ -306,8 +346,9 @@ if ffi.os=='OSX' or true then
   recvmmsg = function(self, block)
     local msgs = {}
     repeat
-      local pkt, addr, port = recvfrom(self, block)
-      if pkt then table.insert(msgs, {pkt, addr, port}) end
+      -- local pkt, addr, port, ts = recvfrom(self, block)
+      local pkt, addr, port, ts = recvmsg(self, block)
+      if pkt then tinsert(msgs, {pkt, addr, port, ts}) end
     until not pkt
     if #msgs == 0 then
       return false, "OSX recvmmsg"
@@ -339,10 +380,18 @@ else
     end
     local msgs = {}
     for i = 0,(nr_datagrams-1) do
-      local sockaddr = ffi.cast('sockaddr_in*', self.datagrams[i].msg_hdr.msg_name)
+      local mmsg_hdr = self.datagrams[i]
+      local msg_hdr = mmsg_hdr.msg_hdr
+      local sockaddr = ffi.cast('sockaddr_in*', msg_hdr.msg_name)
       local port = C.ntohs(sockaddr[0].sin_port)
       local address = C.ntohl(sockaddr[0].sin_addr.s_addr)
-      table.insert(msgs, {ffi.string(self.iovecs[i].iov_base, self.datagrams[i].msg_len), address, port})
+      local ts
+      if has_sotimestamp then
+        ts = ffi.new'timeval'
+        if sotimestamp.get_msg_timestamp(ts, msg_hdr) < 0 then ts = nil end
+      end
+      -- NOTE: The IOV base to msg_len part is incorrect
+      tinsert(msgs, {ffi.string(self.iovecs[i].iov_base, self.datagrams[i].msg_len), address, port, ts})
     end
     self.counter = self.counter + nr_datagrams
     return msgs
@@ -526,21 +575,46 @@ function lib.open(parameters)
   -- Receive Many
   -- TODO: Check if mmsghdr is available
   local addrs = ffi.new("struct sockaddr[?]", BATCH_SZ)
+  for i_addr=1,BATCH_SZ do
+    if parameters.unix then
+      -- Set the receiving address information
+      local addr_un = ffi.cast('sockaddr_un*', addrs + i_addr)
+      ffi.fill(addr_un, ffi.sizeof('sockaddr_un'))
+      addr_un.sun_family = AF_UNIX
+      -- Ensure null characters in the beginnning and end
+      ffi.fill(addr_un.sun_path, UNIX_PATH_MAX);
+      -- null character in the beginning means hidden...
+      local len = math.min(#address, UNIX_PATH_MAX - 1)
+      ffi.copy(addr_un.sun_path + 1, address, len)
+    else
+      local addr_in = ffi.cast('sockaddr_in*', addrs + i_addr)
+      ffi.fill(addr_in, ffi.sizeof'sockaddr_in')
+      addr_in.sin_family = AF_INET
+      addr_in.sin_port = C.htons(port)
+      addr_in.sin_addr.s_addr = C.htonl(INADDR_ANY)
+    end
+  end
   local buffers = {}
   for _=1,BATCH_SZ do
-    table.insert(buffers, ffi.new('uint8_t[?]', MAX_LENGTH))
+    local buf = ffi.new('uint8_t[?]', MAX_LENGTH)
+    tinsert(buffers, buf)
   end
   local datagrams = ffi.new('struct mmsghdr[?]', BATCH_SZ)
   local iovecs = ffi.new('struct iovec[?]', BATCH_SZ)
   -- Initial population
   for i = 0, BATCH_SZ-1 do
-    local buf = buffers[i+1]
-    iovecs[i].iov_base = buf
-    iovecs[i].iov_len  = ffi.sizeof(buf)
+    iovecs[i].iov_base = buffers[i+1]
+    iovecs[i].iov_len  = MAX_LENGTH
     datagrams[i].msg_hdr.msg_iov     = iovecs[i]
     datagrams[i].msg_hdr.msg_iovlen  = 1;
     datagrams[i].msg_hdr.msg_name    = addrs + i
     datagrams[i].msg_hdr.msg_namelen = ffi.sizeof(addrs[i])
+    if has_sotimestamp then
+      -- Call CMSG_SPACE, here
+      sotimestamp.set_msg_controllen(datagrams[i].msg_hdr)
+      datagrams[i].msg_hdr.msg_control = ffi.new("uint8_t[?]", datagrams[i].msg_hdr.msg_controllen)
+      datagrams[i].msg_hdr.msg_flags = 0;
+    end
   end
 
   local send_addr
@@ -646,6 +720,7 @@ function lib.open(parameters)
     -- Receiving
     recv_addr = recv_addr,
     recv = parameters.use_recv and recv or recvfrom,
+    recvmsg = recvmsg,
     recvmmsg = recvmmsg,
     -- Receive Many
     datagrams = datagrams,
@@ -653,6 +728,7 @@ function lib.open(parameters)
     BATCH_SZ = BATCH_SZ,
     buffers = buffers,
     buffer = buffers[1],
+    msg_hdr = datagrams[0].msg_hdr
     }, mt)
 end
 
