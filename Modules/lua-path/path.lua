@@ -13,9 +13,27 @@ local unpack = unpack or require'table'.unpack
 --
 local has_dubins, dubins = pcall(require, 'dubins')
 local has_grid, grid = pcall(require, 'grid')
+local has_kdtree, kdtree = pcall(require, 'kdtree')
 --
 local mod_angle = require'transform'.mod_angle
 local tf2D_inv = require'transform'.tf2D_inv
+
+local function generate_kdtree(path)
+  -- Add the kd-tree for quick access
+  if not has_kdtree then return false, "No kdtree available: "..kdtree end
+  local tree = path.tree
+  if type(tree) ~= 'userdata' then
+    -- 2D points
+    local k_dim = 2
+    tree = assert(kdtree.create(k_dim))
+  end
+  for i, pt in ipairs(path) do tree:insert(pt, i) end
+  if tree:size() ~= #path then
+    return false, "No points added to the kd-tree"
+  end
+  return tree
+end
+lib.generate_kdtree = generate_kdtree
 
 local function generate_waypoints(knotpoints)
   -- Returns a set of se(2) points from a set of knotpoints

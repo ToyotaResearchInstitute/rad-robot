@@ -7,10 +7,14 @@ local id_robot = flags.id or racecar.HOSTNAME
 assert(id_robot, "No name provided!")
 math.randomseed(123)
 local atan = require'math'.atan
+local fabs = require'math'.abs
+local sqrt = require'math'.sqrt
+local mod_angle = require'transform'.mod_angle
 local vector = require'vector'
 
 local control = require'control'
 local highway = require'highway'
+local path = require'path'
 
 local log_announce = racecar.log_announce
 local has_logger, logger = pcall(require, 'logger')
@@ -71,6 +75,71 @@ local function cb_debug(t_us)
   return table.concat(info, "\n")
 end
 
+------------------------------------------
+-- Utilities
+------------------------------------------
+-- Find in a particular lane
+local function find_in_path(p_vehicle, my_path, closeness)
+  closeness = tonumber(closeness) or 1
+  -- Grab the pose angle
+  local p_x, p_y, p_a = unpack(p_vehicle)
+  -- Generate the candidates for this path
+  local nearby, err = my_path.tree:nearest(p_vehicle, closeness)
+  if not nearby then return false, err end
+  -- Since distance sorted, find the first with a reasonable alignment
+  for _, nby in ipairs(nearby) do
+    local id_in_path = nby.user
+    local path_x, path_y, path_a = unpack(my_path.points[id_in_path])
+    local dx, dy = p_x - path_x, p_y - path_y
+    -- Only if the path _has_ an angle at that point
+    local da = path_a and mod_angle(p_a - path_a) or 0
+    local ORIENTATION_THRESHOLD = math.rad(45)
+    if fabs(da) < ORIENTATION_THRESHOLD then
+      return {
+        id_in_path=nby.user,
+        dist=sqrt(dx*dx + dy*dy),
+        da=da
+      }
+    end
+  end
+  return false, "No well-oriented candidates"
+end
+
+local function sort_candidates(a, b)
+  return a.dist < b.dist
+end
+-- Given a pose and a table of paths
+local function find_in_paths(p_vehicle, paths, closeness, skip_angle)
+  closeness = tonumber(closeness) or 1
+  -- Grab the pose angle
+  local p_x, p_y, p_a = unpack(p_vehicle)
+  -- Generate the best candidate per path
+  local candidates = {}
+  for name_path, my_path in pairs(paths) do
+    local candidate, err = find_in_path(p_vehicle, my_path, closeness)
+    if candidate then
+      candidate.path_name = name_path
+      table.insert(candidates, candidate)
+    end
+  end
+  if #candidates==0 then
+    return false, "No candidates"
+  end
+  -- Sort all candidates by distance - across paths
+  table.sort(candidates, sort_candidates)
+  -- Now check on the angle
+  if skip_angle then
+    return candidates[1]
+  end
+  for _, candidate in ipairs(candidates) do
+    local da = assert(candidate.da, "No path angle information")
+    if fabs(da) < math.rad(45) then
+      return candidate
+    end
+  end
+  return false, "No well-oriented candidates"
+end
+
 local function find_lead(path_lane, id_path)
   if type(path_lane)~='table' then
     return false, "Bad path: "..type(path_lane)
@@ -79,7 +148,7 @@ local function find_lead(path_lane, id_path)
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
     if name_veh ~= id_robot then
-      local info = control.find_in_path(pose_veh, path_lane, 0.25)
+      local info = find_in_path(pose_veh, path_lane, 0.25)
       -- Check if they are in our lane
       if info then
         table.insert(in_my_lane, {name_veh, info})
@@ -118,6 +187,9 @@ local function find_lead(path_lane, id_path)
   end
   return name_lead, d_lead
 end
+------------------------------------------
+-- Utilities
+------------------------------------------
 
 local function update_path()
   if not planner_state then
@@ -179,7 +251,7 @@ local function cb_loop(t_us)
       -- Path of points
       if my_path.points then
         -- KD Tree of points
-        my_path.tree = control.generate_kdtree(my_path.points)
+        my_path.tree = path.generate_kdtree(my_path.points)
       end
       -- Update the parameters
       pp_params.path = my_path
@@ -245,7 +317,9 @@ local function cb_loop(t_us)
 
   --------------------------------
   -- Check the obstacles around us, if not a highway, for now
-  if not my_path.markers then
+  if my_path.markers then
+    -- local name_lead, d_lead = find_lead(pp_params.path, pp_result.id_path)
+  else
     local name_lead, d_lead = find_lead(pp_params.path, pp_result.id_path)
     -- Allow for printing
     pp_params.leader = {name_lead, d_lead}

@@ -20,10 +20,8 @@ if type(configuration) == 'string' and configuration:match"%.json$" then
   local f_conf = assert(io.open(configuration))
   configuration = cjson.decode(f_conf:read"*all")
   f_conf:close()
-  -- Highway frame of reference (xmin, ymin, xlength, ylength)
-  env.viewBox = configuration.viewBox
 else
-  env.viewBox = {0, -2, 8, 4}
+  configuration = {}
 end
 
 -- Include the highway
@@ -37,10 +35,10 @@ if type(configuration["highways"])=='table' then
 else
   -- TODO: Can listen to events that add/update highways
 end
-env.highways = highways
--- for k, v in pairs(highways) do
---   env.highways[k] = v:export()
--- end
+env.highways = {}
+for k, v in pairs(highways) do
+  env.highways[k] = v:export()
+end
 
 --------------------------
 -- Update the pure pursuit

@@ -51,6 +51,7 @@ end
 local function cb_debug(t_us, cnt)
 
   -- Broadcast the viewbox
+  -- Highway frame of reference (xmin, ymin, xlength, ylength)
   local info_debug = {
     viewBox = configuration.viewBox or {-2, -2, 8, 4}
   }
