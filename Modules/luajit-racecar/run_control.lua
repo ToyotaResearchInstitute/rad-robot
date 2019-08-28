@@ -316,19 +316,19 @@ end
 -- Update the poses
 -------------------
 
-local function parse_plan(msg)
+local function cb_plan(msg, ch, t_us)
   -- Update the information available
   planner_state = msg
 end
 
-local function parse_houston(msg)
+local function cb_houston(msg, ch, t_us)
   houston_event = id_robot=='tri1' and msg.evt
 end
 
 local cb_tbl = {
   vicon = parse_vicon,
-  planner = parse_plan,
-  houston = parse_houston
+  planner = cb_plan,
+  houston = cb_houston
 }
 
 local function exit()

@@ -11,6 +11,8 @@ local log_announce = racecar.log_announce
 local has_logger, logger = pcall(require, 'logger')
 local log = has_logger and flags.log ~= 0 and assert(logger.new('plan', racecar.ROBOT_HOME.."/logs"))
 
+local env = {}
+
 -- Start configurations - this is a JSON file
 local has_cjson, cjson = pcall(require, 'cjson')
 local configuration = has_cjson and flags.config
@@ -18,6 +20,10 @@ if type(configuration) == 'string' and configuration:match"%.json$" then
   local f_conf = assert(io.open(configuration))
   configuration = cjson.decode(f_conf:read"*all")
   f_conf:close()
+  -- Highway frame of reference (xmin, ymin, xlength, ylength)
+  env.viewBox = configuration.viewBox
+else
+  env.viewBox = {0, -2, 8, 4}
 end
 
 -- Include the highway
@@ -31,20 +37,10 @@ if type(configuration["highways"])=='table' then
 else
   -- TODO: Can listen to events that add/update highways
 end
-
--- Highway frame of reference (xmin, ymin, xlength, ylength)
--- Look 50 meters, behind (@ 1/10th scale) and 100m ahead
-local viewBox_H = {
-  -2, -2, 8, 4
-}
-
-local env = {
-  viewBox = viewBox_H,
-  highways = highways,
-}
-for k, v in pairs(highways) do
-  env.highways[k] = v:export()
-end
+env.highways = highways
+-- for k, v in pairs(highways) do
+--   env.highways[k] = v:export()
+-- end
 
 --------------------------
 -- Update the pure pursuit

@@ -91,9 +91,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
   // Handle changes in the viewer boundaries
   const update_view = (msg, info_previous) => {
-    const planner = msg.planner;
-    if (planner && planner.viewBox) {
-      const viewBoxNew = planner.viewBox;
+    const debug = msg.debug;
+    if (debug && debug.viewBox) {
+      const viewBoxNew = debug.viewBox;
       const viewbox_changed = viewBoxNew.reduce((eq, v, i) => {
         return eq || v !== viewBox[i];
       }, false);

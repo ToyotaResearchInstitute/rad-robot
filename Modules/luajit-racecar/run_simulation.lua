@@ -26,6 +26,8 @@ if type(configuration) == 'string' and configuration:match"%.json$" then
   local f_conf = assert(io.open(configuration))
   configuration = cjson.decode(f_conf:read"*all")
   f_conf:close()
+else
+  configuration = {}
 end
 
 -- Globally accessible variables
@@ -46,7 +48,13 @@ local function new_state(state0)
 end
 
 --
-local function cb_debug(t_us)
+local function cb_debug(t_us, cnt)
+
+  -- Broadcast the viewbox
+  local info_debug = {
+    viewBox = configuration.viewBox or {-2, -2, 8, 4}
+  }
+  racecar.announce("debug", info_debug, cnt)
   local info = {
   string.format("Simulation time: %.2f", tonumber(t_us - t0_us)/1e6)
   }
@@ -92,7 +100,7 @@ local function simulate_vehicle(state, dt)
   }
 end
 
-local function cb_control(inp)
+local function cb_control(inp, ch, t_us)
   local id_robot = inp.id
   if not id_robot then return false, "No ID to simulate" end
   -- Add this car

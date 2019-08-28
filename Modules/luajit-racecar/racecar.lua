@@ -236,9 +236,11 @@ local function listen(options)
   local fn_debug = type(options.fn_debug)=='function' and options.fn_debug
   local t_update
   local dt_poll = 4 -- 250Hz
-  local t_fn = 0
-  local dt_fn
+  local dt_loop
+  local t_loop = 0
   local t_debug = 0
+  local cnt_loop = 0
+  local cnt_debug = 0
   -- debug_timeout measured in seconds
   local debug_timeout = tonumber(options.debug_timeout) or 1.0
   local status = true
@@ -246,25 +248,27 @@ local function listen(options)
   while lib.running do
     local t = time_us()
     if loop_rate then
-      dt_fn = tonumber(t - t_fn) / 1e3
-      loop_rate1 = max(1, min(loop_rate - dt_fn, dt_poll))
+      dt_loop = tonumber(t - t_loop) / 1e3
+      loop_rate1 = max(1, min(loop_rate - dt_loop, dt_poll))
     else
       loop_rate1 = -1
     end
     status, err = mcl_obj:update(loop_rate1)
     t_update = time_us()
     if not status then lib.running = false; break end
-    dt_fn = tonumber(t_update - t_fn)/1e3
-    if fn_loop and dt_fn >= loop_rate then
-      t_fn = t_update
-      fn_loop(t_fn)
+    dt_loop = tonumber(t_update - t_loop)/1e3
+    if fn_loop and dt_loop >= loop_rate then
+      t_loop = t_update
+      fn_loop(t_loop, cnt_loop)
+      cnt_loop = cnt_loop + 1
     end
     local dt_debug = tonumber(t_update - t_debug)
     if dt_debug / 1e6 > debug_timeout then
       t_debug = t_update
       local jt = mcl_obj:jitter_info()
       if fn_debug then
-        local msg_debug = fn_debug(t_debug)
+        local msg_debug = fn_debug(t_debug, cnt_debug)
+        cnt_debug = cnt_debug + 1
         if type(msg_debug)=='string' then
           tinsert(jt, msg_debug)
         end
@@ -301,6 +305,7 @@ local function replay(fnames, options)
     return false, "Invalid logs"
   end
   local t_debug = 0
+  local cnt_debug = 0
   local t_log0, t_log1
   local t_host0
   while lib.running do
@@ -324,7 +329,8 @@ local function replay(fnames, options)
       t_debug = t_us
       local jt = mcl_obj:jitter_info(true)
       if fn_debug then
-        local msg_debug = fn_debug(t_debug)
+        local msg_debug = fn_debug(t_debug, cnt_debug)
+        cnt_debug = cnt_debug + 1
         if type(msg_debug)=='string' then
           tinsert(jt, msg_debug)
         end
