@@ -22,6 +22,7 @@
 #ifdef WIN32
 #define _USE_MATH_DEFINES
 #endif
+#include <float.h>
 #include <math.h>
 #include "dubins.h"
 
@@ -317,6 +318,7 @@ int dubins_intermediate_results(DubinsIntermediateResults* in, double q0[3], dou
     return EDUBOK;
 }
 
+// https://github.com/AndrewWalker/pydubins/pull/11/files
 int dubins_LSL(DubinsIntermediateResults* in, double out[3]) 
 {
     double tmp0, tmp1, p_sq;
@@ -324,7 +326,12 @@ int dubins_LSL(DubinsIntermediateResults* in, double out[3])
     tmp0 = in->d + in->sa - in->sb;
     p_sq = 2 + in->d_sq - (2*in->c_ab) + (2 * in->d * (in->sa - in->sb));
 
-    if(p_sq >= 0) {
+    if (p_sq < FLT_EPSILON) {
+        out[0] = mod2pi(in->beta - in->alpha);
+        out[1] = 0;
+        out[2] = 0;
+        return EDUBOK;
+    } else if(p_sq >= 0) {
         tmp1 = atan2( (in->cb - in->ca), tmp0 );
         out[0] = mod2pi(tmp1 - in->alpha);
         out[1] = sqrt(p_sq);
@@ -339,7 +346,12 @@ int dubins_RSR(DubinsIntermediateResults* in, double out[3])
 {
     double tmp0 = in->d - in->sa + in->sb;
     double p_sq = 2 + in->d_sq - (2 * in->c_ab) + (2 * in->d * (in->sb - in->sa));
-    if( p_sq >= 0 ) {
+    if (p_sq < FLT_EPSILON) {
+        out[0] = mod2pi(in->beta - in->alpha);
+        out[1] = 0;
+        out[2] = 0;
+        return EDUBOK;
+    } else if( p_sq >= 0 ) {
         double tmp1 = atan2( (in->ca - in->cb), tmp0 );
         out[0] = mod2pi(in->alpha - tmp1);
         out[1] = sqrt(p_sq);
