@@ -35,10 +35,11 @@ if type(configuration["highways"])=='table' then
 else
   -- TODO: Can listen to events that add/update highways
 end
-env.highways = {}
-for k, v in pairs(highways) do
-  env.highways[k] = v:export()
-end
+env.highways = highways
+-- env.highways = {}
+-- for k, v in pairs(highways) do
+--   env.highways[k] = v:export()
+-- end
 
 --------------------------
 -- Update the pure pursuit

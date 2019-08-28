@@ -5,34 +5,44 @@
     "i95": {
       "length": 51.7,
       "marker_interval": 0.1,
+      "lane_width": 4,
+      "initial": {
+        "lanes": 3,
+        "speed_limit": 90
+      },
       "events": [
         {
-          "km": 0.0,
-          "name": "speed_limit"
-        },
-        {
-          "km": 0.0,
-          "name": "lane",
+          "km": 0.010,
+          "name": "add_lane",
           "info": {
-            "n_lanes": 3
+            "on_far_side": false
           }
         },
         {
-          "km": 0.01,
+          "km": 0.020,
           "name": "exit",
-          "id": 1,
-          "info": {
-            "highway": "i76",
-            "entrance": 1
-          }
-        },
-        {
-          "km": 0.02,
-          "name": "entrance",
           "info": {
             "id": 1,
             "highway": "i76",
+            "entrance_id": 1
+          }
+        },
+        {
+          "km": 0.025,
+          "name": "entrance",
+          "info": {
+            "highway": "i76",
             "exit_id": 1
+          }
+        },
+        {
+          "km": 0.025,
+          "name": "add_lane",
+          "info": {
+            "on_far_side": true,
+            "highway": "i90",
+            "exit_id": 6,
+            "comment": "The entrance is a lane add"
           }
         },
         {
@@ -46,13 +56,19 @@
           }
         },
         {
-          "km": 10.01,
-          "name": "entrance",
+          "km": 10.0,
+          "name": "speed_limit",
           "info": {
-            "id": 1,
+            "kph": 60
+          }
+        },
+        {
+          "km": 10.01,
+          "name": "del_lane",
+          "info": {
+            "on_far_side": true,
             "highway": "i90",
-            "exit_id": 6,
-            "on_far_side": true
+            "exit_id": 6
           }
         }
       ]

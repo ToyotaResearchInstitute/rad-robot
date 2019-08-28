@@ -165,9 +165,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
     } // end of checking for lanes
 
     // Try highways
-    // if (planner.highways) {
-    //   console.log(planner.highways);
-    // }
+    if (planner.highways) {
+      // console.log(planner.highways);
+      console.log(planner.highways['i95']);
+    }
   };
   // Add to the processor
   visualizers.set(update_road, false);

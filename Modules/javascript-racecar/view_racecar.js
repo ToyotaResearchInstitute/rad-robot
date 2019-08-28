@@ -145,7 +145,8 @@ mcl_transport.on('message', (msg, rinfo) => {
     if (n === nfrag) {
       fragments.delete(uuid);
       const map_prefix = Buffer.from([ 0x81 ]);
-      const msg_mp = Buffer.concat([ map_prefix ] + frag_list);
+      const frag_list1 = [ map_prefix ].concat(frag_list)
+      const msg_mp = Buffer.concat(frag_list1);
       // console.log(`LCM1 [${seq_id}]`, ch.toString('utf8'), msg_mp.length,
       // fragments.size);
       if (SEND_CONSISTENTLY) {

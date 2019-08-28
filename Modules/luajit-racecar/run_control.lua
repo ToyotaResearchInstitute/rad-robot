@@ -78,7 +78,6 @@ end
 ------------------------------------------
 -- Utilities
 ------------------------------------------
-
 local function find_lead(path_lane, id_path)
   if type(path_lane)~='table' then
     return false, "Bad path: "..type(path_lane)
