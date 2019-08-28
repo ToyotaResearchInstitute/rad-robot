@@ -89,30 +89,18 @@ end
 
 -- Should poll before this
 local function lcm_receive(self)
-  -- io.stderr:write("\n== lcm_receive start ==\n")
-  -- local str, address, port, ts = self.skt:recvmsg()
-  -- print(#str, "str", str)
   local str, address, port, ts = self.skt:recv()
-  -- io.stderr:write("ts: ", tostring(ts), "\n")
+  -- local str, address, port, ts = self.skt:recvmsg()
   -- Grab the time in microseconds
   local t_us = time_us(ts)
-  -- io.stderr:write("t_us: ", tostring(t_us), "\n")
   if type(str)~='string' then return false, "No data" end
-  -- io.stderr:write("port: ", port, "\n")
-  -- io.stderr:write("address: ", address, "\n")
   local id = port and lcm_packet.gen_id(address, port)
-  -- io.stderr:write("id: ", tostring(id), "\n")
   local channel, data = self.partitioner:assemble(str, #str, id)
-  -- io.stderr:write("assemble: ", tostring(channel), "\n")
-  -- if not channel then
-  --   io.stderr:write("assemble err: ", tostring(data), "\n")
-  -- end
   if type(channel)~='string' then return false, "Bad assemble" end
   -- If not a string, then there is no full message
   if type(data)~='string' then return end
   -- Update the message count
   local count = (self.count_recv[channel] or 0) + 1
-  -- io.stderr:write("count: ", tostring(count), "\n")
   self.count_recv[channel] = count
   -- Run the callback, if it exists
   local fn = self.callbacks[channel]
@@ -131,7 +119,6 @@ local function lcm_receive(self)
       tremove(jitter_times, 1)
     end
   end
-  -- io.stderr:write("\n== lcm_receive finish ==\n")
 end
 
 local function lcm_send(self, channel, msg)

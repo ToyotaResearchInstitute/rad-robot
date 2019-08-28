@@ -65,7 +65,7 @@ if ffi.os=='OSX' then
 end
 
 local UDP_HEADER_SZ = 20
-local BATCH_SZ = 8
+local BATCH_SZ = 2
 local MAX_LENGTH = 65535 -- Jumbo UDP packet
 local SKT_BUFFER_SZ = math.pow(2, 20)
 local UNIX_PATH_MAX = 108
@@ -307,22 +307,24 @@ local function recvfrom(self, block)
   return str, address, port
 end
 
-local function recvmsg(self, block)
-  -- io.stderr:write("recvmsg", "\n")
-  local buf_len = C.recvmsg(self.fd, self.msg_hdr, block and 0 or MSG_DONTWAIT)
+local function recvmsg(self)
+  local msg_hdr = self.mmsghdr[0].msg_hdr
+  print("msg_hdr", msg_hdr)
+  print("msg_iovlen", msg_hdr.msg_iovlen)
+  print("msg_iov", msg_hdr.msg_iov)
+  print("msg_iov base", msg_hdr.msg_iov[0].iov_base)
+  print("msg_iov len", msg_hdr.msg_iov[0].iov_len, MAX_LENGTH)
+  assert (msg_hdr.msg_iov[0].iov_len == MAX_LENGTH)
+  local buf_len = C.recvmsg(self.fd, msg_hdr, 0)
   if buf_len < 0 then
     C.perror"recvmsg"
     return false, "recvmsg"
   end
-  -- io.stderr:write("buf_len: ", tostring(buf_len), "\n")
-  -- print("iov", self.msg_hdr.msg_iov[0].iov_base)
-  -- print("buffer", self.buffer, buf_len)
   local ts
   if has_sotimestamp then
     ts = ffi.new'timeval'
     local ret = sotimestamp.get_msg_timestamp(ts, self.msg_hdr)
-    if ret < 0 then ts = nil end
-    -- io.stderr:write("get_msg_timestamp: ", tostring(ret), "\n")
+    if ret < 0 then ts = false end
   end
   -- Get the address and port information
   local sockaddr = ffi.cast('sockaddr_in*', self.msg_hdr.msg_name)
@@ -330,11 +332,9 @@ local function recvmsg(self, block)
   local address = C.ntohl(sockaddr[0].sin_addr.s_addr)
   local port = C.ntohs(sockaddr[0].sin_port)
   local str = ffi.string(self.msg_hdr.msg_iov[0].iov_base, buf_len)
-  -- io.stderr:write("#str: ", #str, "\n")
   return str, address, port, ts
 end
 
--- Just allow for macOS and Linux
 ffi.cdef[[
 struct mmsghdr {
   struct msghdr msg_hdr;  /* Message header */
@@ -580,28 +580,31 @@ function lib.open(parameters)
   for i_addr=0,BATCH_SZ-1 do
     ffi.copy(addrs[i_addr], recv_addr, ffi.sizeof(recv_addr))
   end
-
-  local buffers = {}
-  for _=1,BATCH_SZ do
-    table.insert(buffers, ffi.new('uint8_t[?]', MAX_LENGTH))
-  end
   local mmsghdr = ffi.new('struct mmsghdr[?]', BATCH_SZ)
-  local iovecs = ffi.new('struct iovec[?]', BATCH_SZ)
   -- Initial population
-  for i = 0, BATCH_SZ-1 do
-    local buf = buffers[i+1]
-    iovecs[i].iov_base = buf
-    iovecs[i].iov_len  = ffi.sizeof(buf)
-    mmsghdr[i].msg_hdr.msg_iov     = iovecs[i]
-    mmsghdr[i].msg_hdr.msg_iovlen  = 1;
-    mmsghdr[i].msg_hdr.msg_name    = addrs + i
-    mmsghdr[i].msg_hdr.msg_namelen = ffi.sizeof(addrs[i])
+  for i_mmsghdr = 0, BATCH_SZ-1 do
+    local iovlen = 1
+    -- msg_iov seems to be free'd early :(
+    local msg_iov = ffi.new('struct iovec[?]', iovlen)
+    for i_vec=0,iovlen-1 do
+      msg_iov[i_vec].iov_base = ffi.new('uint8_t[?]', MAX_LENGTH)
+      msg_iov[i_vec].iov_len  = MAX_LENGTH
+    end
+    -- print("iovec", i_mmsghdr, msg_iov)
+    local msg_hdr = ffi.new("struct msghdr")
+    msg_hdr.msg_iovlen  = iovlen
+    msg_hdr.msg_iov = msg_iov
+    msg_hdr.msg_namelen = ffi.sizeof(addrs[i_mmsghdr])
+    msg_hdr.msg_name    = addrs[i_mmsghdr]
     if has_sotimestamp then
       -- Call CMSG_SPACE, here
-      sotimestamp.set_msg_controllen(mmsghdr[i].msg_hdr)
-      mmsghdr[i].msg_hdr.msg_control = ffi.new("uint8_t[?]", mmsghdr[i].msg_hdr.msg_controllen)
-      mmsghdr[i].msg_hdr.msg_flags = 0;
+      sotimestamp.set_msg_controllen(msg_hdr)
+      local buf_control = ffi.new("uint8_t[?]", msg_hdr.msg_controllen)
+      msg_hdr.msg_control = buf_control
+      msg_hdr.msg_flags = 0
     end
+    -- Add to the array
+    mmsghdr[i_mmsghdr].msg_hdr = msg_hdr
   end
 
   local send_addr
@@ -694,7 +697,7 @@ function lib.open(parameters)
   local addr_sz = ffi.new("socklen_t[1]")
   addr_sz[0] = ffi.sizeof(send_addr)
 
-  return setmetatable({
+  local obj = {
     address = address,
     port = port,
     fd = fd,
@@ -711,12 +714,11 @@ function lib.open(parameters)
     recvmmsg = recvmmsg,
     -- Receive Many
     mmsghdr = mmsghdr,
-    iovecs = iovecs,
     BATCH_SZ = BATCH_SZ,
-    buffers = buffers,
-    buffer = buffers[1],
-    msg_hdr = mmsghdr[0].msg_hdr
-    }, mt)
+    buffer = ffi.new('uint8_t[?]', MAX_LENGTH),
+  }
+
+  return setmetatable(obj, mt)
 end
 
 return lib
