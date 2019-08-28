@@ -40,7 +40,8 @@ local function new_state(state0)
     px, py, pa = 0, 0, 0
   end
   return {
-    pose = {px, py, pa}
+    pose = {px, py, pa},
+    controls = {steering=0, velocity=0}
   }
 end
 
@@ -160,12 +161,25 @@ local cb_tbl = {
   control = cb_control,
 }
 
+local function entry()
+  -- Special start state, based on the name
+  local config_initial = configuration["initialization"]
+  if type(config_initial)=='table' then
+    for id_robot, state0 in pairs(config_initial) do
+      if #id_robot > 0 then
+        veh_states[id_robot] = new_state(state0)
+      end
+    end
+  end
+end
+
 local function exit()
   if log then log:close() end
   return 0
 end
 racecar.handle_shutdown(exit)
 
+entry()
 racecar.listen{
   channel_callbacks = cb_tbl,
   loop_rate = dt_ms,
