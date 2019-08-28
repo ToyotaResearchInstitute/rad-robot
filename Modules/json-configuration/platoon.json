@@ -1,5 +1,6 @@
 {
   "viewBox": [-2, -2, 8, 4],
+  "reference_vehicle": "tri1",
   "highways": {
     "i95": {
       "length": 51.7,

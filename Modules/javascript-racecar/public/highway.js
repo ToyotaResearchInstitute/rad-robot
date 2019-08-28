@@ -165,9 +165,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
     } // end of checking for lanes
 
     // Try highways
-    if (planner.highways) {
-      console.log(planner.highways);
-    }
+    // if (planner.highways) {
+    //   console.log(planner.highways);
+    // }
   };
   // Add to the processor
   visualizers.set(update_road, false);
@@ -188,8 +188,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
     };
 
-    if (vehicles[reference_vehicle]) {
+    const debug_info = msg.debug;
+    if (debug_info && debug_info["reference_vehicle"]) {
       frame_of_reference = vicon2pose(vehicles[reference_vehicle]);
+    } else {
+      frame_of_reference = false;
     }
 
     // SVG
@@ -216,7 +219,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       let pose = vicon2pose(vehicle);
       if (frame_of_reference) {
         // NOTE: For highway, do not use angles, so OK
-        pose[0] = pose[0] - frame_of_reference[0] + 1;
+        pose[0] = pose[0] - frame_of_reference[0];
       }
       const coord_svg = coord2svg(pose);
       vehicle_el.setAttributeNS(null, "x", coord_svg[0]);

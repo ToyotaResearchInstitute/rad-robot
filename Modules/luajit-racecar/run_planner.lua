@@ -20,13 +20,6 @@ local path_from_waypoints = require'path'.path_from_waypoints
 -- Path increments: one inch
 local ds = 0.10
 
--- Holodeck Grid
-local g_holo = assert(grid.new{
-  scale = 0.01,
-  xmin = 0, xmax = 4.5,
-  ymin = -1, ymax = 6
-})
-
 -- Start configurations - this is a JSON file
 local has_cjson, cjson = pcall(require, 'cjson')
 local configuration = has_cjson and flags.config
@@ -34,7 +27,16 @@ if type(configuration) == 'string' and configuration:match"%.json$" then
   local f_conf = assert(io.open(configuration))
   configuration = cjson.decode(f_conf:read"*all")
   f_conf:close()
+else
+  configuration = {}
 end
+
+-- Holodeck Grid
+local g_holo = assert(grid.new{
+  scale = 0.01,
+  xmin = 0, xmax = 4.5,
+  ymin = -1, ymax = 6
+})
 
 local routes = {}
 routes['lane_outerA+1'] = {
@@ -353,7 +355,6 @@ end
 
 -- Set the environment for displaying in-browser
 local env = {
-  viewBox = {g_holo.xmin, g_holo.ymin, g_holo.xmax - g_holo.xmin, g_holo.ymax - g_holo.ymin},
   paths = paths,
   transitions = transitions
 }

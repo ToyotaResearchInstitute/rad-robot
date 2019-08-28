@@ -35,6 +35,67 @@ local function generate_kdtree(path)
 end
 lib.generate_kdtree = generate_kdtree
 
+-- Use a kdtree for finding in a path
+local function find_in_path(p_vehicle, my_path, closeness)
+  closeness = tonumber(closeness) or 1
+  -- Grab the pose angle
+  local p_x, p_y, p_a = unpack(p_vehicle)
+  -- Generate the candidates for this path
+  local nearby, err = my_path.tree:nearest(p_vehicle, closeness)
+  if not nearby then return false, err end
+  -- Since distance sorted, find the first with a reasonable alignment
+  for _, nby in ipairs(nearby) do
+    local id_in_path = nby.user
+    local path_x, path_y, path_a = unpack(my_path.points[id_in_path])
+    local dx, dy = p_x - path_x, p_y - path_y
+    -- Only if the path _has_ an angle at that point
+    local da = path_a and mod_angle(p_a - path_a) or 0
+    local ORIENTATION_THRESHOLD = math.rad(45)
+    if fabs(da) < ORIENTATION_THRESHOLD then
+      return {
+        id_in_path=nby.user,
+        dist=sqrt(dx*dx + dy*dy),
+        da=da
+      }
+    end
+  end
+  return false, "No well-oriented candidates"
+end
+lib.find_in_path = find_in_path
+
+local function sort_candidates(a, b)
+  return a.dist < b.dist
+end
+-- Given a pose and a table of paths
+local function find_in_paths(p_vehicle, paths, closeness, skip_angle)
+  -- Generate the best candidate per path
+  local candidates = {}
+  for name_path, my_path in pairs(paths) do
+    local candidate, err = find_in_path(p_vehicle, my_path, closeness)
+    if candidate then
+      candidate.path_name = name_path
+      table.insert(candidates, candidate)
+    end
+  end
+  if #candidates==0 then
+    return false, "No candidates"
+  end
+  -- Sort all candidates by distance - across paths
+  table.sort(candidates, sort_candidates)
+  -- Now check on the angle
+  if skip_angle then
+    return candidates[1]
+  end
+  for _, candidate in ipairs(candidates) do
+    local da = assert(candidate.da, "No path angle information")
+    if fabs(da) < math.rad(45) then
+      return candidate
+    end
+  end
+  return false, "No well-oriented candidates"
+end
+lib.find_in_paths = find_in_paths
+
 local function generate_waypoints(knotpoints)
   -- Returns a set of se(2) points from a set of knotpoints
 

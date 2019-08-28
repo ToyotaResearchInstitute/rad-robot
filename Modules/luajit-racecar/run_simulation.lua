@@ -30,6 +30,16 @@ else
   configuration = {}
 end
 
+-- Input: pose
+-- Output: vicon table
+local function pose2vicon(p)
+  -- Just on the z=0 plane
+  return {
+    rotation = {0, 0, p[3]},
+    translation = {1e3 * p[1], 1e3 * p[2], 0},
+  }
+end
+
 -- Globally accessible variables
 local veh_states = {}
 
@@ -53,7 +63,8 @@ local function cb_debug(t_us, cnt)
   -- Broadcast the viewbox
   -- Highway frame of reference (xmin, ymin, xlength, ylength)
   local info_debug = {
-    viewBox = configuration.viewBox or {-2, -2, 8, 4}
+    viewBox = configuration.viewBox or {-2, -2, 8, 4},
+    reference_vehicle = configuration.reference_vehicle
   }
   racecar.announce("debug", info_debug, cnt)
   local info = {
@@ -123,16 +134,6 @@ local function cb_control(inp, ch, t_us)
   -- local steering_pid = has_control and control.pid{
   --   r = 0
   -- }
-end
-
--- Input: pose
--- Output: vicon table
-local function pose2vicon(p)
-  -- Just on the z=0 plane
-  return {
-    rotation = {0, 0, p[3]},
-    translation = {1e3 * p[1], 1e3 * p[2], 0},
-  }
 end
 
 --------------------------

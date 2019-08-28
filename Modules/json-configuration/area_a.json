@@ -2,6 +2,7 @@
   "legend": {
     "lane_range": "Array of [right most lane ID, left lane most ID]. Zero is never included. Uses the right hand rule for +/-"
   },
+  "viewBox": [0, -1, 4.5, 7],
   "roads": {
     "outer": {
       "A": {
