@@ -4,6 +4,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const reference_vehicle = "tri1";
   // From where to draw everything
   let frame_of_reference = false;
+  //
+  const vicon2pose = p => {
+    return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
+  };
 
   ///////////////////////////
   // Identifying the SVG size
@@ -165,10 +169,30 @@ document.addEventListener("DOMContentLoaded", function(event) {
     } // end of checking for lanes
 
     // Try highways
-    if (planner.highways) {
-      // console.log(planner.highways);
-      console.log(planner.highways['i95']);
+    if (!planner.highways) {
+      return;
     }
+    // console.log(planner.highways);
+    const hw = planner.highways['i95'];
+    // console.log(hw);
+    if (!hw) {
+      return;
+    }
+    // Get the pose of the vehicle
+    const debug_info = msg.debug;
+    if (!debug_info|| !debug_info["reference_vehicle"]) {
+      return;
+    }
+    const vehicles = msg.vicon;
+    if (!vehicles) {
+      return;
+    }
+    const pose = vicon2pose(vehicles[reference_vehicle]);
+    let i_marker = Math.floor(pose[0] / hw.marker_interval);
+    i_marker = Math.max(0, Math.min(i_marker, hw.n_markers-1));
+    
+    console.log("Marker", i_marker);
+    console.log(hw.markers[i_marker]);
   };
   // Add to the processor
   visualizers.set(update_road, false);
@@ -184,10 +208,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return;
     }
     delete vehicles.frame;
-
-    const vicon2pose = p => {
-      return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
-    };
 
     const debug_info = msg.debug;
     if (debug_info && debug_info["reference_vehicle"]) {
