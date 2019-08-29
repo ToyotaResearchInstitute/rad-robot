@@ -188,41 +188,54 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!vehicles) {
       return;
     }
-    const pose = vicon2pose(vehicles[reference_vehicle]);
-    let i_marker = Math.floor(pose[0] / hw.marker_interval);
-    i_marker = Math.max(0, Math.min(i_marker, hw.n_markers - 1));
-    const marker = hw.markers[i_marker];
-    // console.log("marker", marker);
-    if (!marker) {
-      return;
-    }
-    const lane_width = marker.lane_width || hw.lane_width;
-    const marker_interval = hw.marker_interval
-    marker.lanes.forEach((ylane, ilane) => {
-      // console.log(ylane, ilane);
-      const lane_id = "lane_" + ilane;
-      var el = lanes_els.namedItem(lane_id);
-      if (!el) {
-        el = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-        el.setAttributeNS(null, "id", lane_id);
-        el.setAttributeNS(null, "class", "lane");
-        el.style.fill = "none";
-        el.style.stroke = "#0F0";
-        el.style.strokeWidth = "0.1";
-        el.style.opacity = "0.3";
-        el.setAttributeNS(null, "marker-end", "url(#marker-arrow)");
-        environment_svg.appendChild(el);
+    //
+    const reference_pose = vicon2pose(vehicles[reference_vehicle]);
+    let i_marker_ref = Math.floor(reference_pose[0] / hw.marker_interval);
+    i_marker_ref = Math.max(0, Math.min(i_marker_ref, hw.n_markers - 1));
+    const marker_ref = hw.markers[i_marker_ref];
+    const lane_width = marker_ref.lane_width || hw.lane_width;
+    const marker_interval = hw.marker_interval;
+    // Find the surrounding markers
+    const N_MARKERS_PREV = 1;
+    const N_MARKERS_NEXT = 1;
+    for (
+      let d_marker = -N_MARKERS_PREV;
+      d_marker <= N_MARKERS_NEXT;
+      d_marker++
+    ) {
+      const i_marker = i_marker_ref + d_marker;
+      if (i_marker < 0 || i_marker >= hw.n_markers) {
+        continue;
       }
-      const lane_coords = [[i_marker * marker_interval, ylane * lane_width], [(i_marker+1)*marker_interval + X_SVG_SZ, ylane * lane_width]];
-      const lane_polypoints = lane_coords
-        .map(coord2svg)
-        .map(svg2polypoints)
-        .join(" ");
-        // console.log("lane_polypoints", lane_polypoints);
-      el.setAttributeNS(null, "points", lane_polypoints);
-    });
-    // console.log("Marker", i_marker);
-    // console.log(hw.markers[i_marker]);
+      const marker = hw.markers[i_marker];
+      // Start of the line
+      const x_start = i_marker * marker_interval - reference_pose[0];
+      const is_current = d_marker == 0;
+      // console.log(marker.lanes);
+      marker.lanes.forEach((ylane, i_lane) => {
+        const lane_id = "lane_" + i_lane + "_" + d_marker;
+        let el = lanes_els.namedItem(lane_id);
+        if (!el) {
+          el = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "polyline"
+          );
+          el.setAttributeNS(null, "id", lane_id);
+          el.setAttributeNS(null, "class", "lane");
+          environment_svg.appendChild(el);
+        }
+        // Form the visualization
+        let lane_coords = [
+          [x_start, ylane * lane_width],
+          [x_start + marker_interval, ylane * lane_width]
+        ];
+        const lane_polypoints = lane_coords
+          .map(coord2svg)
+          .map(svg2polypoints)
+          .join(" ");
+        el.setAttributeNS(null, "points", lane_polypoints);
+      });
+    } // For surrounding markers
   };
   // Add to the processor
   visualizers.set(update_road, false);
@@ -240,10 +253,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
     delete vehicles.frame;
 
     const debug_info = msg.debug;
+    let frame_of_reference = false;
     if (debug_info && debug_info["reference_vehicle"]) {
       frame_of_reference = vicon2pose(vehicles[reference_vehicle]);
-    } else {
-      frame_of_reference = false;
     }
 
     // SVG

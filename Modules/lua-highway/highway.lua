@@ -56,7 +56,7 @@ end
 -- Info: an optional table of information
 local function add_event(self, evt)
 
-  local distance = assert(tonumber(evt.km or evt[1]), "Bad kilometer marker!")
+  local distance = assert(tonumber(evt.meters or evt[1]), "Bad meter marker!")
   local evt_name = assert(evt.name or evt[2], "No name of event!")
   assert(type(evt_name)=='string', "Bad name of event!")
   local info = evt.info or evt[3] or {}
@@ -170,9 +170,9 @@ end
 
 -- Make a new highway
 function lib.new(options)
-  -- length in kilometers. default of 100 km
+  -- length in meters
 	local length = assert(tonumber(options.length), "No highway length given")
-  -- marker intervals, in kilometers
+  -- marker intervals, in meters
   local marker_interval = assert(tonumber(options.marker_interval), "No highway marker_interval given")
   -- Ensure the minimum length
   if length < marker_interval then
@@ -199,11 +199,12 @@ function lib.new(options)
   -- Initial properties
   local lane_width = tonumber(options.lane_width) or 2
   local initial = options.initial or {}
-  local speed_limit0 = tonumber(initial.speed_limit) or 90
+  -- Meters per second
+  local speed_limit0 = tonumber(initial.speed_limit) or 25
   local nlanes0 = tonumber(initial.lanes) or 2
   local lanes0 = {}
   for ilane=1,nlanes0 do
-    table.insert(lanes0, (ilane - 1) * lane_width)
+    table.insert(lanes0, 1, ilane - 1)
   end
   local markers = {}
   for _ = 1, n_markers do

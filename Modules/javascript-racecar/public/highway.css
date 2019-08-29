@@ -87,6 +87,11 @@ polyline {
   stroke-width: 0.01;
 }
 .lane {
+  fill: none;
+  stroke: #0F0;
+  stroke-width: 0.1;
+  opacity: 0.5;
+  marker-end: url(#marker-arrow);
 }
 
 path.black {

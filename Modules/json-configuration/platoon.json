@@ -3,23 +3,23 @@
   "reference_vehicle": "tri1",
   "highways": {
     "i95": {
-      "length": 51.7,
-      "marker_interval": 0.1,
+      "length": 5170,
+      "marker_interval": 10,
       "lane_width": 1,
       "initial": {
         "lanes": 3,
-        "speed_limit": 90
+        "speed_limit": 25
       },
       "events": [
         {
-          "km": 0.010,
+          "meters": 10,
           "name": "add_lane",
           "info": {
             "on_far_side": false
           }
         },
         {
-          "km": 0.020,
+          "meters": 20,
           "name": "exit",
           "info": {
             "id": 1,
@@ -28,7 +28,7 @@
           }
         },
         {
-          "km": 0.025,
+          "meters": 25,
           "name": "entrance",
           "info": {
             "highway": "i76",
@@ -36,7 +36,7 @@
           }
         },
         {
-          "km": 0.025,
+          "meters": 25,
           "name": "add_lane",
           "info": {
             "on_far_side": true,
@@ -46,7 +46,7 @@
           }
         },
         {
-          "km": 10.0,
+          "meters": 1000,
           "name": "exit",
           "info": {
             "id": 1,
@@ -56,14 +56,14 @@
           }
         },
         {
-          "km": 10.0,
+          "meters": 1000,
           "name": "speed_limit",
           "info": {
-            "kph": 60
+            "mps": 20
           }
         },
         {
-          "km": 10.01,
+          "meters": 1001,
           "name": "del_lane",
           "info": {
             "on_far_side": true,
@@ -74,8 +74,8 @@
       ]
     },
     "i76": {
-      "length": 3.8,
-      "marker_interval": 0.1,
+      "length": 3800,
+      "marker_interval": 100,
       "events": []
     }
   },
