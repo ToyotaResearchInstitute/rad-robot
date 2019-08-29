@@ -108,7 +108,7 @@ local function add_event(self, evt)
   self.n_events = self.n_events + 1
 
   -- Now, update the marker properties
-  -- NOTE: This may not be optimal :/
+  -- NOTE: This is incorrect, but that is OK, for now
   for i_next = i_marker + 1, self.n_markers do
     local marker_next = self.markers[i_next]
     -- If a speed_limit, then set the precondition for the next lane
@@ -122,13 +122,13 @@ local function add_event(self, evt)
         -- Adding on the far side is in the positive y direction
         local y_extreme_max = marker_next.lanes[1]
         -- Far side is the front of the list. Then we are more efficient in Lua land
-        table.insert(marker_next.lanes, 1, y_extreme_max + self.lane_width)
+        table.insert(marker_next.lanes, 1, y_extreme_max + 1)
       else
         -- Adding on the near side is in the negative y direction
-        local y_extreme_min = marker_next.lanes[#marker_next.lanes] or 0
+        local y_extreme_min = marker_next.lanes[#marker_next.lanes]
         -- Add to the end of the queue.
         -- Efficient, since most lane changes are on near side
-        table.insert(marker_next.lanes, y_extreme_min - self.lane_width)
+        table.insert(marker_next.lanes, y_extreme_min - 1)
       end
       -- End addition
     elseif evt_name=='del_lane' then
@@ -197,7 +197,7 @@ function lib.new(options)
   -- Properties as a pre condition for entering the marker
   -- Given this information, a user integrates events until the point of the vehicle
   -- Initial properties
-  local lane_width = tonumber(options.lane_width) or 4
+  local lane_width = tonumber(options.lane_width) or 2
   local initial = options.initial or {}
   local speed_limit0 = tonumber(initial.speed_limit) or 90
   local nlanes0 = tonumber(initial.lanes) or 2
@@ -251,5 +251,19 @@ function lib.new(options)
     __tostring = tostring_highway
   })
 end
+
+local function wrap(obj)
+  -- Add methods to the table
+  obj.add_event = add_event
+  obj.events_by_name = events_by_name
+  obj.events_at_marker = events_at_marker
+  obj.events_at_distance = events_at_distance
+  obj.export = export
+  obj.get_marker = get_marker
+  return setmetatable(obj, {
+    __tostring = tostring_highway
+  })
+end
+lib.wrap = wrap
 
 return lib

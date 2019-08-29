@@ -36,10 +36,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
       p[2]
     ];
   };
-  // const coord2svg = (p) => { return [ p[0], -p[1], -p[2] ]; };
   // Flip X and Y
   const coord2svg = p => {
     return [p[1], p[0], Math.PI / 2 - p[2]];
+  };
+  const svg2polypoints = pt => {
+    return pt.slice(0, 2).join();
   };
   // End of dimensions
   ///////////////////////////
@@ -102,7 +104,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         return eq || v !== viewBox[i];
       }, false);
       if (viewbox_changed) {
-        // Must flip the coordinates...
+        // NOTE: Must flip the coordinates...
         X_SVG_MIN = parseFloat(viewBoxNew[1]);
         Y_SVG_MIN = parseFloat(viewBoxNew[0]);
         X_SVG_SZ = parseFloat(viewBoxNew[3]);
@@ -131,19 +133,18 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return;
     }
 
+    // Grab the SVG of each lane
+    var lanes_els = environment_svg.getElementsByClassName("lane");
+
     if (planner.paths) {
       const lanes = planner.paths;
-      const pt_to_pair = (coord, i) => {
-        return coord2svg(coord)
-          .slice(0, 2)
-          .join();
-      };
-      // Grab the SVG of each lane
-      var lanes_els = environment_svg.getElementsByClassName("lane");
       // Iterate the names of the lanes
       Object.keys(lanes).forEach((name, ilane) => {
         const l = lanes[name];
-        const points = l["points"].map(pt_to_pair).join(" ");
+        const points = l["points"]
+          .map(coord2svg)
+          .map(svg2polypoints)
+          .join(" ");
         const lane_id = "lane_" + name;
         var el = lanes_els.namedItem(lane_id);
         if (!el) {
@@ -173,14 +174,14 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return;
     }
     // console.log(planner.highways);
-    const hw = planner.highways['i95'];
+    const hw = planner.highways["i95"];
     // console.log(hw);
     if (!hw) {
       return;
     }
     // Get the pose of the vehicle
     const debug_info = msg.debug;
-    if (!debug_info|| !debug_info["reference_vehicle"]) {
+    if (!debug_info || !debug_info["reference_vehicle"]) {
       return;
     }
     const vehicles = msg.vicon;
@@ -189,10 +190,39 @@ document.addEventListener("DOMContentLoaded", function(event) {
     }
     const pose = vicon2pose(vehicles[reference_vehicle]);
     let i_marker = Math.floor(pose[0] / hw.marker_interval);
-    i_marker = Math.max(0, Math.min(i_marker, hw.n_markers-1));
-    
-    console.log("Marker", i_marker);
-    console.log(hw.markers[i_marker]);
+    i_marker = Math.max(0, Math.min(i_marker, hw.n_markers - 1));
+    const marker = hw.markers[i_marker];
+    // console.log("marker", marker);
+    if (!marker) {
+      return;
+    }
+    const lane_width = marker.lane_width || hw.lane_width;
+    const marker_interval = hw.marker_interval
+    marker.lanes.forEach((ylane, ilane) => {
+      // console.log(ylane, ilane);
+      const lane_id = "lane_" + ilane;
+      var el = lanes_els.namedItem(lane_id);
+      if (!el) {
+        el = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        el.setAttributeNS(null, "id", lane_id);
+        el.setAttributeNS(null, "class", "lane");
+        el.style.fill = "none";
+        el.style.stroke = "#0F0";
+        el.style.strokeWidth = "0.1";
+        el.style.opacity = "0.3";
+        el.setAttributeNS(null, "marker-end", "url(#marker-arrow)");
+        environment_svg.appendChild(el);
+      }
+      const lane_coords = [[i_marker * marker_interval, ylane * lane_width], [(i_marker+1)*marker_interval + X_SVG_SZ, ylane * lane_width]];
+      const lane_polypoints = lane_coords
+        .map(coord2svg)
+        .map(svg2polypoints)
+        .join(" ");
+        // console.log("lane_polypoints", lane_polypoints);
+      el.setAttributeNS(null, "points", lane_polypoints);
+    });
+    // console.log("Marker", i_marker);
+    // console.log(hw.markers[i_marker]);
   };
   // Add to the processor
   visualizers.set(update_road, false);

@@ -51,6 +51,7 @@ do
 end
 local pp_control = false
 local pp_result = false
+local pp_err = nil
 --
 local planner_state = false
 local veh_poses = {}
@@ -70,7 +71,7 @@ local function cb_debug(t_us)
     table.insert(info, string.format("Control: %.2f m/s, %.2f°",
       pp_result.velocity, math.deg(pp_result.steering)))
   else
-    table.insert(info, "Control not available: "..tostring(pp_result))
+    table.insert(info, "Control not available: "..tostring(pp_err))
   end
   return table.concat(info, "\n")
 end
@@ -146,8 +147,8 @@ local function update_path()
     return my_path
   elseif planner_state.highways then
     -- TODO: Do not create too often
-    local my_highway = highway.new(planner_state.highways[desired_path])
-    return my_highway
+    local hw = planner_state.highways[desired_path]
+    return highway.wrap(hw)
   end
 end
 
@@ -159,12 +160,15 @@ local function cb_loop(t_us)
   if not pose_rbt then
     local control_inp = {id = id_robot, steering = 0, velocity = 0}
     log_announce(log, control_inp, "control")
-    return
+    return false, "No pose"
   end
 
   -- Find our plan
-  local my_path, path_err = update_path()
-  if not my_path then return false, path_err end
+  local my_path
+  my_path, pp_err = update_path()
+  if not my_path then
+    return false, pp_err
+  end
 
   -- Look ahead
   if planner_state.transitions and not next_path then
@@ -184,7 +188,7 @@ local function cb_loop(t_us)
 
     -- Highway points are different
     if my_path.markers then
-      pp_control, pp_result = control.simple_pursuit(pp_params)
+      pp_control, pp_err = control.simple_pursuit(pp_params)
     else
       -- Path of points
       if my_path.points then
@@ -198,24 +202,23 @@ local function cb_loop(t_us)
         pp_params.path_next = next_path
       end
       -- Form our new controller
-      pp_control, pp_result = control.pure_pursuit(pp_params)
+      pp_control, pp_err = control.pure_pursuit(pp_params)
     end
   end
 
   -- Check if there is a controller
-  if not pp_control then return false, pp_result end
+  if not pp_control then return false, pp_err end
 
   -- Find our control policy
-  local pp_err
   if my_path.markers then
     -- The points are the lanes. All angles are 0
-    -- TODO: Make rigorous
-    local lane_to_lane_dist = 0.5
+    local lane_to_lane_dist = tonumber(my_path.lane_width) or 0.5
     -- Make speed dependent, like 3 seconds ahead at 1 m/s
     -- 3 meters of highway lookahead.
     local seconds_lookahead = 3
     local px_lookahead = pose_rbt[1] + seconds_lookahead * pp_params.velocity
 
+    -- TODO: Make nicer...
     local ind_lane
     if houston_event == 'left' then
       ind_lane = 1
@@ -224,7 +227,8 @@ local function cb_loop(t_us)
     else
       ind_lane = 0
     end
-    local p_lookahead = {px_lookahead, ind_lane*lane_to_lane_dist, 0}
+    -- Add 0.5 to go halfway within the lane
+    local p_lookahead = {px_lookahead, (ind_lane + 0.5) * lane_to_lane_dist, 0}
     pp_result, pp_err = pp_control(pose_rbt, p_lookahead)
   else
     pp_result, pp_err = pp_control(pose_rbt)
@@ -232,12 +236,11 @@ local function cb_loop(t_us)
 
   -- Check for errors
   if not pp_result then
-    pp_result = pp_err
-    return false, pp_result
+    return false, pp_err
   end
   if pp_result.err then
-    pp_result = pp_result.err
-    return false, pp_result
+    pp_err = pp_result.err
+    return false, pp_err
   end
 
   -- Check if we are done, and then set the next path
@@ -330,6 +333,7 @@ end
 
 local function cb_plan(msg, ch, t_us)
   -- Update the information available
+  -- print("Got plan from", ch, "at", t_us)
   planner_state = msg
 end
 

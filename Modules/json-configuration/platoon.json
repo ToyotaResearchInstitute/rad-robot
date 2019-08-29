@@ -1,11 +1,11 @@
 {
-  "viewBox": [-2, -2, 8, 4],
+  "viewBox": [-2, -2, 8, 6],
   "reference_vehicle": "tri1",
   "highways": {
     "i95": {
       "length": 51.7,
       "marker_interval": 0.1,
-      "lane_width": 4,
+      "lane_width": 1,
       "initial": {
         "lanes": 3,
         "speed_limit": 90
@@ -81,34 +81,34 @@
   },
   "initialization": {
     "tri1": {
-      "pose": [0, 0, 0]
+      "pose": [0, 0.5, 0]
     },
-    "drone1": {
-      "pose": [0, -1, 0]
+    "tri2": {
+      "pose": [1, -0.5, 0]
     },
-    "drone2": {
-      "pose": [1, -1, 0]
+    "tri3": {
+      "pose": [-1, -0.5, 0]
     },
-    "drone3": {
-      "pose": [-1, -1, 0]
+    "tri4": {
+      "pose": [0, 1.5, 0]
     },
-    "drone4": {
-      "pose": [0, 1, 0]
+    "tri5": {
+      "pose": [1, 1.5, 0]
     },
-    "drone5": {
-      "pose": [1, 1, 0]
+    "tri6": {
+      "pose": [-1, 1.5, 0]
     },
-    "drone6": {
-      "pose": [-1, 1, 0]
+    "tri7": {
+      "pose": [-1, 0.5, 0]
     },
-    "drone7": {
-      "pose": [-1, 0, 0]
+    "tri8": {
+      "pose": [1, 0.5, 0]
     },
-    "drone8": {
-      "pose": [1, 0, 0]
+    "tri9": {
+      "pose": [0, -0.5, 0]
     },
     "": {
-      "pose": [-1, 0, 0]
+      "pose": [-1, 0.5, 0]
     }
   }
 }
