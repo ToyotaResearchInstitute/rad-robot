@@ -11,42 +11,52 @@ local tan = require'math'.tan
 local tinsert = require'table'.insert
 local unpack = unpack or require'table'.unpack
 --
-local has_dubins, dubins = pcall(require, 'dubins')
+-- local has_dubins, dubins = pcall(require, 'dubins')
 local has_grid, grid = pcall(require, 'grid')
 local has_kdtree, kdtree = pcall(require, 'kdtree')
 --
 local mod_angle = require'transform'.mod_angle
 local tf2D_inv = require'transform'.tf2D_inv
 
-local function generate_kdtree(path)
+local function tostring_path(p)
+  return string.format("Path | %d points", #p.points)
+end
+
+local mt = {
+  __tostring = tostring_path
+}
+
+local function generate_kdtree(self)
   -- Add the kd-tree for quick access
   if not has_kdtree then return false, "No kdtree available: "..kdtree end
-  local tree = path.tree
+  local tree = self.tree
   if type(tree) ~= 'userdata' then
     -- 2D points
     local k_dim = 2
     tree = assert(kdtree.create(k_dim))
   end
-  for i, pt in ipairs(path) do tree:insert(pt, i) end
-  if tree:size() ~= #path then
-    return false, "No points added to the kd-tree"
+  for i, pt in ipairs(self.points) do tree:insert(pt, i) end
+  if tree:size() ~= #self.points then
+    return false, "Not enough points added to the kd-tree"
   end
+  self.tree = tree
   return tree
 end
 lib.generate_kdtree = generate_kdtree
 
 -- Use a kdtree for finding in a path
-local function find_in_path(my_path, p_vehicle, closeness)
-  closeness = tonumber(closeness) or 1
+local function find_in_path(self, p_vehicle, options)
+  if type(options) ~= 'table' then options = {} end
+  local closeness = tonumber(options.closeness) or 1
   -- Grab the pose angle
   local p_x, p_y, p_a = unpack(p_vehicle)
   -- Generate the candidates for this path
-  local nearby, err = my_path.tree:nearest(p_vehicle, closeness)
+  local nearby, err = self.tree:nearest(p_vehicle, closeness)
   if not nearby then return false, err end
   -- Since distance sorted, find the first with a reasonable alignment
   for _, nby in ipairs(nearby) do
     local id_in_path = nby.user
-    local path_x, path_y, path_a = unpack(my_path.points[id_in_path])
+    local path_x, path_y, path_a = unpack(self.points[id_in_path])
     local dx, dy = p_x - path_x, p_y - path_y
     -- Only if the path _has_ an angle at that point
     local da = path_a and mod_angle(p_a - path_a) or 0
@@ -63,15 +73,23 @@ local function find_in_path(my_path, p_vehicle, closeness)
 end
 lib.find_in_path = find_in_path
 
+local function wrap(obj)
+  -- Add methods to the table
+  obj.find = find_in_path
+  obj.generate_kdtree = generate_kdtree
+  return setmetatable(obj, mt)
+end
+lib.wrap = wrap
+
 local function sort_candidates(a, b)
   return a.dist < b.dist
 end
 -- Given a pose and a table of paths
-local function find_in_paths(p_vehicle, paths, closeness, skip_angle)
+local function find_in_paths(p_vehicle, paths, options)
   -- Generate the best candidate per path
   local candidates = {}
   for name_path, my_path in pairs(paths) do
-    local candidate, err = find_in_path(p_vehicle, my_path, closeness)
+    local candidate, err = find_in_path(p_vehicle, my_path, options)
     if candidate then
       candidate.path_name = name_path
       table.insert(candidates, candidate)
@@ -83,7 +101,7 @@ local function find_in_paths(p_vehicle, paths, closeness, skip_angle)
   -- Sort all candidates by distance - across paths
   table.sort(candidates, sort_candidates)
   -- Now check on the angle
-  if skip_angle then
+  if options.skip_angle then
     return candidates[1]
   end
   for _, candidate in ipairs(candidates) do
@@ -178,10 +196,10 @@ end
 lib.generate_waypoints = generate_waypoints
 
 -- Return the path, path length and step size
-local function path_line(p_a, p_b, ds, path)
+local function path_line(p_a, p_b, ds, points)
   -- p_a: start point (inclusive)
   -- p_b: stop point (inclusive)
-  if type(path) ~= 'table' then path = {} end
+  if type(points) ~= 'table' then points = {} end
   local x1, y1, a1 = unpack(p_a)
   local x2, y2 = unpack(p_b)
   local dx, dy = x2 - x1, y2 - y1
@@ -194,23 +212,27 @@ local function path_line(p_a, p_b, ds, path)
   -- Start our cursor
   local p_cur = {x1, y1, a1}
   -- Include the first point in our path
-  tinsert(path, p_cur)
+  tinsert(points, p_cur)
   for _=1,n_segments do
     -- World frame x, y and the angle
     p_cur = {p_cur[1] + dx1, p_cur[2] + dy1, dth}
-    tinsert(path, p_cur)
+    tinsert(points, p_cur)
   end
-  return path, d_pts, ds1
+  return wrap{
+    points = points,
+    length = d_pts,
+    ds = ds1,
+  }
 end
 lib.path_line = path_line
 
-local function path_arc(pc, rc, a1, a2, ds, path)
+local function path_arc(pc, rc, a1, a2, ds, points)
   -- pc: Center point
   -- rc: Radius from center
   -- a1: start angle (inclusive)
   -- a2: stop angle (inclusive)
   -- ds: path increment
-  if type(path) ~= 'table' then path = {} end
+  if type(points) ~= 'table' then points = {} end
   local xc, yc = unpack(pc, 1, 2)
   -- Cheat and set the arc length.
   -- NOTE: May be better to compute the line segments, though...
@@ -231,7 +253,7 @@ local function path_arc(pc, rc, a1, a2, ds, path)
     local px, py = xc + dx, yc + dy
     -- TODO: mod_angle... could do later, though
     local se2 = {px, py, th + tangent_offset}
-    tinsert(path, se2)
+    tinsert(points, se2)
     th = th + ang_resolution
   end
   -- SVG
@@ -245,15 +267,19 @@ local function path_arc(pc, rc, a1, a2, ds, path)
   --   string.format("M %f %f", px2, py2),
   --   }, ' ')
 
-  return path, arc_length
+  return wrap{
+    points = points,
+    length = arc_length,
+    ds = ds1,
+  }
 end
 lib.path_arc = path_arc
 
 -- Given a list of waypoints, generate a path
 -- TODO: Add dubins, in case a check fails...
 local function path_from_waypoints(waypoints, params)
-  local path = params.path
-  if type(path) ~= 'table' then path = {} end
+  local points = params.points
+  if type(points) ~= 'table' then points = {} end
   local grid_raster = params.grid_raster
   if type(grid_raster) ~= 'table' then grid_raster = false end
   local closed = params.closed and true or false
@@ -278,13 +304,13 @@ local function path_from_waypoints(waypoints, params)
     -- Check what to add to the path (and raster)
     if da_approach == 0 then
       -- Add a line to the path
-      local _, d_pts = path_line(wp_1, wp_2, ds, path)
+      local _, d_pts = path_line(wp_1, wp_2, ds, points)
       -- Pop the last element when joining paths
       -- Because wp_1 and wp_2 are inclusive
       -- Closed/Open interval concatenation, except last:
       -- [a1, b1), [a2, b2), [a3, b3), ... [a_n, b_n]
       -- TODO: Ensure that "arc" behaves this way, too
-      if i < n_waypoints - 1 or closed then table.remove(path) end
+      if i < n_waypoints - 1 or closed then table.remove(points) end
       -- Increment the length
       length = length + d_pts
       -- Draw the line
@@ -305,15 +331,19 @@ local function path_from_waypoints(waypoints, params)
       local th1 = angle_approach - dir * math.pi/2
       local th2 = th1 + da_approach
       -- Add the arc to the path
-      path_arc(center_of_arc, turning_radius, th1, th2, ds, path)
+      path_arc(center_of_arc, turning_radius, th1, th2, ds, points)
       -- Pop the last element when joining paths
-      if i < n_waypoints - 1 or closed then table.remove(path) end
+      if i < n_waypoints - 1 or closed then table.remove(points) end
       -- Draw the points
       if grid_raster then grid_raster:arc(center_of_arc, turning_radius, th1, th2) end
     end
   end
 
-  return path, length
+  return wrap{
+    points = points,
+    length = length,
+    ds = ds,
+  }
 end
 lib.path_from_waypoints = path_from_waypoints
 
@@ -322,10 +352,11 @@ local function draw_svg(path)
 end
 lib.draw_svg = draw_svg
 
-local function draw_grid(path)
+local function draw_grid(self)
+  -- TODO: Add a grid option
   local xmin, xmax = math.huge, -math.huge
   local ymin, ymax = math.huge, -math.huge
-  for _, p in ipairs(path) do
+  for _, p in ipairs(self.points) do
     local px, py = unpack(p, 1, 2)
     xmin = math.min(xmin, px)
     xmax = math.max(xmax, px)
@@ -339,11 +370,9 @@ local function draw_grid(path)
     xmin = xmin - 2 * scale, xmax = xmax + 2 * scale,
     ymin = ymin - 2 * scale, ymax = ymax + 2 * scale
   }
-  if not my_grid then
-    return false, my_err
-  end
+  if not my_grid then return false, my_err end
   -- Raster the path
-  my_grid:path(path)
+  my_grid:path(self.points)
   return my_grid
 end
 lib.draw_grid = has_grid and draw_grid

@@ -13,7 +13,6 @@ local has_logger, logger = pcall(require, 'logger')
 local log = has_logger and flags.log ~= 0 and assert(logger.new('plan', racecar.ROBOT_HOME.."/logs"))
 
 -- Test the control library
-local path = require'path'
 local generate_waypoints = require'path'.generate_waypoints
 local path_from_waypoints = require'path'.path_from_waypoints
 
@@ -269,48 +268,22 @@ end
 local paths = {}
 for name, knots in pairs(route_knots) do
   g_holo:fill(0)
-  local points, length = path_from_waypoints(knots, {
-  ds = ds, grid_raster = g_holo, closed = routes[name].closed})
-  assert(points, length)
-  assert(#points > 0, "No points in path")
-  assert(length > 0, "No path length")
+  local path_wp = assert(path_from_waypoints(knots, {
+    ds = ds,
+    grid_raster = g_holo,
+    closed = routes[name].closed
+  }))
+  assert(#path_wp.points > 0, "No points in path")
+  assert(path_wp.length > 0, "No path length")
   -- Since we are drawing, save the drawing of the path(s)
   assert(g_holo:save("/tmp/path_"..name..".pgm"))
   -- Add to the table of paths
-  paths[name] = {
-    points = points,
-    length = length,
-    ds = ds,
-    closed = routes[name].closed,
-    speed_limit = routes[name].speed_limit,
-  }
+  path_wp.closed = routes[name].closed
+  path_wp.speed_limit = routes[name].speed_limit
+  paths[name] = path_wp
   print(string.format("Route [%s] Length [%.2f meters] Points [%d]",
-  name, length, #points))
+    name, path_wp.length, #path_wp.points))
 end
-
--- For the roundabouts
--- local radius_roundabout1 = 1.5
--- local radius_roundabout2 = 1.75
--- do
---   local points, length = path.path_arc(
---     {2.5, 2.5}, radius_roundabout1, 0, 2 * math.pi, ds)
---   paths.roundabout1 = {
---     length = length,
---     ds = ds,
---     closed = true,
---     points = points
---   }
--- end
--- do
---   local points, length = path.path_arc(
---     {2.5, 2.5}, radius_roundabout2, 0, 2 * math.pi, ds)
---   paths.roundabout2 = {
---     length = length,
---     ds = ds,
---     closed = true,
---     points = points
---   }
--- end
 
 local transitions = {}
 -- All names are alphanumeric nameSEGMENT#lane#, where lane is positive or negative
