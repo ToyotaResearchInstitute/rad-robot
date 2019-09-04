@@ -67,6 +67,33 @@ document.addEventListener("DOMContentLoaded", function(event) {
   // Process messages
   ///////////////////
 
+  const requestElementsSVG = (el_type, el_class, n_el) => {
+    let els_existing = environment_svg.getElementsByClassName(el_class);
+    // Make the unneeded items invisible
+    for (let i_unused = n_el; i_unused < els_existing.length; i_unused++) {
+      // TODO: Maybe style?
+      els_existing.item(i_unused).setAttributeNS(null, "display", "none");
+      // environment_svg.removeChild(els_existing.item(i_unused));
+    }
+    // Create new ones
+    for (let i_el = els_existing.length; i_el < n_el; i_el++) {
+      let el = document.createElementNS("http://www.w3.org/2000/svg", el_type);
+      // Set the appropriate class
+      el.setAttributeNS(null, "class", el_class);
+      // Add to the tree
+      environment_svg.appendChild(el);
+    }
+    // Form the array interface, setting th evisibility
+    // let els = [];
+    for (let i_el = 0; i_el < n_el; i_el++) {
+      let el = els_existing.item(i_el);
+      el.setAttributeNS(null, "display", "initial");
+      // els.push(el);
+    }
+    // return els;
+    return els_existing;
+  };
+
   ///////////////////////////
   // Animation loop: Draw items
   // Update mapping of function -> timestamp
@@ -197,6 +224,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const marker_interval = hw.marker_interval;
     //
     let i_lane_line = 0;
+    //
+    let waypoints_lanes = [];
     // Find the surrounding markers
     const N_MARKERS_PREV = 1;
     const N_MARKERS_NEXT = 1;
@@ -215,12 +244,10 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
       let lanes_running = marker.lanes.slice(0);
       let distances_running = lanes_running.map(() => x_start);
-      // Add the initial lanes from the marker
-      let waypoints_lanes = [];
       // Add events
       const marker_events = marker["events"];
       marker_events.forEach(evt => {
-        const evt_dist = evt[0];
+        const evt_dist = evt[0] - reference_pose[0];
         const evt_name = evt[1];
         const evt_info = evt[1];
         // console.log("evt_name", evt_name, evt_dist, evt_info);
@@ -239,7 +266,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
           const x_begin = evt_info["on_far_side"]
             ? distances_running.shift()
             : distances_running.pop();
-          waypoints_lanes.push([[x_begin, y], [evt_dist, y]]);
+          waypoints_lanes.push([
+            [x_begin, y],
+            [evt_dist, y]
+          ]);
+          console.log(x_begin, evt_dist);
         }
       });
       // console.log("marker.lanes", marker.lanes);
@@ -250,64 +281,28 @@ document.addEventListener("DOMContentLoaded", function(event) {
         return [[distances_running[i], y], [x_start + marker_interval, y]];
       });
       waypoints_lanes.push(...lanes_final);
-      // console.log("waypoints_lanes", waypoints_lanes);
-      // console.log("lanes_final", lanes_final);
-
-      const requestElementsSVG = (el_type, el_class, n_el) => {
-        let els = environment_svg.getElementsByTagNameNS("http://www.w3.org/2000/svg", el_type);
-        let els_existing = els.getElementsByClassName(el_class);
-        // Make the unneeded items invisible
-        for (let i_unused=n_el; i_unused<els_existing.length; i_unused++) {
-          // TODO: Maybe style?
-          // els_existing.item(i_unused).setAttributeNS(null, "display", "none");
-          environment_svg.removeChild(els_existing.item(i_unused));
-        }
-        // Form any new elements
-        let els = el_ids.map((el_id, i_el) => {
-          let el = els_existing.item(i_el);
-          if (el) {
-            return el;
-          }
-          el = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            el_type
-          );
-          // Set the appropriate class
-          el.setAttributeNS(null, "class", el_class);
-          // Add to the tree
-          environment_svg.appendChild(el);
-          return el;
-        }
-        return els;
-      };
-      // Element Type, id, class
-      requestElementsSVG("polyline", lane_id, "lane");
 
       // TODO: Remove unused
       const is_current = d_marker == 0;
-      waypoints_lanes.forEach(wps => {
-        // console.log("wps", wps);
-        const lane_id = "lane_" + i_lane_line;
-        i_lane_line++;
-        let el = lanes_els.namedItem(lane_id);
-        if (!el) {
-          el = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            "polyline"
-          );
-          el.setAttributeNS(null, "id", lane_id);
-          el.setAttributeNS(null, "class", "lane");
-          environment_svg.appendChild(el);
-        }
-        // Form the visualization
-        const lane_polypoints = wps
-          .map(coord2svg)
-          .map(svg2polypoints)
-          .join(" ");
-        el.setAttributeNS(null, "points", lane_polypoints);
-      });
     } // For surrounding markers
-    // console.log(lanes_els.length, i_lane_line);
+    let polypoints_per_wp = waypoints_lanes.map(wps => {
+      // Form the visualization
+      return wps
+        .map(coord2svg)
+        .map(svg2polypoints)
+        .join(" ");
+    });
+    // Element Type, id, class
+    let el_lanes = requestElementsSVG(
+      "polyline",
+      "lane",
+      polypoints_per_wp.length
+    );
+    polypoints_per_wp.forEach((lane_polypoints, i_wp) => {
+      // console.log(i_wp, lane_polypoints);
+      el = el_lanes.item(i_wp);
+      el.setAttributeNS(null, "points", lane_polypoints);
+    });
   };
   // Add to the processor
   visualizers.set(update_road, false);
