@@ -2,7 +2,7 @@ local math = require'math'
 local unpack = unpack or require'table'.unpack
 local lib = {}
 
--- Use a kdtree for finding in a path
+
 local function find_in_highway(self, p_vehicle, options)
   options = options or {}
   local closeness = tonumber(options.closeness) or 1
@@ -13,17 +13,51 @@ local function find_in_highway(self, p_vehicle, options)
   -- Find the marker - based on the x position, only
   local i_marker = self:get_marker(p_x)
   -- TODO: Find the lane
+  -- local marker = self.markers[i_marker]
+  -- local lanes_running = {unpack(marker.lanes)}
+  -- local distances_running = {}
+  -- local dist_marker = (i_marker - 1) * marker_interval
+  -- for i=1,#lanes_running do
+  --   table.insert(distances_running, dist_marker)
+  -- end
+  -- local marker_events = self.marker_events[i_marker]
+  -- for _, evt in ipairs(marker_events) do
+  --   local evt_dist, evt_name, evt_info = unpack(evt)
+  --   -- No need to consider later events
+  --   if evt_dist > p_x then break end
+  --   if evt_name == "add_lane" then
+  --     if evt_info.on_far_side then
+  --       table.insert(lanes_running, 1, lanes_running[1] + 1)
+  --       table.insert(distances_running, 1, evt_dist)
+  --     else
+  --       table.insert(lanes_running, lanes_running[#lanes_running] - 1)
+  --       table.insert(distances_running, evt_dist)
+  --     end
+  --   elseif evt_name == "del_lane" then
+  --     if evt_info.on_far_side then
+  --       local y_begin = table.remove(lanes_running, 1)
+  --       local x_begin = table.remove(distances_running, 1)
+  --     else
+  --       local y_begin = table.remove(lanes_running)
+  --       local x_begin = table.remove(distances_running)
+  --     end
+  --   end
+  -- end
+  -- round to the nearest lane
+  local i_lane = self:get_lane(p_y)
+  local dy = p_y - i_lane * self.lane_width
 
   return {
-    id_in_path=i_marker,
-    dist=math.sqrt(dx*dx + dy*dy),
+    i_marker=i_marker,
+    i_lane = i_lane,
+    dist = math.abs(dy),
     -- Highway angle is offset
     da=p_a
   }
 
   
 end
-lib.find_in_highway = find_in_highway
+lib.find = find_in_highway
 
 local function tostring_highway(hw)
   return string.format("Highway with %d events", hw.n_events)
@@ -49,6 +83,14 @@ local function get_marker(self, distance)
   -- Lua is 1-indexed
   return index0 + 1
 end
+
+local function get_lane(self, p_y)
+  -- Lanes begin on the right, so floor to the small number,
+  -- given right hand rule
+  return math.floor(p_y / self.lane_width)
+end
+
+
 
 -- Add an event, for instance:
 -- change in the number of lanes, exit, oncoming lane pass zone
@@ -227,8 +269,11 @@ function lib.new(options)
     events_by_name = events_by_name,
     events_at_marker = events_at_marker,
     events_at_distance = events_at_distance,
+    find = find_in_highway,
     export = export,
-    get_marker = get_marker
+    get_marker = get_marker,
+    get_lane = get_lane,
+    find = find_in_highway
   }
 
   -- Add events, if given
@@ -258,6 +303,8 @@ local function wrap(obj)
   obj.events_at_distance = events_at_distance
   obj.export = export
   obj.get_marker = get_marker
+  obj.get_lane = get_lane
+  obj.find = find_in_highway
   return setmetatable(obj, {
     __tostring = tostring_highway
   })

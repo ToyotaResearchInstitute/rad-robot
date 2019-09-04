@@ -223,8 +223,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const lane_width = marker_ref.lane_width || hw.lane_width;
     const marker_interval = hw.marker_interval;
     //
-    let i_lane_line = 0;
-    //
     let waypoints_lanes = [];
     // Find the surrounding markers
     const N_MARKERS_PREV = 1;
@@ -249,7 +247,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
       marker_events.forEach(evt => {
         const evt_dist = evt[0] - reference_pose[0];
         const evt_name = evt[1];
-        const evt_info = evt[1];
+        const evt_info = evt[2];
         // console.log("evt_name", evt_name, evt_dist, evt_info);
         if (evt_name == "add_lane") {
           if (evt_info["on_far_side"]) {
@@ -267,22 +265,22 @@ document.addEventListener("DOMContentLoaded", function(event) {
             ? distances_running.shift()
             : distances_running.pop();
           waypoints_lanes.push([
-            [x_begin, y],
-            [evt_dist, y]
+            [x_begin, y * lane_width],
+            [evt_dist, y * lane_width]
           ]);
-          console.log(x_begin, evt_dist);
+          // console.log(x_begin, evt_dist);
         }
       });
-      // console.log("marker.lanes", marker.lanes);
-      // console.log("lanes_running", lanes_running);
-      // Duplicate the last one, in order to have an end point
 
+      // Duplicate the last one, in order to have an end point
       const lanes_final = lanes_running.map((y, i) => {
-        return [[distances_running[i], y], [x_start + marker_interval, y]];
+        return [
+          [distances_running[i], y * lane_width],
+          [x_start + marker_interval, y * lane_width]
+        ];
       });
       waypoints_lanes.push(...lanes_final);
 
-      // TODO: Remove unused
       const is_current = d_marker == 0;
     } // For surrounding markers
     let polypoints_per_wp = waypoints_lanes.map(wps => {

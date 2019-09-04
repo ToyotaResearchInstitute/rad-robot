@@ -36,7 +36,7 @@ end
 lib.generate_kdtree = generate_kdtree
 
 -- Use a kdtree for finding in a path
-local function find_in_path(p_vehicle, my_path, closeness)
+local function find_in_path(my_path, p_vehicle, closeness)
   closeness = tonumber(closeness) or 1
   -- Grab the pose angle
   local p_x, p_y, p_a = unpack(p_vehicle)

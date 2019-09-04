@@ -56,7 +56,7 @@ local pp_err = nil
 local planner_state = false
 local veh_poses = {}
 -- Simulation parameters
-local wheel_base = 0.3
+local wheel_base = 0.325
 --
 local function cb_debug(t_us)
   local pose_rbt = veh_poses[id_robot]
@@ -87,7 +87,7 @@ local function find_lead(path_lane, id_path)
   local in_my_lane = {}
   for name_veh, pose_veh in pairs(veh_poses) do
     if name_veh ~= id_robot then
-      local info = path.find_in_path(pose_veh, path_lane, 0.25)
+      local info = path.find_in_path(path_lane, pose_veh, 0.25)
       -- Check if they are in our lane
       if info then
         table.insert(in_my_lane, {name_veh, info})
@@ -185,7 +185,7 @@ local function cb_loop(t_us)
 
   -- New path implies a new controller
   if pp_params.path ~= my_path or not pp_control then
-
+    pp_params.path = my_path
     -- Highway points are different
     if my_path.markers then
       pp_control, pp_err = control.simple_pursuit(pp_params)
@@ -195,8 +195,6 @@ local function cb_loop(t_us)
         -- KD Tree of points
         my_path.tree = path.generate_kdtree(my_path.points)
       end
-      -- Update the parameters
-      pp_params.path = my_path
       -- If we can see the next path, use it
       if next_path then
         pp_params.path_next = next_path
@@ -209,6 +207,7 @@ local function cb_loop(t_us)
   -- Check if there is a controller
   if not pp_control then return false, pp_err end
 
+  local lane_desired
   -- Find our control policy
   if my_path.markers then
     -- The points are the lanes. All angles are 0
@@ -219,16 +218,15 @@ local function cb_loop(t_us)
     local px_lookahead = pose_rbt[1] + seconds_lookahead * pp_params.velocity
 
     -- TODO: Make nicer...
-    local ind_lane
     if houston_event == 'left' then
-      ind_lane = 1
+      lane_desired = 1
     elseif houston_event == 'right' then
-      ind_lane = -1
+      lane_desired = -1
     else
-      ind_lane = 0
+      lane_desired = 0
     end
     -- Add 0.5 to go halfway within the lane
-    local p_lookahead = {px_lookahead, (ind_lane + 0.5) * lane_to_lane_dist, 0}
+    local p_lookahead = {px_lookahead, (lane_desired + 0.5) * lane_to_lane_dist, 0}
     pp_result, pp_err = pp_control(pose_rbt, p_lookahead)
   else
     pp_result, pp_err = pp_control(pose_rbt)
@@ -254,27 +252,58 @@ local function cb_loop(t_us)
   pp_result.pathname = desired_path
   -- Save the pose, just because
   pp_result.pose = pose_rbt
-  local ratio = 1
 
   --------------------------------
   -- Check the obstacles around us, if not a highway, for now
+  local d_lead = math.huge
   if my_path.markers then
-    -- local name_lead, d_lead = find_lead(pp_params.path, pp_result.id_path)
-  else
-    local name_lead, d_lead = find_lead(pp_params.path, pp_result.id_path)
-    -- Allow for printing
-    pp_params.leader = {name_lead, d_lead}
-    -- Slow for a lead vehicle
-    if name_lead then
-      -- print("Lane leader | ", name_lead, d_lead)
-      local d_stop = 1.5 * wheel_base
-      local d_near = 3 * wheel_base
-      if d_lead < d_near then
-        ratio = (d_lead - d_stop) / (d_near - d_stop)
-        -- Bound the ratio
-        ratio = math.max(0, math.min(ratio, 1))
+    -- Assign all vehicles to a lane
+    local veh_lanes = {}
+    for name_veh, pose_veh in pairs(veh_poses) do
+      -- Back axle
+      veh_lanes[name_veh] = pp_params.path:find(pose_veh)
+      -- Front left
+      -- pose_veh + vector.pose{}
+      -- veh_lanes[name_veh] = pp_params.path:find(pose_veh)
+      -- Front right
+      -- veh_lanes[name_veh] = pp_params.path:find(pose_veh)
+    end
+    local lane_current = veh_lanes[id_robot].i_lane
+    local lane_keep = lane_current == lane_desired
+    -- print("==", lane_keep, lane_current, lane_desired)
+    for name_veh, info_lane in pairs(veh_lanes) do
+      -- print("Lane", name_veh, info_lane.i_marker, info_lane.i_lane)
+      local veh_pose = veh_poses[name_veh]
+      local dx = veh_pose[1] - pose_rbt[1]
+      -- local rel_pose
+      if info_lane.i_lane == name_veh then
+
+      elseif lane_keep and info_lane.i_lane == lane_current and dx > 0 then
+        print("In front of us", name_veh)
+        d_lead = math.min(d_lead, dx)
+      elseif (not lane_keep) and info_lane.i_lane == lane_desired then
+        d_lead = math.min(d_lead, dx)
       end
     end
+  else
+    local name, dx = find_lead(pp_params.path, pp_result.id_path)
+    pp_params.leader = {}
+    -- Slow for a lead vehicle
+    if name and dx < d_lead then
+      -- print("Lane leader", name)
+      d_lead = dx
+    end
+  end
+  -- Bound the ratio
+  local ratio = 1
+  -- local d_stop = 1.5 * wheel_base
+  -- Based on the measurements: rear axle to other car rear bumper
+  local d_stop = wheel_base + 0.22
+  local d_near = 3 * wheel_base
+  print("d_lead", d_lead)
+  if d_lead < d_near then
+    ratio = (d_lead - d_stop) / (d_near - d_stop)
+    ratio = math.max(0, math.min(ratio, 1))
   end
   --------------------------------
 
