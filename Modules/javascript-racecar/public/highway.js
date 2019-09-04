@@ -195,6 +195,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
     const marker_ref = hw.markers[i_marker_ref];
     const lane_width = marker_ref.lane_width || hw.lane_width;
     const marker_interval = hw.marker_interval;
+    //
+    let i_lane_line = 0;
     // Find the surrounding markers
     const N_MARKERS_PREV = 1;
     const N_MARKERS_NEXT = 1;
@@ -208,12 +210,85 @@ document.addEventListener("DOMContentLoaded", function(event) {
         continue;
       }
       const marker = hw.markers[i_marker];
-      // Start of the line
+      // console.log("marker", marker);
       const x_start = i_marker * marker_interval - reference_pose[0];
+
+      let lanes_running = marker.lanes.slice(0);
+      let distances_running = lanes_running.map(() => x_start);
+      // Add the initial lanes from the marker
+      let waypoints_lanes = [];
+      // Add events
+      const marker_events = marker["events"];
+      marker_events.forEach(evt => {
+        const evt_dist = evt[0];
+        const evt_name = evt[1];
+        const evt_info = evt[1];
+        // console.log("evt_name", evt_name, evt_dist, evt_info);
+        if (evt_name == "add_lane") {
+          if (evt_info["on_far_side"]) {
+            lanes_running.unshift(lanes_running[0] + 1);
+            distances_running.unshift(evt_dist);
+          } else {
+            lanes_running.push(lanes_running[lanes_running.length - 1] - 1);
+            distances_running.push(evt_dist);
+          }
+        } else if (evt_name == "del_lane") {
+          const y = evt_info["on_far_side"]
+            ? lanes_running.shift()
+            : lanes_running.pop();
+          const x_begin = evt_info["on_far_side"]
+            ? distances_running.shift()
+            : distances_running.pop();
+          waypoints_lanes.push([[x_begin, y], [evt_dist, y]]);
+        }
+      });
+      // console.log("marker.lanes", marker.lanes);
+      // console.log("lanes_running", lanes_running);
+      // Duplicate the last one, in order to have an end point
+
+      const lanes_final = lanes_running.map((y, i) => {
+        return [[distances_running[i], y], [x_start + marker_interval, y]];
+      });
+      waypoints_lanes.push(...lanes_final);
+      // console.log("waypoints_lanes", waypoints_lanes);
+      // console.log("lanes_final", lanes_final);
+
+      const requestElementsSVG = (el_type, el_class, n_el) => {
+        let els = environment_svg.getElementsByTagNameNS("http://www.w3.org/2000/svg", el_type);
+        let els_existing = els.getElementsByClassName(el_class);
+        // Make the unneeded items invisible
+        for (let i_unused=n_el; i_unused<els_existing.length; i_unused++) {
+          // TODO: Maybe style?
+          // els_existing.item(i_unused).setAttributeNS(null, "display", "none");
+          environment_svg.removeChild(els_existing.item(i_unused));
+        }
+        // Form any new elements
+        let els = el_ids.map((el_id, i_el) => {
+          let el = els_existing.item(i_el);
+          if (el) {
+            return el;
+          }
+          el = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            el_type
+          );
+          // Set the appropriate class
+          el.setAttributeNS(null, "class", el_class);
+          // Add to the tree
+          environment_svg.appendChild(el);
+          return el;
+        }
+        return els;
+      };
+      // Element Type, id, class
+      requestElementsSVG("polyline", lane_id, "lane");
+
+      // TODO: Remove unused
       const is_current = d_marker == 0;
-      // console.log(marker.lanes);
-      marker.lanes.forEach((ylane, i_lane) => {
-        const lane_id = "lane_" + i_lane + "_" + d_marker;
+      waypoints_lanes.forEach(wps => {
+        // console.log("wps", wps);
+        const lane_id = "lane_" + i_lane_line;
+        i_lane_line++;
         let el = lanes_els.namedItem(lane_id);
         if (!el) {
           el = document.createElementNS(
@@ -225,17 +300,14 @@ document.addEventListener("DOMContentLoaded", function(event) {
           environment_svg.appendChild(el);
         }
         // Form the visualization
-        let lane_coords = [
-          [x_start, ylane * lane_width],
-          [x_start + marker_interval, ylane * lane_width]
-        ];
-        const lane_polypoints = lane_coords
+        const lane_polypoints = wps
           .map(coord2svg)
           .map(svg2polypoints)
           .join(" ");
         el.setAttributeNS(null, "points", lane_polypoints);
       });
     } // For surrounding markers
+    // console.log(lanes_els.length, i_lane_line);
   };
   // Add to the processor
   visualizers.set(update_road, false);

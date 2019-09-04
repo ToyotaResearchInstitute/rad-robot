@@ -65,11 +65,8 @@ local function add_event(self, evt)
   evt = {distance, evt_name, info}
   local i_marker = self:get_marker(distance)
   -- Grab and update the object
-  local marker_events = self.marker_events[i_marker]
-  if not marker_events then
-    marker_events = {}
-    self.marker_events[i_marker] = marker_events
-  end
+  local marker = self.markers[i_marker]
+  local marker_events = marker.events
   -- Add at the correct, ordered, position
   -- TODO: Check if there is a simple consolidation
   local added_event = false
@@ -209,8 +206,9 @@ function lib.new(options)
   local markers = {}
   for _ = 1, n_markers do
     local props = {
+      speed_limit = speed_limit0,
       lanes = {unpack(lanes0)},
-      speed_limit = speed_limit0
+      events = {}
     }
     table.insert(markers, props)
   end
@@ -222,7 +220,6 @@ function lib.new(options)
     n_markers = n_markers,
     n_events = 0,
     markers = markers,
-    marker_events = {},
     events = {},
     lane_width = lane_width,
     -- Methods

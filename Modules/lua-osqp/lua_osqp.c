@@ -712,8 +712,15 @@ static int lua_osqp_solve(lua_State *L) {
   struct osqp_ud *ud = lua_checkosqp(L, 1);
 
   // Run the solver
-  ud->work = osqp_setup(ud->data, ud->settings);
-  c_int res = osqp_solve(ud->work);
+  c_int res;
+  res = osqp_setup(&ud->work, ud->data, ud->settings);
+  if (res != 0) {
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "Cannot setup!");
+    return 2;
+  }
+
+  res = osqp_solve(ud->work);
   if (res != 0) {
     lua_pushboolean(L, 0);
     lua_pushliteral(L, "Cannot solve!");

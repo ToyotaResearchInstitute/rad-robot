@@ -12,7 +12,21 @@
       },
       "events": [
         {
-          "meters": 10,
+          "meters": 4,
+          "name": "add_lane",
+          "info": {
+            "on_far_side": false
+          }
+        },
+        {
+          "meters": 5,
+          "name": "del_lane",
+          "info": {
+            "on_far_side": false
+          }
+        },
+        {
+          "meters": 6,
           "name": "add_lane",
           "info": {
             "on_far_side": false
