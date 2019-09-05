@@ -9,36 +9,11 @@ local sqrt = require'math'.sqrt
 local tinsert = require'table'.insert
 local unpack = unpack or require'table'.unpack
 --
-local mod_angle = require'transform'.mod_angle
 local tf2D = require'transform'.tf2D
 
--- Given: Point
--- Returns: id_nearby, is_within_threshold
-local function get_nearest(pt, path, threshold_close, id_last)
-  -- NOTE: nearby must be sorted by increasing distance
-  -- If not id_last, then simply go to the nearest point?
-  local nearby, err = path.tree:nearest(pt, threshold_close)
-  if id_last and not nearby then
-    return false, err
-  elseif not id_last then
-    -- Search for the closest points...
-    nearby, err = path.tree:nearest(pt)
-    if not nearby then return false, err end
-    return nearby[1].user, false
-  end
-  -- Examine in sorted order, by distance
-  for _, nby in ipairs(nearby) do
-    -- TODO: Enforce ordering: (nby.user >= id_last)
-    if not id_last then
-      return nby.user, true
-    end
-  end
-  return false, "No unvisited points"
-end
-
-local function get_inverse_curvature(pose_rbt, p_lookahead_path)
+local function get_inverse_curvature(pose_rbt, p_lookahead)
   local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
-  local x_ref, y_ref = unpack(p_lookahead_path)
+  local x_ref, y_ref = unpack(p_lookahead)
   -- Lookahead distance
   local dx, dy = x_ref - x_rbt, y_ref - y_rbt
   local lookahead = sqrt(dx*dx + dy*dy)
@@ -50,20 +25,16 @@ local function get_inverse_curvature(pose_rbt, p_lookahead_path)
   local kappa = two_sa / lookahead
   local radius_of_curvature = lookahead / two_sa
   -- Returns the inverse curvature and radius of curvature
-  return kappa, radius_of_curvature
+  return {
+    kappa = kappa,
+    radius_of_curvature = radius_of_curvature,
+    alpha = alpha,
+  }
 end
+lib.get_inverse_curvature = get_inverse_curvature
 
 local function simple_pursuit(params)
-  local function controller(pose_rbt, p_lookahead)
-    local kappa, radius_of_curvature, alpha = get_inverse_curvature(
-      pose_rbt, p_lookahead)
-    return {
-      kappa = kappa,
-      radius_of_curvature = radius_of_curvature,
-      alpha = alpha,
-    }
-  end
-  return controller
+  return get_inverse_curvature
 end
 lib.simple_pursuit = simple_pursuit
 
@@ -74,99 +45,25 @@ local function pure_pursuit(params)
   -- Initialization bits
   if type(params) ~= 'table' then return false, "No parameters" end
   local path = params.path
-  local points = path.points
-  local n_points = #points
-  if type(path)~='table' then
-    return false, "Bad path"
-  elseif n_points==0 then
-    return false, "No path points"
-  end
   local threshold_close = tonumber(params.threshold_close) or 0.25
   local lookahead = tonumber(params.lookahead) or 1
-  local steps_lookahead = ceil(lookahead / path.ds)
   local id_lookahead_last = false
-  local fn_nearby = params.fn_nearby
-  if type(fn_nearby) ~= "function" then fn_nearby = get_nearest end
   -- Give a function to be created/wrapped by coroutine
   -- Input: pose_rbt
   -- State: result_prev
-  local function controller(pose_rbt, result_prev)
+  local function controller(pose_rbt)
     -- Find ourselves on the path
-    local id_last = result_prev and result_prev.id_path
-    local id_path, is_nearby = fn_nearby(pose_rbt, path, threshold_close, id_last)
+    local id_path, is_nearby = path:nearby(pose_rbt, threshold_close)
     -- If we can't find anywhere on the path to go... Bad news :(
-    if not id_path then
-      return false, is_nearby
-    end
-    local p_path = points[id_path]
-    local d_path = false
-    local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
-    if p_path then
-      local x_path, y_path = unpack(p_path, 1, 2)
-      local dx, dy = x_rbt - x_path, y_rbt - y_path
-      -- Distance to the path
-      d_path = sqrt(dx * dx + dy * dy)
-    end
-    -- Prepare the result
-    local result = {
-      id_path = id_path,
-      p_path = p_path,
-      d_path = id_path and d_path,
-      id_last = id_last,
-      id_lookahead_last = id_lookahead_last,
-      lookahead = lookahead,
-    }
-    if id_path==#points and not path.closed then
-      result.done = true
-      return result
-    end
-    -- Check if we are nearby the path _and_ we are well oriented
-    local id_lookahead, p_lookahead
-    if is_nearby then
-      -- Prepare the lookahead point
-      local x_ahead, y_ahead = tf2D(lookahead, 0, th_rbt, x_rbt, y_rbt)
-      p_lookahead = {x_ahead, y_ahead}
-      -- Find the nearest path point to the lookahead point
-      -- TODO: Don't skip too far in a single timestep?
-      id_lookahead = fn_nearby(p_lookahead, path, threshold_close, id_lookahead_last)
-    end
-    -- Default to one point ahead
-    if not id_lookahead then
-      -- Keep in a loop using the modulo
-      -- print("steps_lookahead", steps_lookahead)
-      id_lookahead = id_path + steps_lookahead
-      if id_lookahead > n_points then
-        if path.closed then
-          -- Assuming that steps_lookahead < #path
-          id_lookahead = id_lookahead - n_points
-        else
-          id_lookahead = n_points
-        end
-      end
-      p_lookahead = points[id_lookahead]
-    end
-    result.p_lookahead = p_lookahead
-    -- Find delta between robot and lookahead path point
-    local p_lookahead_path = assert(points[id_lookahead],
-      string.format("No lookahead point [%s]", tostring(id_lookahead)))
-    -- Ensure that we set this variable for debugging
-    if not id_lookahead then
-      result.p_lookahead = p_lookahead_path
-    end
-    local kappa, radius_of_curvature, alpha = get_inverse_curvature(
-      pose_rbt, p_lookahead_path)
-    -- Add results
-    result.kappa = kappa
-    result.radius_of_curvature = radius_of_curvature
-    result.alpha = alpha
-    --
-    result.id_lookahead = id_lookahead
-    result.p_lookahead_path = p_lookahead_path
-    -- result.d_lookahead = d_lookahead
-    result.err = nil
+    if not id_path then return false, is_nearby end
+    local id_lookahead, p_lookahead = get_id_lookahead(
+      path, pose_rbt, lookahead, id_lookahead_last)
+    -- Default to the lookahead from our point
+    if not id_lookahead then id_lookahead = increment_id(path, id_path, lookahead) end
+    local p_lookahead_path = path.points[id_lookahead]
     -- Save the nearby point for next time
     id_lookahead_last = id_lookahead
-    return result
+    return get_inverse_curvature(pose_rbt, p_lookahead_path)
   end
   return controller
 end

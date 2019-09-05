@@ -28,21 +28,37 @@ local mt = {
 
 local function generate_kdtree(self)
   -- Add the kd-tree for quick access
-  if not has_kdtree then return false, "No kdtree available: "..kdtree end
-  local tree = self.tree
-  if type(tree) ~= 'userdata' then
-    -- 2D points
-    local k_dim = 2
-    tree = assert(kdtree.create(k_dim))
+  if not has_kdtree then return false, "No kdtree available: "..tostring(kdtree) end
+  -- Check if the tree already exists with the correct number of points
+  if type(self.tree) == 'userdata' and self.tree:size() == #self.points then
+    return self
   end
+  -- 2D points
+  local k_dim = 2
+  local tree = assert(kdtree.create(k_dim))
   for i, pt in ipairs(self.points) do tree:insert(pt, i) end
   if tree:size() ~= #self.points then
     return false, "Not enough points added to the kd-tree"
   end
   self.tree = tree
-  return tree
+  return self
 end
 lib.generate_kdtree = generate_kdtree
+
+-- Given: Point
+local function get_nearest(self, pt, threshold_close, fn_reduce)
+  -- NOTE: nearby must be sorted by increasing distance
+  local nearby, err = self.tree:nearest(pt, threshold_close)
+  if not nearby then return false, err end
+  if type(fn_reduce) ~= 'function' then return nearby[1].user end
+  -- Examine in sorted order, by distance
+  local done, running
+  for _, nby in ipairs(nearby) do
+    running, done = fn_reduce(nby.user, running)
+    if done then return running end
+  end
+  return running
+end
 
 -- Use a kdtree for finding in a path
 local function find_in_path(self, p_vehicle, options)
@@ -73,10 +89,30 @@ local function find_in_path(self, p_vehicle, options)
 end
 lib.find_in_path = find_in_path
 
+local function get_id_ahead(self, id_path, lookahead)
+  -- Default to one point ahead
+  -- if not id_lookahead then
+  local steps_lookahead = ceil(lookahead / self.ds)
+  -- print("steps_lookahead", steps_lookahead)
+  -- Keep in a loop using the modulo
+  local id_path_lookahead = id_path + steps_lookahead
+  local n_points = #self.points
+  if id_path_lookahead > n_points then
+    if self.closed then
+      id_path_lookahead = id_path_lookahead % n_points
+    else
+      id_path_lookahead = n_points
+    end
+  end
+  return id_path_lookahead
+end
+
 local function wrap(obj)
   -- Add methods to the table
   obj.find = find_in_path
   obj.generate_kdtree = generate_kdtree
+  obj.nearby = get_nearest
+  obj.get_id_ahead = get_id_ahead
   return setmetatable(obj, mt)
 end
 lib.wrap = wrap
