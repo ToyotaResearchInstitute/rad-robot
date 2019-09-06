@@ -25,7 +25,6 @@ racecar.init()
 -- Globally accessible variables
 local path_list = {} -- Path list now and into the future. Should hold path_rollout_time seconds
 local path_rollout_time = 5 -- How far ahead to look given the speed limit of each path
-local houston_event = false
 local planner_state = false
 -- Parameters for each robot
 local vehicle_params = {}
@@ -60,27 +59,6 @@ local function vehicle_new(params)
   return pp_params
 end
 vehicle_params[id_robot] = vehicle_new(flags)
-
---
-local function cb_debug(t_us)
-  local pp_params = vehicle_params[id_robot]
-  local pose_rbt = pp_params.pose
-  if not pose_rbt then return end
-  local px, py, pa = unpack(pose_rbt)
-  local info = {
-    string.format("Path: %s | Next: %s", pp_params.pathname, pp_params.path_next),
-  }
-  table.insert(info, string.format(
-    "Pose: x=%.2fm, y=%.2fm, a=%.2f°",
-    px, py, math.deg(pa)))
-  table.insert(info, string.format(
-    "Leader: %s [%s]",
-    unpack(pp_params.leader)))
-  table.insert(info, string.format(
-    "Control: %.2f m/s, %.2f°",
-    pp_params.velocity, math.deg(pp_params.steering)))
-  return table.concat(info, "\n")
-end
 
 ------------------------------------------
 -- Utilities
@@ -148,29 +126,17 @@ local function update_params(pp_params)
     return false, "Desired path not found in the planner"
   end
 
-  if my_path.markers then
-    if houston_event == 'left' then
-      pp_params.lane_desired = 1
-    elseif houston_event == 'right' then
-      pp_params.lane_desired = -1
-    else
-      pp_params.lane_desired = 0
-    end
-  else
-    -- Find the next path
-    if planner_state.transitions and not pp_params.path_next then
-      local available = planner_state.transitions[pp_params.pathname]
-      local tp_available = type(available)
-      if tp_available == 'string' then
-        pp_params.path_next = available
-      elseif tp_available=='table' then
-        -- Just take the first :P
-        local ind_rand = math.random(#available)
-        pp_params.path_next = available[ind_rand]
-      end
+  -- Find the next path
+  if planner_state.transitions and not pp_params.path_next then
+    local available = planner_state.transitions[pp_params.pathname]
+    local tp_available = type(available)
+    if tp_available == 'string' then
+      pp_params.path_next = available
+    elseif tp_available=='table' then
+      local ind_rand = math.random(#available)
+      pp_params.path_next = available[ind_rand]
     end
   end
-  local vel_sample = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity_mean)[1]
 
   --------------------------------
   -- Check the obstacles around us, if not a highway, for now
@@ -181,6 +147,9 @@ local function update_params(pp_params)
     -- Back axle
     local path_info = my_path:find(pose_veh, {closeness=0.25})
     params_veh.lane_current = path_info and path_info.idx_lane
+    if not params_veh.lane_desired then
+      params_veh.lane_desired = params_veh.lane_current
+    end
     -- Front left
     local dx_bumper, dy_bumper = 0.10, 0.05
     local x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
@@ -220,20 +189,15 @@ local function update_params(pp_params)
     end
   end
   pp_params.leader = {name_lead, d_lead}
-  -- Bound the ratio
-  local ratio = 1
   -- Based on the measurements: rear axle to other car rear bumper
   local d_stop = pp_params.wheel_base + 0.22
   local d_near = 3 * pp_params.wheel_base
-  if d_lead < d_near then
-    ratio = (d_lead - d_stop) / (d_near - d_stop)
-    ratio = math.max(0, math.min(ratio, 1))
-  end
+  local vel_ratio_lead = (d_lead - d_stop) / (d_near - d_stop) or 1
   --------------------------------
 
   -- Find the curvature
-  local p_lookahead
-  local d_lookahead = pp_params.t_lookahead * pp_params.velocity
+  local vel_desired = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity_mean)[1]
+  local d_lookahead = pp_params.t_lookahead * vel_desired
   -- Find our control policy
   if my_path.markers then
     -- The points are the lanes. All angles are 0
@@ -244,7 +208,7 @@ local function update_params(pp_params)
     local py_path = (pp_params.lane_current + 0.5) * lane_to_lane_dist
     local py_lookahead = (pp_params.lane_desired + 0.5) * lane_to_lane_dist
     -- Add 0.5 to go halfway within the lane
-    p_lookahead = {px_lookahead, py_lookahead, 0}
+    pp_params.p_lookahead = {px_lookahead, py_lookahead, 0}
     pp_params.p_path = {pose_rbt[1], py_path, 0}
   else
     -- Find ourselves on the path
@@ -260,7 +224,7 @@ local function update_params(pp_params)
     local dx, dy = pose_rbt[1] - p_path[1], pose_rbt[2] - p_path[2]
     pp_params.d_path = math.sqrt(dx * dx + dy * dy)
     -- Prepare the lookahead point
-    p_lookahead = {tf2D(d_lookahead, 0, pose_rbt[3], pose_rbt[1], pose_rbt[2])}
+    local p_lookahead = {tf2D(d_lookahead, 0, pose_rbt[3], pose_rbt[1], pose_rbt[2])}
     -- Find the nearest path point to the lookahead point
     -- TODO: Don't skip too far in a single timestep?
     local function forwards(id) return (id > id_path) and id, true end
@@ -270,21 +234,19 @@ local function update_params(pp_params)
       id_path_lookahead = my_path:get_id_ahead(id_path, d_lookahead)
     end
     pp_params.id_path_lookahead = id_path_lookahead
-    p_lookahead = my_path.points[id_path_lookahead]
+    pp_params.p_lookahead = my_path.points[id_path_lookahead]
   end
-  pp_params.p_lookahead = p_lookahead
-  local pp_result = control.get_inverse_curvature(pose_rbt, p_lookahead)
+  local pp_result = control.get_inverse_curvature(pose_rbt, pp_params.p_lookahead)
   pp_params.alpha = pp_result.alpha
   pp_params.kappa = pp_result.kappa
   pp_params.radius_of_curvature = pp_result.radius_of_curvature
   local steering_sample = atan(pp_params.kappa * pp_params.wheel_base)
 
+  -- Update the velocity, based on the turning radius
   local LIMITING_RADIUS = 1.5
-  -- print("Radius", pp_params.radius_of_curvature)
-  ratio = math.min(math.abs(pp_params.radius_of_curvature) / LIMITING_RADIUS, ratio)
-
-  -- Update the velocity, based on the lead vehicle
-  vel_sample = vel_sample * ratio
+  local vel_ratio_turning = math.abs(pp_params.radius_of_curvature) / LIMITING_RADIUS
+  print("p_lookahead", unpack(pp_params.p_lookahead))
+  print("pp_params.radius_of_curvature", pp_params.radius_of_curvature)
 
   -- Find out if we are done, based on the path id of the lookahead point and our current point
   if my_path.markers then
@@ -307,7 +269,16 @@ local function update_params(pp_params)
     -- Set the steering based on the car dimensions
     pp_params.steering = steering_sample
     -- Bound the sample
-    pp_params.velocity = math.max(pp_params.velocity_min, math.min(vel_sample, pp_params.velocity_max))
+    local vel_ratio = math.max(0, math.min(1, vel_ratio_turning, vel_ratio_lead))
+    print("vel_ratio", vel_ratio)
+    print("vel_ratio_turning", vel_ratio_turning)
+    print("vel_ratio_lead", vel_ratio_lead)
+    vel_desired = vel_ratio * vel_desired
+    if vel_desired < pp_params.velocity_min then
+      pp_params.velocity = 0
+    else
+      pp_params.velocity = math.min(vel_desired, pp_params.velocity_max)
+    end
   end
 end
 -- Update the pure pursuit
@@ -363,7 +334,36 @@ local function cb_plan(msg, ch, t_us)
 end
 
 local function cb_houston(msg, ch, t_us)
-  houston_event = id_robot=='tri1' and msg.evt
+  local houston_event = id_robot=='tri1' and msg.evt
+  if not houston_event then return false end
+  local pp_params = vehicle_params[id_robot]
+  if houston_event == 'left' then
+    pp_params.lane_desired = 1
+  elseif houston_event == 'right' then
+    pp_params.lane_desired = -1
+  else
+    pp_params.lane_desired = 0
+  end
+end
+
+local function cb_debug(t_us)
+  local pp_params = vehicle_params[id_robot]
+  local pose_rbt = pp_params.pose
+  if not pose_rbt then return end
+  local px, py, pa = unpack(pose_rbt)
+  local info = {
+    string.format("Path: %s | Next: %s", pp_params.pathname, pp_params.path_next),
+  }
+  table.insert(info, string.format(
+    "Pose: x=%.2fm, y=%.2fm, a=%.2f°",
+    px, py, math.deg(pa)))
+  table.insert(info, string.format(
+    "Leader: %s [%s]",
+    unpack(pp_params.leader)))
+  table.insert(info, string.format(
+    "Control: %.2f m/s, %.2f°",
+    pp_params.velocity, math.deg(pp_params.steering)))
+  return table.concat(info, "\n")
 end
 
 local function exit()
