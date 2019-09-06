@@ -259,7 +259,8 @@ local function listen(options)
     dt_loop = tonumber(t_update - t_loop)/1e3
     if fn_loop and dt_loop >= loop_rate then
       t_loop = t_update
-      fn_loop(t_loop, cnt_loop)
+      local ok, msg = fn_loop(t_loop, cnt_loop)
+      -- if not ok then print(msg) end
       cnt_loop = cnt_loop + 1
     end
     local dt_debug = tonumber(t_update - t_debug)

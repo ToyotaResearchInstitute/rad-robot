@@ -26,42 +26,43 @@ racecar.init()
 local path_list = {} -- Path list now and into the future. Should hold path_rollout_time seconds
 local path_rollout_time = 5 -- How far ahead to look given the speed limit of each path
 local houston_event = false
+local planner_state = false
+-- Parameters for each robot
+local vehicle_params = {}
 
 -- TODO: Paths should come from a separate program
-local pp_params
 do
   local velocity_mean = tonumber(flags.vel_lane) or 0.5
   local velocity_stddev = velocity_mean * 0.1
   local vel_max = 0.75
   local vel_min = 0.2
-  local lookahead = tonumber(flags.lookahead) or 0.325 -- 0.425, 0.65
   -- TODO: Should simply find the nearest lane
-  local pathname_desired = flags.path or 'lane_outerA+1'
-  pp_params = {
+  local pp_params = {
     id = id_robot,
-    lookahead = lookahead,
+    pose = false, -- the pose that we think that we have
+    --
+    wheel_base = tonumber(flags.wheel_base) or 0.325,
+    t_lookahead = tonumber(flags.lookahead) or 1,
     threshold_close = 0.25,
     velocity_mean = velocity_mean,
     velocity_stddev = velocity_stddev,
     velocity_max = vel_max,
     velocity_min = vel_min,
     --
-    pathname = pathname_desired,
+    id_path = nil,
+    pathname = flags.path or 'lane_outerA+1',
     leader = {false, math.huge},
     --
     velocity = 0,
     steering = 0,
   }
+  vehicle_params[id_robot] = pp_params
 end
 
 --
-local planner_state = false
-local veh_poses = {}
--- Simulation parameters
-local wheel_base = 0.325
---
 local function cb_debug(t_us)
-  local pose_rbt = veh_poses[id_robot]
+  local pp_params = vehicle_params[id_robot]
+  local pose_rbt = pp_params.pose
   if not pose_rbt then return end
   local px, py, pa = unpack(pose_rbt)
   local info = {
@@ -115,7 +116,8 @@ end
 --------------------------
 -- Update the pure pursuit
 local function cb_loop(t_us)
-  local pose_rbt = veh_poses[id_robot]
+  local pp_params = vehicle_params[id_robot]
+  local pose_rbt = pp_params.pose
   -- Stop if no pose
   if not pose_rbt then
     pp_params.steering = 0
@@ -145,7 +147,7 @@ local function cb_loop(t_us)
     return false, "Desired path not found in the planner"
   end
 
-  -- Look ahead
+  -- Find the next path
   if planner_state.transitions and not pp_params.path_next then
     local available = planner_state.transitions[pp_params.pathname]
     local tp_available = type(available)
@@ -158,9 +160,77 @@ local function cb_loop(t_us)
     end
   end
 
+  local vel_sample = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity_mean)[1]
+
+  --------------------------------
+  -- Check the obstacles around us, if not a highway, for now
+  -- Assign all vehicles to a lane
+  local veh_lanes = {}
+
+  for name_veh, params_veh in pairs(vehicle_params) do
+    local pose_veh = params_veh.pose
+    -- Back axle
+    veh_lanes[name_veh] = my_path:find(pose_veh, {closeness=0.25})
+    -- Front left
+    local dx_bumper, dy_bumper = 0.10, 0.05
+    local x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
+    -- veh_lanes[name_veh] = pp_params.path:find({x_bumper, y_bumper, pose_veh[3]})
+    -- Front right
+    dy_bumper = -1 * dy_bumper
+    x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
+    -- veh_lanes[name_veh] = pp_params.path:find({x_bumper, y_bumper, pose_veh[3]})
+  end
+  -- Find the lead vehicle
+  local d_lead = math.huge
+  local name_lead = false
+  if my_path.markers then
+    local lane_current = veh_lanes[id_robot].i_lane
+    local lane_keep = lane_current == lane_desired
+    for name_veh, params_veh in pairs(vehicle_params) do
+      local pose_veh = params_veh.pose
+      local dx = pose_veh[1] - pose_rbt[1]
+      -- local rel_pose
+      local lane_veh = veh_lanes[name_veh].i_lane
+      if lane_veh == name_veh then
+
+      elseif lane_keep and lane_veh == lane_current and dx > 0 then
+        if dx < d_lead then
+          name_lead = name_veh
+          d_lead = dx
+        end
+      elseif (not lane_keep) and lane_veh == lane_desired and dx > 0 then
+        if dx < d_lead then
+          name_lead = name_veh
+          d_lead = dx
+        end
+      end
+    end
+  else
+    local name, dx = find_lead(veh_lanes, pp_params.path, pp_params.id_path)
+    -- Slow for a lead vehicle
+    if not name then
+      -- Save the message
+      name_lead = dx
+    elseif dx < d_lead then
+      d_lead = dx
+    end
+  end
+  pp_params.leader = {name_lead, d_lead}
+  -- Bound the ratio
+  local ratio = 1
+  -- Based on the measurements: rear axle to other car rear bumper
+  local d_stop = pp_params.wheel_base + 0.22
+  local d_near = 3 * pp_params.wheel_base
+  -- print("d_lead", d_lead)
+  if d_lead < d_near then
+    ratio = (d_lead - d_stop) / (d_near - d_stop)
+    ratio = math.max(0, math.min(ratio, 1))
+  end
+  --------------------------------
+
+  -- Find the curvature
   local p_lookahead
-  local t_lookahead = 3
-  local d_lookahead = t_lookahead * pp_params.velocity
+  local d_lookahead = pp_params.t_lookahead * pp_params.velocity
   local lane_desired
   if houston_event == 'left' then
     lane_desired = 1
@@ -181,115 +251,67 @@ local function cb_loop(t_us)
     p_lookahead = {px_lookahead, py_lookahead, 0}
   else
     -- Find ourselves on the path
-    local id_path, err = my_path:nearby(pose_rbt, pp_params.threshold_close)
+    local id_path, err = my_path:nearby(pose_rbt)
+    pp_params.id_path_pose = id_path
+    -- TODO: Threshold and find on the closest road
+    -- local id_path, err = my_path:nearby(pose_rbt, pp_params.threshold_close)
     -- If we can't find anywhere on the path to go... Bad news :(
     if not id_path then
-      return false, err
-    elseif id_path==#my_path.points and not my_path.closed then
-      result.done = true
+      return false, "No pose on path: "..tostring(err)
     end
     -- Distance to path
     local p_path = my_path.points[id_path]
     local dx, dy = pose_rbt[1] - p_path[1], pose_rbt[2] - p_path[2]
-    local d_path = math.sqrt(dx * dx + dy * dy)
+    pp_params.d_path = math.sqrt(dx * dx + dy * dy)
     -- Prepare the lookahead point
     p_lookahead = {tf2D(d_lookahead, 0, pose_rbt[3], pose_rbt[1], pose_rbt[2])}
     -- Find the nearest path point to the lookahead point
     -- TODO: Don't skip too far in a single timestep?
-    local function forwards(id) return id > id_lookahead_last, true end
-    local id_path_lookahead = my_path:nearby(p_lookahead, pp_params.threshold_close, forwards)
+    local function forwards(id) return (id > id_path) and id, true end
+    local id_path_lookahead = my_path:nearby(p_lookahead, d_lookahead, forwards)
     -- Default to the lookahead from our point
     if not id_path_lookahead then
-      id_path_lookahead = my_path:get_id_ahead(id_path, pp_params.lookahead)
+      id_path_lookahead = my_path:get_id_ahead(id_path, d_lookahead)
     end
+    pp_params.id_path_lookahead = id_path_lookahead
     p_lookahead = my_path.points[id_path_lookahead]
   end
-  -- pp_result, pp_err = pp_control(pose_rbt, p_lookahead)
+  pp_params.p_lookahead = p_lookahead
   local pp_result = control.get_inverse_curvature(pose_rbt, p_lookahead)
   pp_params.alpha = pp_result.alpha
   pp_params.kappa = pp_result.kappa
   pp_params.radius_of_curvature = pp_result.radius_of_curvature
 
-  --------------------------------
-  -- Check the obstacles around us, if not a highway, for now
-  -- Assign all vehicles to a lane
-  local veh_lanes = {}
-  for name_veh, pose_veh in pairs(veh_poses) do
-    -- Back axle
-    veh_lanes[name_veh] = my_path:find(pose_veh, {closeness=0.25})
-    -- Front left
-    local dx_bumper, dy_bumper = 0.10, 0.05
-    local x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
-    -- veh_lanes[name_veh] = pp_params.path:find({x_bumper, y_bumper, pose_veh[3]})
-    -- Front right
-    dy_bumper = -1 * dy_bumper
-    x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
-    -- veh_lanes[name_veh] = pp_params.path:find({x_bumper, y_bumper, pose_veh[3]})
-  end
-  -- Find the lead vehicle
-  local d_lead = math.huge
-  local name_lead = false
-  if my_path.markers then
-    local lane_current = veh_lanes[id_robot].i_lane
-    local lane_keep = lane_current == lane_desired
-    for name_veh, info_lane in pairs(veh_lanes) do
-      local veh_pose = veh_poses[name_veh]
-      local dx = veh_pose[1] - pose_rbt[1]
-      -- local rel_pose
-      if info_lane.i_lane == name_veh then
+  local LIMITING_RADIUS = 1.5
+  -- print("Radius", pp_params.radius_of_curvature)
+  ratio = math.min(math.abs(pp_params.radius_of_curvature) / LIMITING_RADIUS, ratio)
 
-      elseif lane_keep and info_lane.i_lane == lane_current and dx > 0 then
-        if dx < d_lead then
-          name_lead = name_veh
-          d_lead = dx
-        end
-      elseif (not lane_keep) and info_lane.i_lane == lane_desired and dx > 0 then
-        if dx < d_lead then
-          name_lead = name_veh
-          d_lead = dx
-        end
-      end
-    end
-  else
-    local name, dx = find_lead(veh_lanes, pp_params.path, pp_result.id_path)
-    -- Slow for a lead vehicle
-    if not name then
-      -- Save the message
-      name_lead = dx
-    elseif dx < d_lead then
-      d_lead = dx
-    end
-  end
-  pp_params.leader = {name_lead, d_lead}
-  -- Bound the ratio
-  local ratio = 1
-  -- Based on the measurements: rear axle to other car rear bumper
-  local d_stop = wheel_base + 0.22
-  local d_near = 3 * wheel_base
-  -- print("d_lead", d_lead)
-  if d_lead < d_near then
-    ratio = (d_lead - d_stop) / (d_near - d_stop)
-    ratio = math.max(0, math.min(ratio, 1))
-  end
-  --------------------------------
+  -- Update the velocity, based on the lead vehicle
+  vel_sample = vel_sample * ratio
 
-  -- When looping, update the velocity
-  local vel_sample = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity_mean)[1]
-  -- Bound the sample
-  vel_sample = math.max(pp_params.velocity_min, math.min(vel_sample, pp_params.velocity_max))
+  -- Find out if we are done, based on the path id of the lookahead point and our current point
+  if pp_params.path_next then
+    if pp_params.id_path_lookahead==#my_path.points then
+      pp_params.pathname = pp_params.path_next
+      pp_params.path_next = false
+    end
+  elseif my_path.closed then
+  elseif pp_params.id_path_pose==#my_path.points then
+    -- No next pose
+    pp_params.done = true
+  end
+
   -- Check if we are done
   if pp_params.done then
     pp_params.steering = 0
     pp_params.velocity = 0
-    -- Set the next path
-    pp_params.pathname = pp_params.path_next
-    pp_params.path_next = false
   else
     -- Set the steering based on the car dimensions
-    local steering = atan(pp_params.kappa * wheel_base)
+    local steering = atan(pp_params.kappa * pp_params.wheel_base)
     pp_params.steering = steering
     -- TODO: Set the speed based on curvature? Lookahead point's curvature?
-    pp_params.velocity = vel_sample * ratio
+    -- Bound the sample
+    pp_params.velocity = math.max(pp_params.velocity_min, math.min(vel_sample, pp_params.velocity_max))
   end
 
   -- Broadcast
@@ -319,7 +341,8 @@ local function parse_vicon(msg)
   last_frame = frame
   -- Find the pose for each robot
   for id, vp in pairs(msg) do
-    veh_poses[id] = vicon2pose(vp)
+    local pp_params = vehicle_params[id]
+    pp_params.pose = vicon2pose(vp)
   end
 end
 -- Update the poses
@@ -327,7 +350,6 @@ end
 
 local function cb_plan(msg, ch, t_us)
   -- Update the information available
-  -- print("Got plan from", ch, "at", t_us)
   planner_state = msg
 end
 
@@ -342,8 +364,13 @@ local cb_tbl = {
 }
 
 local function exit()
+  -- Stop all the vehicles
+  for _, pp_params in pairs(vehicle_params) do
+    pp_params.steering = 0
+    pp_params.velocity = 0
+    log_announce(log, pp_params, "control")
+  end
   if log then log:close() end
-  log_announce(log, {id = id_robot, steering = 0, velocity = 0}, "control")
   return 0
 end
 racecar.handle_shutdown(exit)

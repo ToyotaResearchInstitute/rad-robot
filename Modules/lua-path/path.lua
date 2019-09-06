@@ -340,7 +340,7 @@ local function path_from_waypoints(waypoints, params)
     -- Check what to add to the path (and raster)
     if da_approach == 0 then
       -- Add a line to the path
-      local _, d_pts = path_line(wp_1, wp_2, ds, points)
+      local info_line = path_line(wp_1, wp_2, ds, points)
       -- Pop the last element when joining paths
       -- Because wp_1 and wp_2 are inclusive
       -- Closed/Open interval concatenation, except last:
@@ -348,7 +348,7 @@ local function path_from_waypoints(waypoints, params)
       -- TODO: Ensure that "arc" behaves this way, too
       if i < n_waypoints - 1 or closed then table.remove(points) end
       -- Increment the length
-      length = length + d_pts
+      length = length + info_line.length
       -- Draw the line
       if grid_raster then grid_raster:bresenham(wp_1, wp_2) end
     elseif d_waypoints > ds then

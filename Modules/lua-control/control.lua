@@ -11,6 +11,7 @@ local unpack = unpack or require'table'.unpack
 --
 local tf2D = require'transform'.tf2D
 
+-- Pure Pursuit
 local function get_inverse_curvature(pose_rbt, p_lookahead)
   local x_rbt, y_rbt, th_rbt = unpack(pose_rbt)
   local x_ref, y_ref = unpack(p_lookahead)
@@ -26,48 +27,12 @@ local function get_inverse_curvature(pose_rbt, p_lookahead)
   local radius_of_curvature = lookahead / two_sa
   -- Returns the inverse curvature and radius of curvature
   return {
+    alpha = alpha,
     kappa = kappa,
     radius_of_curvature = radius_of_curvature,
-    alpha = alpha,
   }
 end
 lib.get_inverse_curvature = get_inverse_curvature
-
-local function simple_pursuit(params)
-  return get_inverse_curvature
-end
-lib.simple_pursuit = simple_pursuit
-
--- Usage:
--- lookahead distance
--- threshold_close is how far away from the path before we give up
-local function pure_pursuit(params)
-  -- Initialization bits
-  if type(params) ~= 'table' then return false, "No parameters" end
-  local path = params.path
-  local threshold_close = tonumber(params.threshold_close) or 0.25
-  local lookahead = tonumber(params.lookahead) or 1
-  local id_lookahead_last = false
-  -- Give a function to be created/wrapped by coroutine
-  -- Input: pose_rbt
-  -- State: result_prev
-  local function controller(pose_rbt)
-    -- Find ourselves on the path
-    local id_path, is_nearby = path:nearby(pose_rbt, threshold_close)
-    -- If we can't find anywhere on the path to go... Bad news :(
-    if not id_path then return false, is_nearby end
-    local id_lookahead, p_lookahead = get_id_lookahead(
-      path, pose_rbt, lookahead, id_lookahead_last)
-    -- Default to the lookahead from our point
-    if not id_lookahead then id_lookahead = increment_id(path, id_path, lookahead) end
-    local p_lookahead_path = path.points[id_lookahead]
-    -- Save the nearby point for next time
-    id_lookahead_last = id_lookahead
-    return get_inverse_curvature(pose_rbt, p_lookahead_path)
-  end
-  return controller
-end
-lib.pure_pursuit = pure_pursuit
 
 -- https://en.wikipedia.org/wiki/PID_controller#PID_controller_theory
 -- TODO: Orientation...
