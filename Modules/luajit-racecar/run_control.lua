@@ -241,9 +241,11 @@ local function update_params(pp_params)
     -- Make speed dependent, like 3 seconds ahead at 1 m/s
     local px_lookahead = pose_rbt[1] + d_lookahead
     -- Find the highway centerline
+    local py_path = (pp_params.lane_current + 0.5) * lane_to_lane_dist
     local py_lookahead = (pp_params.lane_desired + 0.5) * lane_to_lane_dist
     -- Add 0.5 to go halfway within the lane
     p_lookahead = {px_lookahead, py_lookahead, 0}
+    pp_params.p_path = {pose_rbt[1], py_path, 0}
   else
     -- Find ourselves on the path
     -- TODO: Threshold and find on the closest road
@@ -254,6 +256,7 @@ local function update_params(pp_params)
     end
     -- Distance to path
     local p_path = my_path.points[id_path]
+    pp_params.p_path = p_path
     local dx, dy = pose_rbt[1] - p_path[1], pose_rbt[2] - p_path[2]
     pp_params.d_path = math.sqrt(dx * dx + dy * dy)
     -- Prepare the lookahead point
@@ -274,6 +277,7 @@ local function update_params(pp_params)
   pp_params.alpha = pp_result.alpha
   pp_params.kappa = pp_result.kappa
   pp_params.radius_of_curvature = pp_result.radius_of_curvature
+  local steering_sample = atan(pp_params.kappa * pp_params.wheel_base)
 
   local LIMITING_RADIUS = 1.5
   -- print("Radius", pp_params.radius_of_curvature)
@@ -283,7 +287,8 @@ local function update_params(pp_params)
   vel_sample = vel_sample * ratio
 
   -- Find out if we are done, based on the path id of the lookahead point and our current point
-  if pp_params.path_next then
+  if my_path.markers then
+  elseif pp_params.path_next then
     if pp_params.id_path_lookahead==#my_path.points then
       pp_params.pathname = pp_params.path_next
       pp_params.path_next = false
@@ -300,9 +305,7 @@ local function update_params(pp_params)
     pp_params.velocity = 0
   else
     -- Set the steering based on the car dimensions
-    local steering = atan(pp_params.kappa * pp_params.wheel_base)
-    pp_params.steering = steering
-    -- TODO: Set the speed based on curvature? Lookahead point's curvature?
+    pp_params.steering = steering_sample
     -- Bound the sample
     pp_params.velocity = math.max(pp_params.velocity_min, math.min(vel_sample, pp_params.velocity_max))
   end
@@ -314,7 +317,7 @@ local function cb_loop(t_us)
   if not planner_state then
     return false, "No planner information"
   end
-  for _, params_veh in pairs(vehicle_params) do 
+  for _, params_veh in pairs(vehicle_params) do
     update_params(params_veh)
   end
   -- Broadcast just ours, or all of them?
@@ -331,16 +334,16 @@ local function vicon2pose(vp)
   }
 end
 local last_frame = -math.huge
-local function parse_vicon(msg)
+local function cb_vicon(msg)
   -- Check that the data is not stale
   -- TODO: Stale for each ID...
   local frame = msg.frame
-  msg.frame = nil
   if frame <= last_frame then
     return false, "Stale data"
   end
   last_frame = frame
   -- Find the pose for each robot
+  msg.frame = nil
   for id, vp in pairs(msg) do
     local pp_params = vehicle_params[id]
     if not pp_params then
@@ -363,12 +366,6 @@ local function cb_houston(msg, ch, t_us)
   houston_event = id_robot=='tri1' and msg.evt
 end
 
-local cb_tbl = {
-  vicon = parse_vicon,
-  planner = cb_plan,
-  houston = cb_houston
-}
-
 local function exit()
   -- Stop all the vehicles
   for _, pp_params in pairs(vehicle_params) do
@@ -382,7 +379,11 @@ end
 racecar.handle_shutdown(exit)
 
 racecar.listen{
-  channel_callbacks = cb_tbl,
+  channel_callbacks = {
+    vicon = cb_vicon,
+    planner = cb_plan,
+    houston = cb_houston
+  },
   loop_rate = 100, -- 100ms loop
   fn_loop = cb_loop,
   fn_debug = cb_debug

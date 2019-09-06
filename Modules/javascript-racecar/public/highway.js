@@ -384,6 +384,12 @@ document.addEventListener("DOMContentLoaded", function(event) {
       return;
     }
     const id_robot = ctrl.id;
+    const vehicles = msg.vicon;
+    if (!vehicles) {
+      return;
+    }
+    //
+    const reference_pose = vicon2pose(vehicles[reference_vehicle]);
 
     // Lookahead
     const p_lookahead = ctrl.p_lookahead;
@@ -397,11 +403,9 @@ document.addEventListener("DOMContentLoaded", function(event) {
         pla_el.setAttributeNS(null, "id", "lookahead_" + id_robot);
         pla_el.setAttributeNS(null, "r", 0.05);
         pla_el.setAttributeNS(null, "class", "lookahead");
-        pla_el.style.fill = "red";
-        pla_el.style.stroke = "none";
         environment_svg.appendChild(pla_el);
       }
-      const pla = coord2svg(p_lookahead);
+      const pla = coord2svg([p_lookahead[0] - reference_pose[0], p_lookahead[1]]);
       pla_el.setAttributeNS(null, "cx", pla[0]);
       pla_el.setAttributeNS(null, "cy", pla[1]);
     }
@@ -418,15 +422,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
         pn_el.setAttributeNS(null, "id", "near_" + id_robot);
         pn_el.setAttributeNS(null, "r", 0.05);
         pn_el.setAttributeNS(null, "class", "near");
-        pn_el.style.fill = "yellow";
-        pn_el.style.stroke = "none";
         environment_svg.appendChild(pn_el);
       }
-      const pn = coord2svg(p_near);
-      const xn = pn[0] || 0;
-      const yn = pn[1] || 0;
-      pn_el.setAttributeNS(null, "cx", xn);
-      pn_el.setAttributeNS(null, "cy", yn);
+      const pn = coord2svg([p_near[0] - reference_pose[0], p_near[1]]);
+      pn_el.setAttributeNS(null, "cx", pn[0]);
+      pn_el.setAttributeNS(null, "cy", pn[1]);
     }
     return false;
   };

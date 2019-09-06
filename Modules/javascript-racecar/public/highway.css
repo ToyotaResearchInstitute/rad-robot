@@ -81,6 +81,14 @@ polyline {
 .vehicle#vehicle_tri1 {
   fill: brown;
 }
+.lookahead {
+  fill: red;
+  stroke: none;
+}
+.near {
+  fill: yellow;
+  stroke: none;
+}
 .obstacle {
   fill: #AAA;
   stroke: #333;
