@@ -122,24 +122,18 @@ end
 
 --------------------------
 -- Update the pure pursuit
-local function cb_loop(t_us)
-  local pp_params = vehicle_params[id_robot]
+local function update_params(pp_params)
   local pose_rbt = pp_params.pose
   -- Stop if no pose
   if not pose_rbt then
     pp_params.steering = 0
     pp_params.velocity = 0
-    log_announce(log, pp_params, "control")
     return false, "No pose"
   end
-  -- pp_params.pose = pose_rbt
 
   -- Check that we can find a plan
   if not pp_params.pathname then
     return false, "No pathname"
-  end
-  if not planner_state then
-    return false, "No planner information"
   end
 
   -- Find our plan in paths and highways
@@ -203,13 +197,14 @@ local function cb_loop(t_us)
     -- local lane_current = veh_lanes[id_robot].i_lane
     -- local lane_keep = lane_current == pp_params.lane_desired
     for name_veh, params_veh in pairs(vehicle_params) do
+      local is_other = name_veh ~= pp_params.id
       local pose_veh = params_veh.pose
       local dx = pose_veh[1] - pose_rbt[1]
       -- local veh_in_current_lane = params_veh.idx_lane == lane_current
       local veh_in_desired_lane = params_veh.lane_current == pp_params.lane_desired
       -- Skip our vehicle and any behind us
       -- Skip if further away than the lead vehicle
-      if veh_in_desired_lane and (dx + params_veh.wheel_base) > 0 and dx < d_lead then
+      if is_other and veh_in_desired_lane and (dx + params_veh.wheel_base) > 0 and dx < d_lead then
         name_lead = name_veh
         d_lead = dx
       end
@@ -230,7 +225,6 @@ local function cb_loop(t_us)
   -- Based on the measurements: rear axle to other car rear bumper
   local d_stop = pp_params.wheel_base + 0.22
   local d_near = 3 * pp_params.wheel_base
-  -- print("d_lead", d_lead)
   if d_lead < d_near then
     ratio = (d_lead - d_stop) / (d_near - d_stop)
     ratio = math.max(0, math.min(ratio, 1))
@@ -252,11 +246,9 @@ local function cb_loop(t_us)
     p_lookahead = {px_lookahead, py_lookahead, 0}
   else
     -- Find ourselves on the path
+    -- TODO: Threshold and find on the closest road
     local id_path, err = my_path:nearby(pose_rbt)
     pp_params.id_path_pose = id_path
-    -- TODO: Threshold and find on the closest road
-    -- local id_path, err = my_path:nearby(pose_rbt, pp_params.threshold_close)
-    -- If we can't find anywhere on the path to go... Bad news :(
     if not id_path then
       return false, "No pose on path: "..tostring(err)
     end
@@ -314,12 +306,20 @@ local function cb_loop(t_us)
     -- Bound the sample
     pp_params.velocity = math.max(pp_params.velocity_min, math.min(vel_sample, pp_params.velocity_max))
   end
-
-  -- Broadcast
-  log_announce(log, pp_params, "control")
 end
 -- Update the pure pursuit
 --------------------------
+
+local function cb_loop(t_us)
+  if not planner_state then
+    return false, "No planner information"
+  end
+  for _, params_veh in pairs(vehicle_params) do 
+    update_params(params_veh)
+  end
+  -- Broadcast just ours, or all of them?
+  log_announce(log, vehicle_params[id_robot], "control")
+end
 
 -------------------
 -- Update the vehicle poses
