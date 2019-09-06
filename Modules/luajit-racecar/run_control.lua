@@ -35,10 +35,11 @@ local function vehicle_new(params)
   local velocity_stddev = velocity_mean * 0.1
   local vel_max = 0.75
   local vel_min = 0.2
+  local nan = 0/0
   -- TODO: Should simply find the nearest lane
   local pp_params = {
-    id = id_robot,
-    pose = false, -- the pose that we think that we have
+    id = params.id,
+    pose = {nan, nan, nan}, -- the pose that we think that we have
     --
     wheel_base = tonumber(params.wheel_base) or 0.325,
     t_lookahead = tonumber(params.lookahead) or 1,
@@ -163,7 +164,7 @@ local function update_params(pp_params)
   local d_lead = math.huge
   local name_lead = false
   if my_path.markers then
-    -- local lane_current = veh_lanes[id_robot].i_lane
+    -- local lane_current = veh_lanes[pp_params.id].i_lane
     -- local lane_keep = lane_current == pp_params.lane_desired
     for name_veh, params_veh in pairs(vehicle_params) do
       local is_other = name_veh ~= pp_params.id
@@ -192,7 +193,7 @@ local function update_params(pp_params)
   -- Based on the measurements: rear axle to other car rear bumper
   local d_stop = pp_params.wheel_base + 0.22
   local d_near = 3 * pp_params.wheel_base
-  local vel_ratio_lead = (d_lead - d_stop) / (d_near - d_stop) or 1
+  local vel_ratio_lead = (d_lead - d_stop) / (d_near - d_stop)
   --------------------------------
 
   -- Find the curvature
@@ -240,13 +241,11 @@ local function update_params(pp_params)
   pp_params.alpha = pp_result.alpha
   pp_params.kappa = pp_result.kappa
   pp_params.radius_of_curvature = pp_result.radius_of_curvature
-  local steering_sample = atan(pp_params.kappa * pp_params.wheel_base)
+  local steering_desired = atan(pp_params.kappa * pp_params.wheel_base)
 
   -- Update the velocity, based on the turning radius
   local LIMITING_RADIUS = 1.5
   local vel_ratio_turning = math.abs(pp_params.radius_of_curvature) / LIMITING_RADIUS
-  print("p_lookahead", unpack(pp_params.p_lookahead))
-  print("pp_params.radius_of_curvature", pp_params.radius_of_curvature)
 
   -- Find out if we are done, based on the path id of the lookahead point and our current point
   if my_path.markers then
@@ -267,12 +266,9 @@ local function update_params(pp_params)
     pp_params.velocity = 0
   else
     -- Set the steering based on the car dimensions
-    pp_params.steering = steering_sample
+    pp_params.steering = steering_desired
     -- Bound the sample
     local vel_ratio = math.max(0, math.min(1, vel_ratio_turning, vel_ratio_lead))
-    print("vel_ratio", vel_ratio)
-    print("vel_ratio_turning", vel_ratio_turning)
-    print("vel_ratio_lead", vel_ratio_lead)
     vel_desired = vel_ratio * vel_desired
     if vel_desired < pp_params.velocity_min then
       pp_params.velocity = 0
@@ -283,17 +279,6 @@ local function update_params(pp_params)
 end
 -- Update the pure pursuit
 --------------------------
-
-local function cb_loop(t_us)
-  if not planner_state then
-    return false, "No planner information"
-  end
-  for _, params_veh in pairs(vehicle_params) do
-    update_params(params_veh)
-  end
-  -- Broadcast just ours, or all of them?
-  log_announce(log, vehicle_params[id_robot], "control")
-end
 
 -------------------
 -- Update the vehicle poses
@@ -318,8 +303,10 @@ local function cb_vicon(msg)
   for id, vp in pairs(msg) do
     local pp_params = vehicle_params[id]
     if not pp_params then
-      print("New car!")
-      pp_params = vehicle_new()
+      pp_params = vehicle_new{
+        id = id,
+        path = vehicle_params[id_robot].pathname
+      }
       vehicle_params[id] = pp_params
     end
     pp_params.pose = vicon2pose(vp)
@@ -346,23 +333,34 @@ local function cb_houston(msg, ch, t_us)
   end
 end
 
+local function cb_loop(t_us)
+  if not planner_state then
+    return false, "No planner information"
+  end
+  for _, params_veh in pairs(vehicle_params) do
+    update_params(params_veh)
+    -- Broadcast all!
+    log_announce(log, params_veh, "control")
+  end
+  -- Broadcast just ours
+  -- log_announce(log, vehicle_params[id_robot], "control")
+end
+
 local function cb_debug(t_us)
-  local pp_params = vehicle_params[id_robot]
-  local pose_rbt = pp_params.pose
-  if not pose_rbt then return end
-  local px, py, pa = unpack(pose_rbt)
-  local info = {
-    string.format("Path: %s | Next: %s", pp_params.pathname, pp_params.path_next),
-  }
-  table.insert(info, string.format(
-    "Pose: x=%.2fm, y=%.2fm, a=%.2f°",
-    px, py, math.deg(pa)))
-  table.insert(info, string.format(
-    "Leader: %s [%s]",
-    unpack(pp_params.leader)))
-  table.insert(info, string.format(
-    "Control: %.2f m/s, %.2f°",
-    pp_params.velocity, math.deg(pp_params.steering)))
+  local info = {"=="}
+  for name_veh, params_veh in pairs(vehicle_params) do
+    table.insert(info, string.format(
+      "\n%s | Pose: x=%.2fm, y=%.2fm, a=%.2f°",
+      name_veh, params_veh.pose[1], params_veh.pose[2], math.deg(params_veh.pose[3])))
+    table.insert(info, string.format(
+      "Path: %s | Next: %s", params_veh.pathname, params_veh.path_next))
+    table.insert(info, string.format(
+      "Leader: %s [%s]",
+      unpack(params_veh.leader)))
+    table.insert(info, string.format(
+      "Control: %.2f m/s, %.2f°",
+      params_veh.velocity, math.deg(params_veh.steering)))
+  end
   return table.concat(info, "\n")
 end
 
