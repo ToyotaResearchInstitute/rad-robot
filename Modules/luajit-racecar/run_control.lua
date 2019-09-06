@@ -321,15 +321,22 @@ local function cb_plan(msg, ch, t_us)
 end
 
 local function cb_houston(msg, ch, t_us)
-  local houston_event = id_robot=='tri1' and msg.evt
-  if not houston_event then return false end
-  local pp_params = vehicle_params[id_robot]
-  if houston_event == 'left' then
-    pp_params.lane_desired = 1
-  elseif houston_event == 'right' then
-    pp_params.lane_desired = -1
-  else
-    pp_params.lane_desired = 0
+  local houston_id = msg.id
+  local houston_event = msg.evt
+  local houston_value = tonumber(msg.val)
+  if not houston_event or not houston_id then
+    return false
+  end
+  for name_veh, params_veh in pairs(vehicle_params) do
+    if name_veh:match(houston_id) then
+      if houston_event == 'left' then
+        params_veh.lane_desired = 1
+      elseif houston_event == 'right' then
+        params_veh.lane_desired = -1
+      elseif houston_event == 'center' then
+        params_veh.lane_desired = 0
+      end
+    end
   end
 end
 
@@ -353,7 +360,8 @@ local function cb_debug(t_us)
       "\n%s | Pose: x=%.2fm, y=%.2fm, a=%.2f°",
       name_veh, params_veh.pose[1], params_veh.pose[2], math.deg(params_veh.pose[3])))
     table.insert(info, string.format(
-      "Path: %s | Next: %s", params_veh.pathname, params_veh.path_next))
+      "Path: %s | Lane: %s | Next: %s",
+      params_veh.pathname, params_veh.lane_current, params_veh.path_next))
     table.insert(info, string.format(
       "Leader: %s [%s]",
       unpack(params_veh.leader)))

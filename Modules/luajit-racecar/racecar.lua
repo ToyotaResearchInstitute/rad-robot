@@ -393,7 +393,12 @@ if IS_MAIN then
   elseif flags[1] then
     -- Send houston message
     local msg = flags[1]
-    return announce('houston', {evt=msg})
+    local ind_colon = msg:find":"
+    local id_rbt = ind_colon and msg:sub(1, ind_colon - 1) or ''
+    local evt = ind_colon and msg:sub(ind_colon + 1) or msg
+    print("id", id_rbt)
+    print("evt", evt)
+    return announce('houston', {evt=evt, id=id_rbt})
   end
 end
 
