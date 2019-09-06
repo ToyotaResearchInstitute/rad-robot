@@ -323,18 +323,25 @@ end
 local function cb_houston(msg, ch, t_us)
   local houston_id = msg.id
   local houston_event = msg.evt
-  local houston_value = tonumber(msg.val)
+  local houston_value = msg.val
   if not houston_event or not houston_id then
     return false
   end
   for name_veh, params_veh in pairs(vehicle_params) do
     if name_veh:match(houston_id) then
-      if houston_event == 'left' then
-        params_veh.lane_desired = 1
-      elseif houston_event == 'right' then
-        params_veh.lane_desired = -1
-      elseif houston_event == 'center' then
-        params_veh.lane_desired = 0
+      if houston_event == 'lane' and type(houston_value)=='number' then
+        params_veh.lane_desired = math.floor(houston_value)
+      elseif houston_event == 'lane' and type(houston_value)=='string' then
+        if houston_value=='left' then
+          params_veh.lane_desired = params_veh.lane_desired + 1
+        elseif houston_value=='right' then
+          params_veh.lane_desired = params_veh.lane_desired - 1
+        end
+      elseif houston_event == 'velocity' and type(houston_value)=='number' then
+        params_veh.velocity_mean = houston_value
+      elseif houston_event == 'parameters' and type(houston_value)=='table' then
+        -- Shallow copy
+        for k, v in pairs(houston_value) do params_veh[k] = v end
       end
     end
   end

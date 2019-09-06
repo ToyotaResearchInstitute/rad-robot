@@ -393,12 +393,22 @@ if IS_MAIN then
   elseif flags[1] then
     -- Send houston message
     local msg = flags[1]
+    local msg_houston = {}
     local ind_colon = msg:find":"
-    local id_rbt = ind_colon and msg:sub(1, ind_colon - 1) or ''
-    local evt = ind_colon and msg:sub(ind_colon + 1) or msg
-    print("id", id_rbt)
-    print("evt", evt)
-    return announce('houston', {evt=evt, id=id_rbt})
+    if ind_colon then
+      local submessages = {}
+      for value in msg:gmatch"[^:]+" do
+        table.insert(submessages, value)
+      end
+      msg_houston.id = submessages[1]
+      msg_houston.evt = submessages[2]
+      msg_houston.val = tonumber(submessages[3])
+    else
+      -- Simply send a message
+      msg_houston.id = ''
+      msg_houston.evt = msg
+    end
+    return announce('houston', msg_houston)
   end
 end
 
