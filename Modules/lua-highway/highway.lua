@@ -48,9 +48,11 @@ local function find_in_highway(self, p_vehicle, options)
   local dy = p_y - i_lane * self.lane_width
 
   return {
-    i_marker=i_marker,
-    i_lane = i_lane,
-    dist = math.abs(dy),
+    idx_path=i_marker,
+    idx_lane = i_lane,
+    -- Frenet frame distances
+    dist_normal = math.abs(dy),
+    dist_tangent = 0 / 0,
     -- Highway angle is offset
     da=p_a
   }
@@ -269,7 +271,6 @@ function lib.new(options)
     events_by_name = events_by_name,
     events_at_marker = events_at_marker,
     events_at_distance = events_at_distance,
-    find = find_in_highway,
     export = export,
     get_marker = get_marker,
     get_lane = get_lane,

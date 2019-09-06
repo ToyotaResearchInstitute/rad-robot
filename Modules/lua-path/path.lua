@@ -79,9 +79,13 @@ local function find_in_path(self, p_vehicle, options)
     local ORIENTATION_THRESHOLD = math.rad(45)
     if fabs(da) < ORIENTATION_THRESHOLD then
       return {
-        id_in_path=nby.user,
-        dist=sqrt(dx*dx + dy*dy),
-        da=da
+        idx_path = nby.user,
+        idx_lane = false,
+        --
+        dist = sqrt(dx*dx + dy*dy),
+        dist_normal = 0/0,
+        dist_tangent = 0/0,
+        da = da
       }
     end
   end

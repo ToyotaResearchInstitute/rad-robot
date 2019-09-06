@@ -30,9 +30,8 @@ local planner_state = false
 -- Parameters for each robot
 local vehicle_params = {}
 
--- TODO: Paths should come from a separate program
-do
-  local velocity_mean = tonumber(flags.vel_lane) or 0.5
+local function vehicle_new(params)
+  local velocity_mean = tonumber(params.vel_lane) or 0.5
   local velocity_stddev = velocity_mean * 0.1
   local vel_max = 0.75
   local vel_min = 0.2
@@ -41,23 +40,25 @@ do
     id = id_robot,
     pose = false, -- the pose that we think that we have
     --
-    wheel_base = tonumber(flags.wheel_base) or 0.325,
-    t_lookahead = tonumber(flags.lookahead) or 1,
+    wheel_base = tonumber(params.wheel_base) or 0.325,
+    t_lookahead = tonumber(params.lookahead) or 1,
     threshold_close = 0.25,
     velocity_mean = velocity_mean,
     velocity_stddev = velocity_stddev,
     velocity_max = vel_max,
     velocity_min = vel_min,
     --
-    id_path = nil,
-    pathname = flags.path or 'lane_outerA+1',
+    pathname = params.path or 'lane_outerA+1',
+    lane_desired = false,
+    lane_current = false,
     leader = {false, math.huge},
     --
     velocity = 0,
     steering = 0,
   }
-  vehicle_params[id_robot] = pp_params
+  return pp_params
 end
+vehicle_params[id_robot] = vehicle_new(flags)
 
 --
 local function cb_debug(t_us)
@@ -84,24 +85,29 @@ end
 -- Utilities
 ------------------------------------------
 
-local function find_lead(veh_lanes, path_lane, id_path)
+local function find_lead(self, veh_lanes, id_path)
+  -- Cache
+  local is_closed = self.closed
+  local n_points = #self.points
+  local ds = self.ds
+
   local name_lead, d_lead = false, math.huge
   for name_veh, info_veh in ipairs(veh_lanes) do
     local id_path_other = info_veh.id_in_path
     local d_id = id_path_other - id_path
     -- Loop around if closed
-    if path_lane.closed then
+    if is_closed then
       if id_path_other < id_path then
-        id_path_other = id_path_other + #path_lane.points
+        id_path_other = id_path_other + n_points
       else
-        id_path_other = id_path_other - #path_lane.points
+        id_path_other = id_path_other - n_points
       end
       local d_id2 = id_path_other - id_path
       if fabs(d_id2) < fabs(d_id) then
         d_id = d_id2
       end
     end
-    local d_rel = d_id * path_lane.ds
+    local d_rel = d_id * ds
     if d_rel > 0 and d_rel < d_lead then
       d_lead = d_rel
       name_lead = name_veh
@@ -147,30 +153,39 @@ local function cb_loop(t_us)
     return false, "Desired path not found in the planner"
   end
 
-  -- Find the next path
-  if planner_state.transitions and not pp_params.path_next then
-    local available = planner_state.transitions[pp_params.pathname]
-    local tp_available = type(available)
-    if tp_available == 'string' then
-      pp_params.path_next = available
-    elseif tp_available=='table' then
-      -- Just take the first :P
-      local ind_rand = math.random(#available)
-      pp_params.path_next = available[ind_rand]
+  if my_path.markers then
+    if houston_event == 'left' then
+      pp_params.lane_desired = 1
+    elseif houston_event == 'right' then
+      pp_params.lane_desired = -1
+    else
+      pp_params.lane_desired = 0
+    end
+  else
+    -- Find the next path
+    if planner_state.transitions and not pp_params.path_next then
+      local available = planner_state.transitions[pp_params.pathname]
+      local tp_available = type(available)
+      if tp_available == 'string' then
+        pp_params.path_next = available
+      elseif tp_available=='table' then
+        -- Just take the first :P
+        local ind_rand = math.random(#available)
+        pp_params.path_next = available[ind_rand]
+      end
     end
   end
-
   local vel_sample = vector.randn(1, pp_params.velocity_stddev, pp_params.velocity_mean)[1]
 
   --------------------------------
   -- Check the obstacles around us, if not a highway, for now
   -- Assign all vehicles to a lane
   local veh_lanes = {}
-
-  for name_veh, params_veh in pairs(vehicle_params) do
+  for _, params_veh in pairs(vehicle_params) do
     local pose_veh = params_veh.pose
     -- Back axle
-    veh_lanes[name_veh] = my_path:find(pose_veh, {closeness=0.25})
+    local path_info = my_path:find(pose_veh, {closeness=0.25})
+    params_veh.lane_current = path_info and path_info.idx_lane
     -- Front left
     local dx_bumper, dy_bumper = 0.10, 0.05
     local x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
@@ -184,29 +199,22 @@ local function cb_loop(t_us)
   local d_lead = math.huge
   local name_lead = false
   if my_path.markers then
-    local lane_current = veh_lanes[id_robot].i_lane
-    local lane_keep = lane_current == lane_desired
+    -- local lane_current = veh_lanes[id_robot].i_lane
+    -- local lane_keep = lane_current == pp_params.lane_desired
     for name_veh, params_veh in pairs(vehicle_params) do
       local pose_veh = params_veh.pose
       local dx = pose_veh[1] - pose_rbt[1]
-      -- local rel_pose
-      local lane_veh = veh_lanes[name_veh].i_lane
-      if lane_veh == name_veh then
-
-      elseif lane_keep and lane_veh == lane_current and dx > 0 then
-        if dx < d_lead then
-          name_lead = name_veh
-          d_lead = dx
-        end
-      elseif (not lane_keep) and lane_veh == lane_desired and dx > 0 then
-        if dx < d_lead then
-          name_lead = name_veh
-          d_lead = dx
-        end
+      -- local veh_in_current_lane = params_veh.idx_lane == lane_current
+      local veh_in_desired_lane = params_veh.lane_current == pp_params.lane_desired
+      -- Skip our vehicle and any behind us
+      -- Skip if further away than the lead vehicle
+      if veh_in_desired_lane and (dx + params_veh.wheel_base) > 0 and dx < d_lead then
+        name_lead = name_veh
+        d_lead = dx
       end
     end
   else
-    local name, dx = find_lead(veh_lanes, pp_params.path, pp_params.id_path)
+    local name, dx = find_lead(my_path, veh_lanes, pp_params.id_path)
     -- Slow for a lead vehicle
     if not name then
       -- Save the message
@@ -231,14 +239,6 @@ local function cb_loop(t_us)
   -- Find the curvature
   local p_lookahead
   local d_lookahead = pp_params.t_lookahead * pp_params.velocity
-  local lane_desired
-  if houston_event == 'left' then
-    lane_desired = 1
-  elseif houston_event == 'right' then
-    lane_desired = -1
-  else
-    lane_desired = 0
-  end
   -- Find our control policy
   if my_path.markers then
     -- The points are the lanes. All angles are 0
@@ -246,7 +246,7 @@ local function cb_loop(t_us)
     -- Make speed dependent, like 3 seconds ahead at 1 m/s
     local px_lookahead = pose_rbt[1] + d_lookahead
     -- Find the highway centerline
-    local py_lookahead = (lane_desired + 0.5) * lane_to_lane_dist
+    local py_lookahead = (pp_params.lane_desired + 0.5) * lane_to_lane_dist
     -- Add 0.5 to go halfway within the lane
     p_lookahead = {px_lookahead, py_lookahead, 0}
   else
