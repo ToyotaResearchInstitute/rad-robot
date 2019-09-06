@@ -31,6 +31,7 @@ local planner_state = false
 local vehicle_params = {}
 
 local function vehicle_new(params)
+  if type(params) ~= 'table' then params = {} end
   local velocity_mean = tonumber(params.vel_lane) or 0.5
   local velocity_stddev = velocity_mean * 0.1
   local vel_max = 0.75
@@ -342,6 +343,11 @@ local function parse_vicon(msg)
   -- Find the pose for each robot
   for id, vp in pairs(msg) do
     local pp_params = vehicle_params[id]
+    if not pp_params then
+      print("New car!")
+      pp_params = vehicle_new()
+      vehicle_params[id] = pp_params
+    end
     pp_params.pose = vicon2pose(vp)
   end
 end

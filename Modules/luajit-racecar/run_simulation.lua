@@ -15,7 +15,8 @@ local log = has_logger and flags.log ~= 0 and assert(logger.new('control', racec
 
 -- Simulation parameters
 math.randomseed(123)
-local dt_ms = 1.0e3/60 -- ms loop: Try 60 Hz
+local dt_sim = 1 / 60
+local dt_ms = 1.0e3 / 60 -- ms loop: Try 60 Hz
 local dheading_max = math.rad(45) -- radians of front wheels
 local wheel_base = 0.325
 
@@ -139,24 +140,25 @@ end
 --------------------------
 -- Update the pure pursuit
 local count_frame = 0
-local t_last_us
+-- local t_last_us
 local function cb_loop(t_us)
+  local msg_vicon = {
+    frame = count_frame
+  }
   -- Simulate and publish this timestep
   local dt_us = t_us - (t_last_us or t_us)
   t_last_us = t_us
   local dt = tonumber(dt_us) / 1e6
-  local msg_vicon = {
-    frame = count_frame
-  }
+  local dt_diff = dt - dt_sim
   count_frame = count_frame + 1
   for id_rbt, state_now in pairs(veh_states) do
     -- Simulate a timestep
-    local state_new = simulate_vehicle(state_now, dt)
+    local state_new = simulate_vehicle(state_now, dt_sim)
     -- Update the internal state
     veh_states[id_rbt] = state_new
     -- Give noisy measurements
     local pose_noisy = vector.randn_pose(
-      {0.01 * dt, 0.01 * dt, math.rad(1) * dt},
+      {0.01 * dt_sim, 0.01 * dt_sim, math.rad(1) * dt_sim},
       state_new.pose)
     -- Set the publishing message
     msg_vicon[id_rbt] = pose2vicon(pose_noisy)
