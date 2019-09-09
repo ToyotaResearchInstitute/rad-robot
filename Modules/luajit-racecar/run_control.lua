@@ -36,18 +36,19 @@ local function vehicle_new(params)
   local vel_max = 0.75
   local vel_min = 0.2
   local nan = 0/0
+  local wheel_base = tonumber(params.wheel_base) or 0.325
   -- TODO: Should simply find the nearest lane
   local pp_params = {
     id = params.id,
     pose = {nan, nan, nan}, -- the pose that we think that we have
     --
-    wheel_base = tonumber(params.wheel_base) or 0.325,
+    wheel_base = wheel_base,
     t_lookahead = tonumber(params.lookahead) or 1,
-    threshold_close = 0.25,
     velocity_mean = velocity_mean,
     velocity_stddev = velocity_stddev,
     velocity_max = vel_max,
     velocity_min = vel_min,
+    LIMITING_RADIUS = 2 * wheel_base,
     --
     pathname = params.path or 'lane_outerA+1',
     lane_desired = false,
@@ -61,57 +62,24 @@ local function vehicle_new(params)
 end
 vehicle_params[id_robot] = vehicle_new(flags)
 
-------------------------------------------
--- Utilities
-------------------------------------------
-
-local function find_lead(self, veh_lanes, id_path)
-  -- Cache
-  local is_closed = self.closed
-  local n_points = #self.points
-  local ds = self.ds
-
-  local name_lead, d_lead = false, math.huge
-  for name_veh, info_veh in ipairs(veh_lanes) do
-    local id_path_other = info_veh.id_in_path
-    local d_id = id_path_other - id_path
-    -- Loop around if closed
-    if is_closed then
-      if id_path_other < id_path then
-        id_path_other = id_path_other + n_points
-      else
-        id_path_other = id_path_other - n_points
-      end
-      local d_id2 = id_path_other - id_path
-      if fabs(d_id2) < fabs(d_id) then
-        d_id = d_id2
-      end
-    end
-    local d_rel = d_id * ds
-    if d_rel > 0 and d_rel < d_lead then
-      d_lead = d_rel
-      name_lead = name_veh
-    end
-  end
-  return name_lead, d_lead
-end
-------------------------------------------
--- Utilities
-------------------------------------------
-
 --------------------------
 -- Update the pure pursuit
+-- This function modifies the parameters table in place
 local function update_params(pp_params)
-  local pose_rbt = pp_params.pose
-  -- Stop if no pose
-  if not pose_rbt then
-    pp_params.steering = 0
-    pp_params.velocity = 0
-    return false, "No pose"
+  if type(pp_params) ~= 'table' then
+    return false, "No parameters given"
   end
 
-  -- Check that we can find a plan
-  if not pp_params.pathname then
+  -- The controller, by default, stops
+  pp_params.steering = 0
+  pp_params.velocity = 0
+
+  local pose_rbt = pp_params.pose
+  if not pose_rbt then
+    -- Ensure that we have a pose
+    return false, "No pose"
+  elseif not pp_params.pathname then
+    -- Check that we can find a plan
     return false, "No pathname"
   end
 
@@ -139,15 +107,14 @@ local function update_params(pp_params)
     end
   end
 
-  --------------------------------
-  -- Check the obstacles around us, if not a highway, for now
   -- Assign all vehicles to a lane
-  local veh_lanes = {}
+  local closeness = 0.4
   for _, params_veh in pairs(vehicle_params) do
     local pose_veh = params_veh.pose
     -- Back axle
-    local path_info = my_path:find(pose_veh, {closeness=0.25})
-    params_veh.lane_current = path_info and path_info.idx_lane
+    local path_info, err_find = my_path:find(pose_veh, {closeness=closeness})
+    params_veh.lane_current = path_info and path_info.idx_lane or err_find
+    params_veh.longitudinal_id_current = path_info and path_info.idx_path or err_find
     if not params_veh.lane_desired then
       params_veh.lane_desired = params_veh.lane_current
     end
@@ -160,32 +127,36 @@ local function update_params(pp_params)
     x_bumper, y_bumper = tf2D(dx_bumper, dy_bumper, pose_veh[3], unpack(pose_veh, 1, 2))
     -- veh_lanes[name_veh] = pp_params.path:find({x_bumper, y_bumper, pose_veh[3]})
   end
+
+  --------------------------------
+  -- Check the obstacles around us, if not a highway, for now
+  if type(pp_params.longitudinal_id_current) ~= 'number' then
+    return false, "No pose on path: "..tostring(pp_params.longitudinal_id_current)
+  end
+
   -- Find the lead vehicle
+  -- TODO: We want to find the time to the leader, maybe not the Distance
+  -- NOTE: Currently, this assumes a stopped vehicle
   local d_lead = math.huge
   local name_lead = false
-  if my_path.markers then
-    -- local lane_current = veh_lanes[pp_params.id].i_lane
-    -- local lane_keep = lane_current == pp_params.lane_desired
-    for name_veh, params_veh in pairs(vehicle_params) do
-      local is_other = name_veh ~= pp_params.id
+  for name_veh, params_veh in pairs(vehicle_params) do
+    local is_other = name_veh ~= pp_params.id
+    local dx
+    if my_path.markers then
+      -- highway
       local pose_veh = params_veh.pose
-      local dx = pose_veh[1] - pose_rbt[1]
-      -- local veh_in_current_lane = params_veh.idx_lane == lane_current
-      local veh_in_desired_lane = params_veh.lane_current == pp_params.lane_desired
-      -- Skip our vehicle and any behind us
-      -- Skip if further away than the lead vehicle
-      if is_other and veh_in_desired_lane and (dx + params_veh.wheel_base) > 0 and dx < d_lead then
-        name_lead = name_veh
-        d_lead = dx
-      end
+      dx = pose_veh[1] - pose_rbt[1]
+    else
+      -- In curvy area, use the path distance
+      local d_id = my_path:relative_id_diff(pp_params.longitudinal_id_current, params_veh.longitudinal_id_current)
+      dx = my_path.ds * d_id
     end
-  else
-    local name, dx = find_lead(my_path, veh_lanes, pp_params.id_path)
-    -- Slow for a lead vehicle
-    if not name then
-      -- Save the message
-      name_lead = dx
-    elseif dx < d_lead then
+    local veh_in_current_lane = params_veh.lane_current == pp_params.lane_current
+    local veh_in_desired_lane = params_veh.lane_current == pp_params.lane_desired
+    -- Skip our vehicle and any behind us
+    -- Skip if further away than the lead vehicle
+    if is_other and dx < d_lead and (dx + params_veh.wheel_base) > 0 and (veh_in_desired_lane or veh_in_current_lane) then
+      name_lead = name_veh
       d_lead = dx
     end
   end
@@ -212,15 +183,8 @@ local function update_params(pp_params)
     pp_params.p_lookahead = {px_lookahead, py_lookahead, 0}
     pp_params.p_path = {pose_rbt[1], py_path, 0}
   else
-    -- Find ourselves on the path
-    -- TODO: Threshold and find on the closest road
-    local id_path, err = my_path:nearby(pose_rbt)
-    pp_params.id_path_pose = id_path
-    if not id_path then
-      return false, "No pose on path: "..tostring(err)
-    end
     -- Distance to path
-    local p_path = my_path.points[id_path]
+    local p_path = my_path.points[pp_params.longitudinal_id_current]
     pp_params.p_path = p_path
     local dx, dy = pose_rbt[1] - p_path[1], pose_rbt[2] - p_path[2]
     pp_params.d_path = math.sqrt(dx * dx + dy * dy)
@@ -228,11 +192,13 @@ local function update_params(pp_params)
     local p_lookahead = {tf2D(d_lookahead, 0, pose_rbt[3], pose_rbt[1], pose_rbt[2])}
     -- Find the nearest path point to the lookahead point
     -- TODO: Don't skip too far in a single timestep?
-    local function forwards(id) return (id > id_path) and id, true end
+    local function forwards(id)
+      return (my_path:relative_id_diff(pp_params.longitudinal_id_current, id) > 0) and id, true
+    end
     local id_path_lookahead = my_path:nearby(p_lookahead, d_lookahead, forwards)
     -- Default to the lookahead from our point
     if not id_path_lookahead then
-      id_path_lookahead = my_path:get_id_ahead(id_path, d_lookahead)
+      id_path_lookahead = my_path:get_id_ahead(pp_params.longitudinal_id_current, d_lookahead)
     end
     pp_params.id_path_lookahead = id_path_lookahead
     pp_params.p_lookahead = my_path.points[id_path_lookahead]
@@ -244,8 +210,7 @@ local function update_params(pp_params)
   local steering_desired = atan(pp_params.kappa * pp_params.wheel_base)
 
   -- Update the velocity, based on the turning radius
-  local LIMITING_RADIUS = 1.5
-  local vel_ratio_turning = math.abs(pp_params.radius_of_curvature) / LIMITING_RADIUS
+  local vel_ratio_turning = math.abs(pp_params.radius_of_curvature) / pp_params.LIMITING_RADIUS
 
   -- Find out if we are done, based on the path id of the lookahead point and our current point
   if my_path.markers then
@@ -351,6 +316,8 @@ local function cb_loop(t_us)
   if not planner_state then
     return false, "No planner information"
   end
+
+  -- Update the control parameters
   for _, params_veh in pairs(vehicle_params) do
     update_params(params_veh)
     -- Broadcast all!

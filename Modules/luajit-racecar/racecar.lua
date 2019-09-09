@@ -29,12 +29,9 @@ local function mp_fragment(ch, str, str_sz, cnt)
   }
 end
 
-local nan = 0/0
 local HOSTNAME = io.popen"hostname":read"*line"
 local ROBOT_HOME = os.getenv"ROBOT_HOME" or '.'
 local lib = {
-  nan = nan,
-  RPM_PER_MPS = 5220,
   HOSTNAME = HOSTNAME,
   ROBOT_HOME = ROBOT_HOME
 }
@@ -402,7 +399,7 @@ if IS_MAIN then
       end
       msg_houston.id = submessages[1]
       msg_houston.evt = submessages[2]
-      msg_houston.val = tonumber(submessages[3])
+      msg_houston.val = tonumber(submessages[3]) or submessages[3]
     else
       -- Simply send a message
       msg_houston.id = ''

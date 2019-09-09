@@ -60,6 +60,25 @@ local function get_nearest(self, pt, threshold_close, fn_reduce)
   return running
 end
 
+local function relative_id_diff(self, id_path, id_path_other)
+  -- Relative to id_path, how far away is id_path_other
+  local is_closed = self.closed
+  local n_points = #self.points
+  local d_id = id_path_other - id_path
+  if not is_closed then return d_id end
+  -- Loop around if closed
+  local d_id2 = (id_path_other < id_path) and (d_id + n_points) or (d_id - n_points)
+  -- Return the closer offset
+  return (fabs(d_id2) < fabs(d_id)) and d_id2 or d_id
+end
+
+local function relative_diff(self, longitudinal, longitudinal_other)
+  -- Relative to id_path, how far away is id_path_other
+  local is_closed = self.closed
+  local dist_longitudinal = longitudinal_other - longitudinal
+  if not is_closed then return dist_longitudinal % self.length end
+end
+
 -- Use a kdtree for finding in a path
 local function find_in_path(self, p_vehicle, options)
   if type(options) ~= 'table' then options = {} end
@@ -80,7 +99,7 @@ local function find_in_path(self, p_vehicle, options)
     if fabs(da) < ORIENTATION_THRESHOLD then
       return {
         idx_path = nby.user,
-        idx_lane = false,
+        idx_lane = 0,
         --
         dist = sqrt(dx*dx + dy*dy),
         dist_normal = 0/0,
@@ -117,6 +136,8 @@ local function wrap(obj)
   obj.generate_kdtree = generate_kdtree
   obj.nearby = get_nearest
   obj.get_id_ahead = get_id_ahead
+  obj.relative_id_diff = relative_id_diff
+  obj.relative_diff = relative_diff
   return setmetatable(obj, mt)
 end
 lib.wrap = wrap

@@ -5,7 +5,7 @@
     "i95": {
       "length": 5170,
       "marker_interval": 10,
-      "lane_width": 1,
+      "lane_width": 0.75,
       "initial": {
         "lanes": 3,
         "speed_limit": 25
