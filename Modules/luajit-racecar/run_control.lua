@@ -112,7 +112,10 @@ local function update_params(pp_params)
   for _, params_veh in pairs(vehicle_params) do
     local pose_veh = params_veh.pose
     -- Back axle
-    local path_info, err_find = my_path:find(pose_veh, {closeness=closeness})
+    local path_info, err_find = my_path:find(pose_veh, {
+      closeness=closeness,
+      orientation_threshold=math.rad(60)
+    })
     params_veh.lane_current = path_info and path_info.idx_lane or err_find
     params_veh.longitudinal_id_current = path_info and path_info.idx_path or err_find
     if not params_veh.lane_desired then
@@ -131,7 +134,14 @@ local function update_params(pp_params)
   --------------------------------
   -- Check the obstacles around us, if not a highway, for now
   if type(pp_params.longitudinal_id_current) ~= 'number' then
-    return false, "No pose on path: "..tostring(pp_params.longitudinal_id_current)
+    local path_info, err_find = my_path:find(pose_rbt)
+    if not path_info then
+      pp_params.lane_current = err_find
+      pp_params.longitudinal_id_current = err_find
+      return false, "No pose on path: "..tostring(err_find)
+    end
+    pp_params.lane_current = path_info.idx_lane
+    pp_params.longitudinal_id_current = path_info.idx_path
   end
 
   -- Find the lead vehicle

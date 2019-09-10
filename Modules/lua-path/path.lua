@@ -82,11 +82,12 @@ end
 -- Use a kdtree for finding in a path
 local function find_in_path(self, p_vehicle, options)
   if type(options) ~= 'table' then options = {} end
-  local closeness = tonumber(options.closeness) or 1
+  local distance_threshold = tonumber(options.distance_threshold)
+  local orientation_threshold = tonumber(options.orientation_threshold)
   -- Grab the pose angle
   local p_x, p_y, p_a = unpack(p_vehicle)
   -- Generate the candidates for this path
-  local nearby, err = self.tree:nearest(p_vehicle, closeness)
+  local nearby, err = self.tree:nearest(p_vehicle, distance_threshold)
   if not nearby then return false, err end
   -- Since distance sorted, find the first with a reasonable alignment
   for _, nby in ipairs(nearby) do
@@ -95,8 +96,7 @@ local function find_in_path(self, p_vehicle, options)
     local dx, dy = p_x - path_x, p_y - path_y
     -- Only if the path _has_ an angle at that point
     local da = path_a and mod_angle(p_a - path_a) or 0
-    local ORIENTATION_THRESHOLD = math.rad(45)
-    if fabs(da) < ORIENTATION_THRESHOLD then
+    if (not orientation_threshold) or fabs(da) < orientation_threshold then
       return {
         idx_path = nby.user,
         idx_lane = 0,

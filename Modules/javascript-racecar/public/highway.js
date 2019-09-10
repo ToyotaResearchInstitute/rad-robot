@@ -2,8 +2,6 @@ document.addEventListener("DOMContentLoaded", function(event) {
   const DEG_PER_RAD = 180 / Math.PI;
 
   const reference_vehicle = "tri1";
-  // From where to draw everything
-  let frame_of_reference = false;
   //
   const vicon2pose = p => {
     return [p.translation[0] / 1e3, p.translation[1] / 1e3, p.rotation[2]];
@@ -388,6 +386,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
     if (!vehicles) {
       return;
     }
+    const debug_info = msg.debug;
+    let frame_of_reference = false;
+    if (debug_info && debug_info["reference_vehicle"]) {
+      frame_of_reference = vicon2pose(vehicles[reference_vehicle]);
+    }
     //
     const reference_pose = vicon2pose(vehicles[reference_vehicle]);
 
@@ -405,9 +408,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
         pla_el.setAttributeNS(null, "class", "lookahead");
         environment_svg.appendChild(pla_el);
       }
-      const pla = coord2svg([p_lookahead[0] - reference_pose[0], p_lookahead[1]]);
-      pla_el.setAttributeNS(null, "cx", pla[0]);
-      pla_el.setAttributeNS(null, "cy", pla[1]);
+      let p_la = p_lookahead.slice(0);
+      if (frame_of_reference) {
+        p_la[0] -= frame_of_reference[0];
+      }
+      p_la = coord2svg(p_la);
+      pla_el.setAttributeNS(null, "cx", p_la[0]);
+      pla_el.setAttributeNS(null, "cy", p_la[1]);
     }
 
     // Near
@@ -424,9 +431,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
         pn_el.setAttributeNS(null, "class", "near");
         environment_svg.appendChild(pn_el);
       }
-      const pn = coord2svg([p_near[0] - reference_pose[0], p_near[1]]);
-      pn_el.setAttributeNS(null, "cx", pn[0]);
-      pn_el.setAttributeNS(null, "cy", pn[1]);
+      let p_n = p_near.slice(0);
+      if (frame_of_reference) {
+        p_n[0] -= frame_of_reference[0];
+      }
+      p_n = coord2svg(p_n);
+      pn_el.setAttributeNS(null, "cx", p_n[0]);
+      pn_el.setAttributeNS(null, "cy", p_n[1]);
     }
     return false;
   };

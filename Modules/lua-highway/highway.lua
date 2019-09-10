@@ -5,8 +5,8 @@ local lib = {}
 
 local function find_in_highway(self, p_vehicle, options)
   options = options or {}
-  local closeness = tonumber(options.closeness) or 1
-  local orientation_threshold = tonumber(options.orientation_threshold) or math.rad(45)
+  local distance_threshold = tonumber(options.distance_threshold)
+  local orientation_threshold = tonumber(options.orientation_threshold)
   -- Grab the pose angle
   local p_x, p_y, p_a = unpack(p_vehicle)
 
