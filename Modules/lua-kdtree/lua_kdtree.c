@@ -8,6 +8,8 @@ Author: Stephen McGill <stephen.mcgill@tri.global> 2018
 #include "kdtree.h"
 #define MT_NAME "kdtree_mt"
 
+#define MAX_DIMENSION 4
+
 struct kdtree **lua_checkkdtree(lua_State *L, int narg) {
   void *ud = luaL_checkudata(L, narg, MT_NAME);
   luaL_argcheck(L, ud != NULL, narg, "Invalid kdtree userdata");
@@ -28,10 +30,18 @@ static int lua_kdtree_index(lua_State *L) {
 
 static int lua_kdtree_create(lua_State *L) {
   int k = luaL_checkinteger(L, 1);
+
+  if (k > MAX_DIMENSION) {
+    lua_pushboolean(L, 0);
+    lua_pushliteral(L, "Too many dimensions!");
+    return 2;
+  }
+
   struct kdtree *kd = kd_create(k);
   if (!kd) {
     lua_pushboolean(L, 0);
-    return 1;
+    lua_pushliteral(L, "Could not create kd-tree!");
+    return 2;
   }
 
   // Make accessible to lua
@@ -88,9 +98,8 @@ static int lua_kdtree_insert(lua_State *L) {
     return 2;
   }
 
-  // VLA for the table
   int i;
-  double vals[k];
+  double vals[MAX_DIMENSION];
   for (i = 0; i < k; i++) {
     lua_rawgeti(L, 2, i + 1);
     // TODO: Check that each value is, in fact, a number
@@ -141,9 +150,8 @@ static int lua_kdtree_nearest(lua_State *L) {
     return 2;
   }
 
-  // VLA
   int i;
-  double vals0[k];
+  double vals0[MAX_DIMENSION];
   for (i = 1; i <= k; i++) {
     lua_rawgeti(L, 2, i);
     vals0[i - 1] = luaL_checknumber(L, -1);
@@ -169,7 +177,7 @@ static int lua_kdtree_nearest(lua_State *L) {
   // Push results
   lua_createtable(L, n_res, 0);
   i = 1;
-  double vals[k];
+  double vals[MAX_DIMENSION];
   double dist_sq;
   void *data;
   while (!kd_res_end(set)) {

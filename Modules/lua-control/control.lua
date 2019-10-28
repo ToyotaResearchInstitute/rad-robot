@@ -1,15 +1,9 @@
 local lib = {}
 
 local atan2 = require'math'.atan2 or require'math'.atan
-local fabs = require'math'.abs
-local ceil = require'math'.ceil
-local cos = require'math'.cos
 local sin = require'math'.sin
 local sqrt = require'math'.sqrt
-local tinsert = require'table'.insert
 local unpack = unpack or require'table'.unpack
---
-local tf2D = require'transform'.tf2D
 
 -- Pure Pursuit
 local function get_inverse_curvature(pose_rbt, p_lookahead)

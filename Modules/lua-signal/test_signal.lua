@@ -5,8 +5,15 @@ function ShutDownFN()
 	os.exit(1);
 end
 
-signal.signal("SIGINT", ShutDownFN);
-signal.signal("SIGTERM", ShutDownFN);
+print(signal.SIGINT)
+
+local ret = signal.signal(signal.SIGINT, ShutDownFN)
+io.stderr:write("Ret: ", tostring(ret), "\n")
+-- signal.signal(signal.SIGTERM, ShutDownFN)
+
+-- signal:signal("SIGINT", ShutDownFN);
+
+io.stderr:write("Loop...\n")
 
 while (true) do
 	print('annoying!')

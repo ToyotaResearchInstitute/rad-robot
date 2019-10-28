@@ -1,14 +1,5 @@
 #!/usr/bin/env node
 
-// Optional shared memory
-var shm;
-try {
-  shm = require('shm.node');
-} catch (e) {
-  // console.log("shm", e);
-  shm = false;
-}
-
 // Optional ZeroMQ
 var zeromq;
 try {
@@ -16,16 +7,6 @@ try {
   // console.log("zeromq", e);
 } catch (e) {
   zeromq = false;
-}
-
-var mpack, munpack;
-try {
-  const msgpack = require('msgpack5')();
-  mpack = msgpack.encode;
-  munpack = msgpack.decode;
-} catch (e) {
-  mpack = false;
-  munpack = false;
 }
 
 // HTTP service
@@ -48,14 +29,14 @@ const wss = new WebSocket.Server({port : 9001});
 
 // Store the fragments of received messages
 const getn = (arr) => arr.reduce((n, v) => n + (Buffer.isBuffer(v) ? 1 : 0), 0);
-var fragments = new Map();
+const fragments = new Map();
 
 // Store the latest fully formed messages.
-var latest = new Map();
+const latest = new Map();
 // Broadcast at a consistent rate. (10Hz is 100ms)
 const CONSISTENT_RATE_MS = 100;
 // Should we send consistently or immediately?
-const SEND_CONSISTENTLY = true;
+const SEND_CONSISTENTLY = false;
 
 // Multicast logic
 mcl_transport.bind(MCL_PORT, MCL_ADDRESS, () => {
@@ -78,6 +59,7 @@ mcl_transport.on('message', (msg, rinfo) => {
   const t = Date.now();
   // console.log(`server got message from ${rinfo.address}:${rinfo.port}`,
   // msg.length);
+  let ch = false;
   switch (msg.readUInt16BE(0)) {
   case 0x81d9: // msgpack header
     wss.broadcast(msg);
@@ -85,7 +67,6 @@ mcl_transport.on('message', (msg, rinfo) => {
   case 0x4c43: // LCM message type
     break;
   }
-  var ch = false; // Channel
   switch (msg.readUInt16BE(2)) {
   case 0x3032: // Decode LCM single: 0x4c43 3032
     const seq_id0 = msg.readUInt32BE(4);
@@ -124,7 +105,7 @@ mcl_transport.on('message', (msg, rinfo) => {
       frag = msg.slice(offset);
     }
     // Manage the unordered fragments
-    var frag_t, frag_list;
+    var frag_list;
     const uuid = `${seq_id}-${nfrag}`;
     if (fragments.has(uuid)) {
       const fragment = fragments.get(uuid);
@@ -145,12 +126,13 @@ mcl_transport.on('message', (msg, rinfo) => {
     if (n === nfrag) {
       fragments.delete(uuid);
       const map_prefix = Buffer.from([ 0x81 ]);
-      const frag_list1 = [ map_prefix ].concat(frag_list)
+      const frag_list1 = [ map_prefix ].concat(frag_list);
       const msg_mp = Buffer.concat(frag_list1);
       // console.log(`LCM1 [${seq_id}]`, ch.toString('utf8'), msg_mp.length,
       // fragments.size);
       if (SEND_CONSISTENTLY) {
         // Wait for the interval
+        // TODO: Check if ch is false
         latest.set(ch, msg_mp);
       } else {
         // Send now
@@ -192,14 +174,13 @@ wss.broadcast = (data) => {
 // Optional ZMQ listening
 if (zeromq) {
   const ZMQ_PORT = 5556;
-  var subscriber = zeromq.socket('sub');
+  const subscriber = zeromq.socket('sub');
   // Receive all messages
   subscriber.subscribe('');
   subscriber.on('message', function(msg) {
     // if (msg.readUInt16BE(0) == 0x81d9) {
     //   console.log("Bad MessagePack header", msg);
     // }
-    // console.log(munpack(msg));
     wss.broadcast(msg);
   });
   // Messages on the local machine

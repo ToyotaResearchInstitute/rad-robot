@@ -7,6 +7,7 @@ OSTYPE = $(shell uname -s | tr '[:upper:]' '[:lower:]')
 endif
 
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
+# LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(5\.?[23])" | sort -r | head -n1)
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
 CFLAGS ?= -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)

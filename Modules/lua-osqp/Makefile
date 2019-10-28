@@ -9,30 +9,35 @@ endif
 LUA = $(shell pkg-config --list-all | egrep -o "^lua-?(jit|5\.?[123])" | sort -r | head -n1)
 LUA_INCDIR ?= . $(shell pkg-config $(LUA) --cflags-only-I)
 LUA_LIBDIR ?= . $(shell pkg-config $(LUA) --libs-only-L)
-CCWARN= -Wall
-CCWARN+= -Wextra -Wdeclaration-after-statement -Wredundant-decls -Wshadow -Wpointer-arith
-CFLAGS ?= $(CCWARN) -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
 
 ifeq ($(OSTYPE),darwin)
-LIBFLAG ?= -bundle -undefined dynamic_lookup -all_load -macosx_version_min 10.13
+LDFLAGS ?= -bundle -undefined dynamic_lookup -all_load -macosx_version_min 10.13
 else # Linux linking and installation
-LIBFLAG ?= -shared
+LDFLAGS ?= -shared
 endif
+
+CCWARN= -Wall
+CCWARN+= -Wextra -Wdeclaration-after-statement -Wredundant-decls -Wshadow -Wpointer-arith
+CCWARN += -Werror=vla
+CFLAGS ?= $(CCWARN) -fPIC -O2 $(shell pkg-config $(LUA) --cflags-only-other)
+CFLAGS+=-DDEBUG
+
+LDLIBS=-losqp
 
 all: $(TARGET)
 	@echo LUA: $(LUA)
 	@echo --- build
 	@echo CFLAGS: $(CFLAGS)
-	@echo LIBFLAG: $(LIBFLAG)
+	@echo LDFLAGS: $(LDFLAGS)
 	@echo LUA_LIBDIR: $(LUA_LIBDIR)
 	@echo LUA_BINDIR: $(LUA_BINDIR)
 	@echo LUA_INCDIR: $(LUA_INCDIR)
 
 $(TARGET): $(OBJS)
-	$(LD) $(LIBFLAG) -o $@ -L$(LUA_LIBDIR) $(OBJS) -losqp
+	$(LD) $(LDFLAGS) -o $@ -L$(LUA_LIBDIR) $(OBJS) $(LDLIBS)
 
 %.o: %.c
-	$(CC) -c -o $@ $< -I$(LUA_INCDIR) $(CFLAGS) -DDEBUG
+	$(CC) -c -o $@ $< -I$(LUA_INCDIR) $(CFLAGS)
 
 install: $(TARGET)
 	@echo --- install

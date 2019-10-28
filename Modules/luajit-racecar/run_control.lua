@@ -48,7 +48,7 @@ local function vehicle_new(params)
     velocity_stddev = velocity_stddev,
     velocity_max = vel_max,
     velocity_min = vel_min,
-    LIMITING_RADIUS = 2 * wheel_base,
+    limiting_radius = 2 * wheel_base,
     --
     pathname = params.path or 'lane_outerA+1',
     lane_desired = false,
@@ -220,7 +220,7 @@ local function update_params(pp_params)
   local steering_desired = atan(pp_params.kappa * pp_params.wheel_base)
 
   -- Update the velocity, based on the turning radius
-  local vel_ratio_turning = math.abs(pp_params.radius_of_curvature) / pp_params.LIMITING_RADIUS
+  local vel_ratio_turning = math.abs(pp_params.radius_of_curvature) / pp_params.limiting_radius
 
   -- Find out if we are done, based on the path id of the lookahead point and our current point
   if my_path.markers then

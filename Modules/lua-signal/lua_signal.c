@@ -43,13 +43,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct lua_signal
-{
+typedef const struct const_info {
   const char *name; /* name of the signal */
-  const int sig; /* the signal */
-};
+  const int value; /* the signal */
+} const_info;
 
-static const struct lua_signal lua_signals[] = {
+void lua_install_constants(lua_State *L, const_info constants[]) {
+  int i;
+  for (i = 0; constants[i].name; i++) {
+    lua_pushstring(L, constants[i].name);
+    lua_pushinteger(L, constants[i].value);
+    lua_rawset(L, -3);
+  }
+}
+
+static const struct const_info lua_signals[] = {
   /* ANSI C signals */
 #ifdef SIGABRT
   {"SIGABRT", SIGABRT},
@@ -172,20 +180,23 @@ static struct hook {
 
 static void hook (lua_State *L, lua_Debug *ar)
 {
+  fprintf(stderr, "hook\n");
   int i, j;
   // TODO: I think we can omit this assert? Checks if in another Lua state
   // assert(L == ML);
   for (i = 0; i < signal_stack_top; i++)
     while (signal_stack[i] != signal_stack[i+signal_stack_top])
     {
+      // Grab the dictionary of the signal
       lua_getfield(L, LUA_REGISTRYINDEX, LUA_SIGNAL_NAME);
       lua_pushinteger(L, i);
       lua_rawget(L, -2);
+      // Unsure why this replace...?
       lua_replace(L, -2); /* replace _R.LUA_SIGNAL_NAME */
       // TODO: Remove all asserts and replace with something else
       assert(lua_isfunction(L, -1));
       for (j = 0; lua_signals[j].name != NULL; j++)
-        if (lua_signals[j].sig == i)
+        if (lua_signals[j].value == i)
         {
           lua_pushstring(L, lua_signals[j].name);
           break;
@@ -201,6 +212,7 @@ static void hook (lua_State *L, lua_Debug *ar)
 
 static void handle (int sig)
 {
+  fprintf(stderr, "handle\n");
   assert(ML != NULL);
   if (old_hook.hook == NULL) /* replace it */
   {
@@ -214,13 +226,16 @@ static void handle (int sig)
 
 static int get_signal (lua_State *L, int idx)
 {
+  fprintf(stderr, "get_signal\n");
   switch (lua_type(L, idx))
   {
     case LUA_TNUMBER:
-      return (int) lua_tointeger(L, idx);
+      fprintf(stderr, "signal number\n");
+      return lua_tointeger(L, idx);
     case LUA_TSTRING:
+      fprintf(stderr, "signal string\n");
       lua_pushvalue(L, idx);
-      lua_rawget(L, LUA_ENVIRONINDEX);
+      lua_rawget(L, LUA_REGISTRYINDEX);
       if (!lua_isnumber(L, -1))
         return luaL_argerror(L, idx, "invalid signal string");
       lua_replace(L, idx);
@@ -232,6 +247,7 @@ static int get_signal (lua_State *L, int idx)
 
 static int status (lua_State *L, int s)
 {
+  fprintf(stderr, "status\n");
   if (s)
   {
     lua_pushboolean(L, 1);
@@ -245,6 +261,37 @@ static int status (lua_State *L, int s)
   }
 }
 
+static void stackDump (lua_State *L) {
+  fprintf(stderr, "\n!! STACK DUMP !!\n");
+  int i;
+  int top = lua_gettop(L);
+  for (i = 1; i <= top; i++) {  /* repeat for each level */
+    fprintf(stderr, "%d: ", i);
+    int t = lua_type(L, i);
+    switch (t) {
+
+      case LUA_TSTRING:  /* strings */
+        fprintf(stderr, "`%s'", lua_tostring(L, i));
+        break;
+
+      case LUA_TBOOLEAN:  /* booleans */
+        fprintf(stderr, lua_toboolean(L, i) ? "true" : "false");
+        break;
+
+      case LUA_TNUMBER:  /* numbers */
+        fprintf(stderr, "%g", lua_tonumber(L, i));
+        break;
+
+      default:  /* other values */
+        fprintf(stderr, "%s", lua_typename(L, t));
+        break;
+
+    }
+    fprintf(stderr, "\n");  /* put a separator */
+  }
+  fprintf(stderr, "!! STACK DUMP END!!\n");
+}
+
 /*
  * old_handler[, err] == signal(signal [, func])
  *
@@ -253,39 +300,67 @@ static int status (lua_State *L, int s)
 */  
 static int l_signal (lua_State *L)
 {
+  fprintf(stderr, "l_signal start\n");
   enum {IGNORE, DEFAULT, SET};
   static const char *options[] = {"ignore", "default", NULL};
   int sig = get_signal(L, 1);
   int option;
 
-  if (lua_isstring(L, 2))
+  fprintf(stderr, "l_signal get option\n");
+  if (lua_isstring(L, 2)) {
     option = luaL_checkoption(L, 2, NULL, options);
-  else if (lua_isnil(L, 2))
+  } else if (lua_isnil(L, 2)) {
     option = DEFAULT;
-  else
-    option = (luaL_checktype(L, 2, LUA_TFUNCTION), SET);
+  } else {
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    option = SET;
+  }
+  stackDump(L);
+
+  fprintf(stderr, "l_signal option %d\n", option);
+
+  // Push the LUA_SIGNAL_NAME from the registry
+  lua_getfield(L, LUA_REGISTRYINDEX, LUA_SIGNAL_NAME);
+  lua_pushvalue(L, 1);
+
+  fprintf(stderr, "l_signal get old handler\n");
+  stackDump(L);
+  lua_rawget(L, -2); /* return old handler */
+  // lua_rawget(L, LUA_REGISTRYINDEX); /* return old handler */
+  
+  // TODO: Check if old and new are equal
+  // Remove the old handler...
+  lua_pop(L, 1);
+
+  fprintf(stderr, "l_signal prepare to set handler\n");
+  stackDump(L);
 
   lua_pushvalue(L, 1);
-  lua_rawget(L, LUA_ENVIRONINDEX); /* return old handler */
 
-  lua_pushvalue(L, 1);
+  stackDump(L);
+
   switch (option)
   {
     case IGNORE:
       lua_pushnil(L);
-      lua_rawset(L, LUA_ENVIRONINDEX);
+      // lua_rawset(L, LUA_REGISTRYINDEX);
+      lua_rawset(L, -3);
       signal(sig, SIG_IGN);
       signal_stack[sig+signal_stack_top] = signal_stack[sig] = 0;
       break;
     case DEFAULT:
       lua_pushnil(L);
-      lua_rawset(L, LUA_ENVIRONINDEX);
+      // lua_rawset(L, LUA_REGISTRYINDEX);
+      lua_rawset(L, -3);
       signal(sig, SIG_DFL);
       signal_stack[sig+signal_stack_top] = signal_stack[sig] = 0;
       break;
     case SET:
+      fprintf(stderr, "l_signal set\n");
+      // NOTE: This value is a function
       lua_pushvalue(L, 2);
-      lua_rawset(L, LUA_ENVIRONINDEX);
+      // lua_rawset(L, LUA_REGISTRYINDEX);
+      lua_rawset(L, -3);
 
 #if USE_SIGACTION
       {
@@ -297,13 +372,16 @@ static int l_signal (lua_State *L)
           return status(L, 0);
       }
 #else
-      if (signal(sig, handle) == SIG_ERR)
+      if (signal(sig, handle) == SIG_ERR) {
         return status(L, 0);
+      }
 #endif
       break;
     default: assert(0);
   }
+  fprintf(stderr, "l_signal done\n");
 
+  // Should return the old handler?
   return 1;
 }
 
@@ -347,13 +425,14 @@ static int l_pause (lua_State *L) /* race condition free */
 
 #endif
 
-static int interrupted (lua_State *L)
-{
-  return luaL_error(L, "interrupted!");
-}
+// static int interrupted (lua_State *L)
+// {
+//   return luaL_error(L, "interrupted!");
+// }
 
 static int library_gc (lua_State *L)
 {
+  fprintf(stderr, "library_gc\n");
   lua_getfield(L, LUA_REGISTRYINDEX, LUA_SIGNAL_NAME);
   lua_pushnil(L);
   while (lua_next(L, -2))
@@ -369,9 +448,7 @@ static int library_gc (lua_State *L)
   return 0;
 }
 
-int luaopen_signal (lua_State *L)
-{
-  static const struct luaL_Reg lib[] = {
+static const struct luaL_Reg signal_lib[] = {
     {"signal", l_signal},
     {"raise", l_raise},
 #if INCLUDE_KILL
@@ -383,8 +460,11 @@ int luaopen_signal (lua_State *L)
     {NULL, NULL}
   };
 
-  int i;
-  int max_signal;
+int luaopen_signal (lua_State *L)
+{
+
+  // int i;
+  // int max_signal;
 
   ML = L;
   if (lua_pushthread(L))
@@ -392,46 +472,49 @@ int luaopen_signal (lua_State *L)
   else
     luaL_error(L, "library should be opened by the main thread");
 
-  /* environment */
-  lua_newtable(L);
-  lua_replace(L, LUA_ENVIRONINDEX);
-  lua_pushvalue(L, LUA_ENVIRONINDEX);
-  lua_setfield(L, LUA_REGISTRYINDEX, LUA_SIGNAL_NAME); /* for hooks */
-
   /* add the library */
-  luaL_register(L, LUA_LIB_NAME, lib);
+#if LUA_VERSION_NUM == 501
+  luaL_register(L, LUA_LIB_NAME, signal_lib);
+#else
+  luaL_newlib(L, signal_lib);
+#endif
+
   lua_pushliteral(L, LUA_LIB_VERSION);
   lua_setfield(L, -2, "version");
 
-  for (i = 0, max_signal = 0; lua_signals[i].name != NULL; i++)
-    if (lua_signals[i].sig > max_signal)
-      max_signal = lua_signals[i].sig+1; /* +1 !!! (for < loops) */
+  // Add the constants for adding signals
+  lua_install_constants(L, lua_signals);
 
-  signal_stack = lua_newuserdata(L, sizeof(volatile sig_atomic_t)*max_signal*2);
+  // Setup the signal_stack, and add to the library table
+  size_t n_signals = sizeof(lua_signals)/sizeof(lua_signals[0]) - 1;
+  signal_stack_top = n_signals;
+  signal_stack = lua_newuserdata(L, sizeof(volatile sig_atomic_t)*n_signals*2);
+  bzero((void*)signal_stack, sizeof(volatile sig_atomic_t)*n_signals*2);
+  lua_setfield(L, -2, "signal_stack");
+
+  // Add a signal library metatable
   lua_newtable(L);
   lua_pushcfunction(L, library_gc);
   lua_setfield(L, -2, "__gc");
   lua_setmetatable(L, -2); /* when userdata is gc'd, close library */
-  memset((void *) signal_stack, 0, sizeof(volatile sig_atomic_t)*max_signal*2);
-  signal_stack_top = max_signal;
-  lua_pushboolean(L, 1);
-  lua_rawset(L, LUA_ENVIRONINDEX);
 
-  while (i--) /* i set from previous for loop */
-  {
-    lua_pushstring(L, lua_signals[i].name);
-    lua_pushinteger(L, lua_signals[i].sig);
-    lua_rawset(L, LUA_ENVIRONINDEX); /* add copy to environment table */
-    lua_pushstring(L, lua_signals[i].name);
-    lua_pushinteger(L, lua_signals[i].sig);
-    lua_settable(L, -3); /* add copy to signal table */
-  }
+  /* environment */
+  lua_newtable(L);
+  // // Place the table as the LUA_ENVIRONINDEX
+  // lua_replace(L, LUA_ENVIRONINDEX);
+  // lua_pushvalue(L, LUA_ENVIRONINDEX);
+  // // Set the registry table to reg_tbl[LUA_SIGNAL_NAME] = LUA_ENVIRONINDEX
+  lua_setfield(L, LUA_REGISTRYINDEX, LUA_SIGNAL_NAME); /* for hooks */
+  
+  // lua_pushboolean(L, 1);
+  // lua_rawset(L, LUA_ENVIRONINDEX);
 
   /* set default interrupt handler */
-  lua_getfield(L, -1, "signal");
-  lua_pushinteger(L, SIGINT);
-  lua_pushcfunction(L, interrupted);
-  lua_call(L, 2, 0);
+  // Get the signal function from the newlib signal library
+  // lua_getfield(L, -1, "signal");
+  // lua_pushinteger(L, SIGINT);
+  // lua_pushcfunction(L, interrupted);
+  // lua_call(L, 2, 0);
 
   return 1;
 }

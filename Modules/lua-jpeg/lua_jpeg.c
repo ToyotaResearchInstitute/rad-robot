@@ -254,7 +254,7 @@ static int lua_jpeg_compress_crop(lua_State *L) {
   cinfo->image_width = w_cropped >> ud->subsample;
   cinfo->image_height = h_cropped >> ud->subsample;
   int w = cinfo->image_width;
-  int h = cinfo->image_height;
+  JDIMENSION h = cinfo->image_height;
 
 #ifdef DEBUG
   int line = 0;
@@ -414,7 +414,7 @@ static int lua_jpeg_compress(lua_State *L) {
 
   // YUYV is special
   int w = cinfo->image_width;
-  int h = cinfo->image_height;
+  JDIMENSION h = cinfo->image_height;
   if (ud->fmt == 3 && ud->subsample == 0) {
     JSAMPLE *yuv_row = malloc(3 * w * sizeof(JSAMPLE));
     if ((*row_pointer = yuv_row) == NULL) {

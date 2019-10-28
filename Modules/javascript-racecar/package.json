@@ -6,20 +6,20 @@
   "dependencies": {
     "finalhandler": "^1.1.2",
     "msgpack5": "^4.2.1",
-    "npm": "^6.11.2",
-    "plotly.js": "^1.49.4",
+    "npm": "^6.12.0",
+    "plotly.js": "^1.50.1",
     "serve-static": "^1.14.1",
     "smoothie": "^1.35.0",
     "three": "^0.107.0",
-    "ws": "^7.1.0",
-    "zeromq": "^5.1.0"
+    "ws": "^7.2.0",
+    "zeromq": "^5.1.1"
   },
   "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": "ISC",
+  "license": "BSD",
   "jshintConfig": {
     "esversion": 6,
     "globals": {}
