@@ -19,7 +19,7 @@ local function exit()
   skt_vicon:close()
   skt_vicon = nil
 end
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 
 local function on_vicon(e)
   if e~=1 and skt_vicon then

@@ -11,7 +11,7 @@ if has_jpeg then
 end
 
 local abs = require'math'.abs
-local atan2 = require'math'.atan2
+local atan2 = require'math'.atan2 or require'math'.atan
 local cos = require'math'.cos
 local sin = require'math'.sin
 local ceil = require'math'.ceil

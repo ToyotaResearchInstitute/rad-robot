@@ -143,31 +143,21 @@ function lib.nanosleep(t_ns)
 end
 
 -- Grab the time in seconds
--- NOTE: This is not thread safe!
-local t = ffi.new'timeval'
--- Public way to always access time
--- unix.t = t
 -- Allow time functions to run conversions from a different t
 function lib.time(t1)
-  if not t1 then
-    C.gettimeofday(t, nil)
-    t1 = t
-  end
-  return tonumber(t1.tv_sec) + 1e-6 * t1.tv_usec, t1
+  local t = t1 or ffi.new'timeval'
+  C.gettimeofday(t, nil)
+  return tonumber(t.tv_sec) + 1e-6 * t.tv_usec, t
 end
 function lib.time_ms(t1)
-  if not t1 then
-    C.gettimeofday(t, nil)
-    t1 = t
-  end
-  return tonumber(1e3 * t1.tv_sec) + 1e-3 * t1.tv_usec, t1
+  local t = t1 or ffi.new'timeval'
+  C.gettimeofday(t, nil)
+  return tonumber(1e3 * t.tv_sec) + 1e-3 * t.tv_usec, t
 end
 function lib.time_us(t1)
-  if not t1 then
-    C.gettimeofday(t, nil)
-    t1 = t
-  end
-  return 1e6 * t1.tv_sec + t1.tv_usec, t1
+  local t = t1 or ffi.new'timeval'
+  C.gettimeofday(t, nil)
+  return 1e6 * ffi.cast('uint64_t', t.tv_sec) + t.tv_usec
 end
 
 local function errormsg(msg)

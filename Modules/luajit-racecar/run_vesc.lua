@@ -146,7 +146,7 @@ if fd_vesc then
   fd_updates[fd_vesc] = update_read
 end
 
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 racecar.listen{
   channel_callbacks = cb_tbl,
   fd_updates = fd_updates,

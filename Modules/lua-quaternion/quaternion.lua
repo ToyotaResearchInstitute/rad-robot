@@ -4,25 +4,23 @@ local sin = require'math'.sin
 local cos = require'math'.cos
 local acos = require'math'.acos
 local asin = require'math'.asin
-local atan2 = require'math'.atan2
+local atan2 = require'math'.atan2 or require'math'.atan
 local abs = require'math'.abs
 local sqrt = require'math'.sqrt
-local pow = require'math'.pow
 local PI = require'math'.pi
 local TWO_PI = 2 * PI
 
 local unpack = unpack or require'table'.unpack
 
 local eps = 1e-9
+-- From vector
+-- https://en.wikipedia.org/wiki/Machine_epsilon
+-- local EPSILON = 2.22044604925031308e-16
 
 local function vnorm(q)
-  if #q==3 then
-    return sqrt(pow(q[1], 2) + pow(q[2], 2) + pow(q[3], 2))
-  elseif #q==4 then
-    return sqrt(pow(q[1], 2) + pow(q[2], 2) + pow(q[3], 2) + pow(q[4], 2))
-  else
-    return false, "Bad q norm"
-  end
+  local sq_sum = q[1]^2 + q[2]^2 + q[3]^2
+  if #q==4 then sq_sum = sq_sum + q[4]^2 end
+  return sqrt(sq_sum)
 end
 
 local mt = {}
@@ -82,7 +80,7 @@ quaternion.from_rotation_vector = from_rotation_vector
 local function qlog(q)
   local q1, q2, q3, q4 = unpack(unit(q))
   local mag = sqrt(q1*q1 + q2*q2 + q3*q3)
-  -- local mag = sqrt(pow(q1, 2) + pow(q2, 2) + pow(q3, 2))
+  -- local mag = sqrt(q1^2) + q2^2 + q3^2)
   -- local mag = vnorm{q2, q3, q4}
   -- local alphaW = 2 * asin(mag)
   -- local factor = alphaW / mag

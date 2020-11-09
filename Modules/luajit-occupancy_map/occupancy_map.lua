@@ -2,16 +2,18 @@
 -- (c) 2018 Stephen McGill
 -- Maintain an occupancy map (grid-based)
 -- with inputs of laser points
+-- TODO: #pa should always be 2... convert this library to be a 2D only version
+-- TODO: Replace ipairs loops with #
+-- TODO: Remove unpack
 
 local cos = require'math'.cos
 local sin = require'math'.sin
 local min = require'math'.min
 local max = require'math'.max
-local pow = require'math'.pow
 local sqrt = require'math'.sqrt
+local HUGE = require'math'.huge
 local tinsert = require'table'.insert
 local unpack = unpack or require'table'.unpack
-
 --
 local grid = require'grid'
 
@@ -26,8 +28,8 @@ local function tf2D(x, y, c, s, tx, ty)
 end
 local function dist(pa, pb)
   local d = 0
-  for i, a in ipairs(pa) do
-    d = d + pow(a - pb[i], 2)
+  for i=1,#pa do
+    d = d + (pa[i] - pb[i]) ^ 2
   end
   return sqrt(d)
 end
@@ -41,7 +43,7 @@ local function thindex(self, xs, ys, zs)
   local DIST_THRESH = M_SQRT2 * self.gridmap.scale
   -- just a 2D map, so consider only the 2D points
   -- NOTE: In the future, we can change a bit
-  local p_prev = {math.huge, math.huge}
+  local p_prev = {HUGE, HUGE}
   for i=1,#xs do
     local p = {xs[i], ys[i]}
     local dp_prev = dist(p_prev, p)
@@ -63,7 +65,7 @@ local function match_particles(self, particles_map, pts_rbt, thinds)
   local lxs_rbt, lys_rbt, lzs_rbt = unpack(pts_rbt)
   --
   local hits = {}
-  local imax, vmax = -1, -math.huge
+  local imax, vmax = -1, -HUGE
   -- Iterate through each particle
   for ip, p_map in particles_map do
     local pose_x, pose_y, pose_th = unpack(p_map)
@@ -104,7 +106,7 @@ local function match_pose(self, pose_map, pts_rbt, valid, thinds)
   local offset_pts, offset_th = self.offset_pts, self.offset_th
   local pose_x, pose_y, pose_th = unpack(pose_map)
   local lxs_rbt, lys_rbt, lzs_rbt = unpack(pts_rbt)
-  local vmax_hits = -math.huge
+  local vmax_hits = -HUGE
   local imax_th = -1
   local imax_pt = -1
   -- Search across angles th(eta)
@@ -138,7 +140,7 @@ local function match_pose(self, pose_map, pts_rbt, valid, thinds)
       end
     end
     -- Add a prior to our initial guess
-    local imax, vmax = -1, -math.huge
+    local imax, vmax = -1, -HUGE
     for i, v in ipairs(hits_off_pts) do
       if v > vmax then imax = i; vmax = v end
     end

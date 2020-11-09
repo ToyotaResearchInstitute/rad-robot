@@ -67,7 +67,7 @@ end
 local UDP_HEADER_SZ = 20
 local BATCH_SZ = 2
 local MAX_LENGTH = 65535 -- Jumbo UDP packet
-local SKT_BUFFER_SZ = math.pow(2, 20)
+local SKT_BUFFER_SZ = 2^20
 local UNIX_PATH_MAX = 108
 
 ffi.cdef[[
@@ -335,6 +335,7 @@ local function recvmsg(self)
   return str, address, port, ts
 end
 
+-- NOTE: msghdr_x seems to be the same
 ffi.cdef[[
 struct mmsghdr {
   struct msghdr msg_hdr;  /* Message header */
@@ -344,6 +345,14 @@ struct mmsghdr {
 
 local recvmmsg
 if ffi.os=='OSX' or true then
+  -- TODO: recvmsg_x
+  -- https://opensource.apple.com/source/xnu/xnu-7195.81.3/bsd/sys/socket.h.auto.html
+  -- https://googleprojectzero.blogspot.com/2019/08/in-wild-ios-exploit-chain-1.html
+  -- http://newosxbook.com/bonus/vol1ch16.html
+  -- Location 480 (0x1e0)
+  -- https://fossies.org/linux/valgrind/coregrind/m_syswrap/priv_syswrap-darwin.h
+  -- Call assembly within LuaJIT...
+  -- https://stackoverflow.com/questions/53805913/how-to-define-c-functions-with-luajit
   recvmmsg = function(self, block)
     local msgs = {}
     repeat

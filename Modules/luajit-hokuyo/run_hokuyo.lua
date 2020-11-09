@@ -61,21 +61,6 @@ local function shutdown()
   os.exit()
 end
 
--- local unix = require'unix'
--- local has_unix, unix = pcall(require, 'unix')
--- if not has_unix then
---   print("No unix module for opening serial port")
---   os.exit()
--- end
-
-local has_signal, signal = pcall(require, 'signal')
-if has_signal then
-  signal.signal("SIGINT", shutdown);
-  signal.signal("SIGTERM", shutdown);
-else
-  print("No signal module")
-end
-
 local pkt_on = assert(hokuyo.stream_on())
 
 print("\n== Stream On ==")
@@ -132,4 +117,3 @@ while skt.poll({transport.fd}, 50) > 0 do
 end
 
 shutdown()
-

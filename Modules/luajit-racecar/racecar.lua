@@ -62,29 +62,29 @@ local function init(options)
 end
 lib.init = init
 
-local exit_handler = false
-lib.running = true
-if has_signal then
-  local function shutdown()
-    if lib.running == false then
-      lib.running = nil
-      io.stderr:write"!! Double shutdown\n"
-      os.exit(type(exit_handler)=='function' and exit_handler() or 1)
-    elseif lib.running == nil then
-      io.stderr:write"!! Final shutdown\n"
-      os.exit(1)
-    end
-    lib.running = false
-  end
-  signal.signal("SIGINT", shutdown);
-  signal.signal("SIGTERM", shutdown);
-else
-  io.stderr:write"No signal Support\n"
-end
+-- local exit_handler = false
+-- lib.running = true
+-- if has_signal then
+--   local function shutdown()
+--     if lib.running == false then
+--       lib.running = nil
+--       io.stderr:write"!! Double shutdown\n"
+--       os.exit(type(exit_handler)=='function' and exit_handler() or 1)
+--     elseif lib.running == nil then
+--       io.stderr:write"!! Final shutdown\n"
+--       os.exit(1)
+--     end
+--     lib.running = false
+--   end
+--   signal.signal("SIGINT", shutdown);
+--   signal.signal("SIGTERM", shutdown);
+-- else
+--   io.stderr:write"No signal Support\n"
+-- end
 
-function lib.handle_shutdown(fn)
-  exit_handler = fn
-end
+-- function lib.handle_shutdown(fn)
+--   exit_handler = fn
+-- end
 
 local function announce(channel, str, cnt)
   if not mcl_obj then

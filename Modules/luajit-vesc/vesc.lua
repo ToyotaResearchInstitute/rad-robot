@@ -1,22 +1,46 @@
 #!/usr/bin/env luajit
 
-local lib = {
-  RPM_PER_MPS = 5220,
-}
-
-local band = require'bit'.band
 local bxor = require'bit'.bxor
 local lshift = require'bit'.lshift
 local rshift = require'bit'.rshift
+--
 local coyield = require'coroutine'.yield
 local floor = require'math'.floor
 local tinsert = require'table'.insert
 
+-- Universaal bit operation functions
+local firstByte, firstTwoBytes
+if pcall(require, 'bit') then
+  local bit = require'bit'
+  firstByte = function(v)
+    return bit.band(v, 0xFF)
+  end
+  firstTwoBytes = function(v)
+    return bit.band(v, 0xFFFF)
+  end
+  selectByte = function(v, ibyte)
+    local nbits = (8 * (ibyte or 1))
+    return firstByte(bit.rshift(val, nbits))
+  end
+else
+  firstByte = function(v)
+    return v & 0xFF
+  end
+  firstTwoBytes = function(v)
+    return v & 0xFFFF
+  end
+  selectByte = function(v, ibyte)
+    local nbits = 8 * (ibyte or 1)
+    return firstByte(val >> nbits)
+  end
+end
+
+-- Convenience functions
 local function lshift16(val, amt)
-  return band(lshift(val, amt or 1), 0xFFFF)
+  return firstTwoBytes(lshift(val, amt or 1))
 end
 local function rshift8(val, amt)
-  return band(rshift(val, amt or 1), 0xFF)
+  return firstByte(rshift(val, amt or 1))
 end
 
 -- Implement CRC16-CCITT
@@ -27,11 +51,9 @@ local function generate_crc16_lut()
     local crc = 0
     local c = lshift16(idx, 8)
     for _=0, 7 do
-      if band(bxor(c, crc), 0x8000) ~= 0 then
-        crc = bxor(lshift16(crc), base)
-      else
-        crc = lshift16(crc)
-      end
+      local ret = band(bxor(c, crc), 0x8000) ~= 0
+      -- Update the CRC
+      crc = ret and bxor(lshift16(crc), base) or lshift16(crc)
       c = lshift16(c)
     end
     tinsert(crc16_lut, crc)
@@ -41,11 +63,16 @@ end
 
 local crc16_lut = generate_crc16_lut()
 
+local lib = {
+  RPM_PER_MPS = 5220,
+  crc16_lut = crc16_lut
+}
+
 local function calculate_crc(payload, a, b)
   local sum = 0
   for i=(a or 1), (b or #payload) do
-    local tmp = bxor(rshift(sum, 8), payload[i])
-    local crc = crc16_lut[band(tmp, 0xFF) + 1]
+    local tmp = bxor(selectByte(sum), payload[i])
+    local crc = crc16_lut[firstByte(tmp) + 1]
     sum = bxor(crc, lshift16(sum, 8))
   end
   return sum
@@ -55,7 +82,7 @@ local function set_crc(pkt)
   local len = #pkt
   local sum = calculate_crc(pkt, 3, len-3)
   pkt[len - 2] = rshift8(sum, 8)
-  pkt[len - 1] = band(sum, 0xFF)
+  pkt[len - 1] = firstByte(sum)
   return pkt
 end
 
@@ -103,7 +130,7 @@ function lib.duty_cycle(val)
     rshift8(val, 24),
     rshift8(val, 16),
     rshift8(val, 8),
-    band(val, 0xFF),
+    firstByte(val),
     -- No CRC, yet
     false, false,
     -- End the packet
@@ -129,7 +156,7 @@ function lib.current(val)
     rshift8(val, 24),
     rshift8(val, 16),
     rshift8(val, 8),
-    band(val, 0xFF),
+    firstByte(val),
     -- No CRC, yet
     false, false,
     -- End the packet
@@ -154,7 +181,7 @@ function lib.current_brake(val)
     rshift8(val, 24),
     rshift8(val, 16),
     rshift8(val, 8),
-    band(val, 0xFF),
+    firstByte(val),
     -- No CRC, yet
     false, false,
     -- End the packet
@@ -180,7 +207,7 @@ function lib.rpm(val)
     rshift8(val, 24),
     rshift8(val, 16),
     rshift8(val, 8),
-    band(val, 0xFF),
+    firstByte(val),
     -- No CRC, yet
     false, false,
     -- End the packet
@@ -206,7 +233,7 @@ function lib.position(val)
     rshift8(val, 24),
     rshift8(val, 16),
     rshift8(val, 8),
-    band(val, 0xFF),
+    firstByte(val),
     -- No CRC, yet
     false, false,
     -- End the packet
@@ -230,7 +257,7 @@ function lib.servo_position(val)
     -- Set the payload
     ID_SET_SERVO_POSITION,
     rshift8(val, 8),
-    band(val, 0xFF),
+    firstByte(val),
     -- No CRC, yet
     false, false,
     -- End the packet
@@ -484,5 +511,4 @@ function lib.update(new_data)
   end -- while a string
 end
 
-lib.crc16_lut = crc16_lut
 return lib

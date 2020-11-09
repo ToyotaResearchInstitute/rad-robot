@@ -1,35 +1,45 @@
-local vector  = {}
+local lib  = {}
 local mt      = {}
 
-local math = require'math'
+local deg2rad = require'math'.rad
+local rad2deg = require'math'.deg
 local max = require'math'.max
 local min = require'math'.min
 local log = require'math'.log
 local PI = require'math'.pi
-local pow = require'math'.pow
 local random = require'math'.random
 local sqrt = require'math'.sqrt
+--
+local tmove = require'table'.move
 local tremove = require'table'.remove
 local unpack = unpack or require'table'.unpack
+-- https://en.wikipedia.org/wiki/Machine_epsilon
+local EPSILON = 2.22044604925031308e-16
 
-function vector.ones(n)
-  local t = {}
+-- Use the LuaJIT extension, when possible
+local has_tnew, tnew = pcall(require, 'table.new')
+if not has_tnew then
+  tnew = function() return {} end
+end
+
+function lib.ones(n)
   n = n or 1
+  local t = tnew(n, 0)
   for i = 1,n do t[i] = 1 end
   return setmetatable(t, mt)
 end
 
 local function zeros(n)
-  local t = {}
   n = n or 1
+  local t = tnew(n, 0)
   for i = 1,n do t[i] = 0 end
   return setmetatable(t, mt)
 end
-vector.zeros = zeros
+lib.zeros = zeros
 
-function vector.random(n, a, b)
-  local t = {}
+function lib.random(n, a, b)
   n = n or 1
+  local t = tnew(n, 0)
   if b then
     for i = 1, n do t[i] = random(a, b) end
   elseif a then
@@ -54,59 +64,61 @@ local function randn(std, mu)
   end
   w = sqrt( (-2.0 * log( w ) ) / w )
   -- Two numbers given for free
-  local y1 = x1 * w
-  local y2 = x2 * w
-  return mu + y1 * std, mu + y2 * std
+  return mu + (x1 * w) * std, mu + (x2 * w) * std
 end
-function vector.randn(n, std, mu)
-  local t = {}
+function lib.randn(n, std, mu)
+  n = n or 1
+  local t = tnew(n, 0)
   for i = 1, n, 2 do
     t[i], t[i+1] = randn(std, mu)
   end
   -- Went two by two
-  while #t>n do tremove(t) end
+  if #t > n then tremove(t) end
   return setmetatable(t, mt)
 end
 
 local function new(t)
-  local tp = type(t)
-  if tp=='number' then
+  if type(t)=='number' then
     return zeros(t)
-  elseif tp == 'table' then
+  elseif type(t) == 'table' then
     return setmetatable(t, mt)
   end
   return setmetatable({}, mt)
 end
-vector.new = new
+lib.new = new
 
-local function copy(t, tt)
-  tt = tt or {}
-  for i=1,#t do tt[i] = t[i] end
-  return setmetatable(tt, mt)
+local function copy(t_source, t_dest)
+  --return setmetatable(table.move(a1, 1, #t_source, 1, t_dest), mt)
+  ----[[
+  t_dest = t_dest or {}
+  for i=1,#t_source do t_dest[i] = t_source[i] end
+  return setmetatable(t_dest, mt)
+  --]]
 end
-vector.copy = copy
+lib.copy = copy
 
-function vector.count(start, n)
-  local t = {}
+function lib.count(start, n)
   n = n or 1
+  local t = tnew(n, 0)
   for i = 1,n do t[i] = start+i-1 end
   return setmetatable(t, mt)
 end
 
-function vector.slice(v1, istart, iend)
-  local v = {}
-  istart = istart or 1
-  iend = iend or #v1
-  if istart==iend then return v1[istart] end
-  for i = 1,iend-istart+1 do
-    v[i] = v1[istart+i-1] or (0 / 0)
-  end
-  return setmetatable(v, mt)
+function lib.slice(v1, istart, iend)
+  return setmetatable(tmove(a1, istart, iend, 1), mt)
+  -- local v = {}
+  -- istart = istart or 1
+  -- iend = iend or #v1
+  -- if istart==iend then return v1[istart] end
+  -- for i = 1,iend-istart+1 do
+  --   v[i] = v1[istart+i-1] or (0 / 0)
+  -- end
+  -- return setmetatable(v, mt)
 end
 
-function vector.contains(v1, num)
+function lib.contains(v1, item)
   for i=1,#v1 do
-    if v1[i]==num then return true end
+    if v1[i]==item then return true end
   end
   return false
 end
@@ -121,19 +133,19 @@ local function iadd(v1, v2)
   for i = 1, #v1 do v1[i] = v1[i] + v2[i] end
   return v1
 end
-vector.iadd = iadd
+lib.iadd = iadd
 
 local function norm_sq(v1)
   local s = 0
-  for i = 1, #v1 do s = s + pow(v1[i], 2) end
+  for i = 1, #v1 do s = s + v1[i]^2 end
   return s
 end
-vector.norm_sq = norm_sq
+lib.norm_sq = norm_sq
 
 local function norm(v1)
   return sqrt(norm_sq(v1))
 end
-vector.norm = norm
+lib.norm = norm
 
 local function sum(v1, w)
   local s
@@ -148,7 +160,7 @@ local function sum(v1, w)
   end
   return s
 end
-vector.sum = sum
+lib.sum = sum
 -- Recursive sum
 local function rsum(v, idx, initial)
   idx = idx or 1
@@ -156,28 +168,27 @@ local function rsum(v, idx, initial)
   if idx > #v then return initial end
   return rsum(v, idx + 1, v[idx] + initial)
 end
-vector.rsum = rsum
+lib.rsum = rsum
 
 local function sub(v1, v2)
   local tbl = {}
   if type(v2)=='number' then
-    for i,v in ipairs(v1) do tbl[i] = v - v2 end
+    for i = 1, #v1 do tbl[i] = v1[i] - v2 end
   elseif type(v1) == 'number' then
-    for i,v in ipairs(v2) do tbl[i] = v1 - v end
+    for i = 1, #v2 do tbl[i] = v1 - v2[i] end
   else
-    -- for i = 1, #v1 do tbl[i] = v1[i] - v2[i] end
-    for i,v in ipairs(v1) do tbl[i] = v - v2[i] end
+    for i = 1, #v1 do tbl[i] = v1[i] - v2[i] end
   end
   return setmetatable(tbl, mt)
 end
-vector.sub = sub
+lib.sub = sub
 
 local function mulnum(v1, a)
   local v = {}
   for i = 1, #v1 do v[i] = a * v1[i] end
   return setmetatable(v, mt)
 end
-vector.mulnum = mulnum
+lib.mulnum = mulnum
 
 local function divnum(v1, a)
   local v = {}
@@ -189,28 +200,30 @@ local function idivnum(self, a)
   for i = 1, #self do self[i] = self[i] / a end
   return self
 end
-vector.idivnum = idivnum
+lib.idivnum = idivnum
 
 local function dot(self, v2)
   local s = 0
   for i = 1, #self do s = s + self[i] * v2[i] end
   return s
 end
-vector.dot = dot
+lib.dot = dot
 
 local function mul(self, v)
   if type(self)=='number' then
     return mulnum(v, self)
-  elseif type(v) == "number" then
+  elseif type(v) == 'number' then
     return mulnum(self, v)
   else
     return dot(self, v)
   end
 end
-vector.mul = mul
+lib.mul = mul
 
-local function unm(v1)
-  return mulnum(v1, -1)
+local function unm(self)
+  local out = {}
+  for i = 1, #self do out[i] = -1 * self[i] end
+  return setmetatable(out, mt)
 end
 
 -- Multiply matrix and vector
@@ -218,29 +231,28 @@ end
 local function mv(m, v)
   local v1 = {}
   for j=1, #m do
-    local mj = m[j]
     v1[j] = 0
     for i = 1,#v do
-      v1[j] = v1[j] + mj[i] * v[i]
+      v1[j] = v1[j] + m[j][i] * v[i]
     end
   end
   return setmetatable(v1, mt)
 end
-vector.mv = mv
+lib.mv = mv
 
-function vector.unit(v1)
+function lib.unit(v1)
   local m = norm(v1)
-  return (m > 0) and divnum(v1, m) or zeros(#v1)
+  return (m > EPSILON) and divnum(v1, m) or false
 end
 
 local function eq(self, v2)
   if #self~=#v2 then return false end
-  for i,v in ipairs(self) do
-    if v~=v2[i] then return false end
+  for i=1,#self do
+    if self[i]~=v2[i] then return false end
   end
   return true
 end
-vector.eq = eq
+lib.eq = eq
 
 local function div(v1, v2)
   if type(v2) == "number" then
@@ -248,7 +260,7 @@ local function div(v1, v2)
   else
     -- pointwise
     local v = {}
-    for i,val in ipairs(v1) do v[i] = val / v2[i] end
+    for i in #v1 do v[i] = v1[i] / v2[i] end
     return setmetatable(v, mt)
   end
 end
@@ -258,9 +270,8 @@ local function mean(t, w)
   local has_weights = type(w)=='table'
   local n = #t
   local mu = t[1]
-  local tp = type(mu)
   -- Vector of numbers (default)
-  if tp == 'table' then
+  if type(mu) == 'table' then
     mu = copy(mu)
     if has_weights then
       mu = mu * w[1]
@@ -278,10 +289,10 @@ local function mean(t, w)
   end
   return mu
 end
-vector.mean = mean
+lib.mean = mean
 
 -- Calculate the variance and sample variance of a vector of numbers
-function vector.variance(t, w, mu0)
+function lib.variance(t, w, mu0)
   -- Grab the mean: pre-calculated input mu0 as default
   if mu0==false then
     -- Do not shift
@@ -313,22 +324,22 @@ end
 local function distance_sq(self, v)
   return norm_sq(sub(v, self))
 end
-vector.distance_sq = distance_sq
+lib.distance_sq = distance_sq
 
 local function distance(self, v)
   return norm(sub(v, self))
 end
-vector.distance = distance
+lib.distance = distance
 
 -- Project vector self onto vector v
 local function project(self, v)
   local s = dot(self, v) / norm(v)
   return mulnum(v, s)
 end
-vector.project = project
+lib.project = project
 
 -- Rejection vector self onto vector v
-function vector.reject(self, v)
+function lib.reject(self, v)
   return sub(self, project(self, v))
 end
 
@@ -338,7 +349,7 @@ local function set(self)
   for i=1,n do s[self[i]] = true end
   return s
 end
-vector.set = set
+lib.set = set
 
 -- Check if this vector is a permutation of the set s
 local function eq_set(self, s)
@@ -351,7 +362,7 @@ local function eq_set(self, s)
   end
   return true
 end
-vector.eq_set = eq_set
+lib.eq_set = eq_set
 
 local function set_eq_set(s1, s2)
   for k1 in pairs(s1) do
@@ -362,14 +373,14 @@ local function set_eq_set(s1, s2)
   end
   return true
 end
-vector.set_eq_set = set_eq_set
+lib.set_eq_set = set_eq_set
 
 -- local function cross(u, v)
 --   local k = u[1] * v[2], -1 * u[2] * v[1]
 
 --   return {i, j, k}
 -- end
--- vector.cross = cross
+-- lib.cross = cross
 
 local function v_tostring(v1, formatstr)
   formatstr = formatstr or "%g"
@@ -407,11 +418,11 @@ end
 local function pose_tostring(p)
   return string.format(
     "{x=%g, y=%g, a=%g degrees}",
-    p[1], p[2], math.deg(p[3])
+    p[1], p[2], rad2deg(p[3])
   )
 end
 
-function vector.pose(t)
+function lib.pose(t)
   if type(t)=='table' and #t>=3 then
     -- good pose
     return setmetatable(t, mt_pose)
@@ -425,7 +436,7 @@ local function mod_angle(a)
   local b = a % TWO_PI
   return b >= PI and (b - TWO_PI) or b
 end
-vector.mod_angle = mod_angle
+lib.mod_angle = mod_angle
 
 local function relative_se2(b, a)
   -- b in frame of a
@@ -438,7 +449,7 @@ local function randn_pose(std_pose, mu_pose)
   -- Limit the noise
   local dx_noise_max = 0.01
   local dy_noise_max = 0.01
-  local da_noise_max = math.rad(1)
+  local da_noise_max = deg2rad(1)
   -- Add some noise (randn gives two putputs)
   local dx_noise = randn(std_pose[1], 0)
   local dy_noise = randn(std_pose[2], 0)
@@ -455,7 +466,7 @@ local function randn_pose(std_pose, mu_pose)
   }
   return pose_w_noise
 end
-vector.randn_pose = randn_pose
+lib.randn_pose = randn_pose
 
 -- Pose vector
 mt_pose.__add = add
@@ -478,26 +489,29 @@ mt.__unm = unm
 mt.__tostring = v_tostring
 mt.__index = function(t, k) return vector[k] end
 
--- Add (simple) math function support
-return setmetatable(vector, {
-  __index = function(t, k)
-    local m = math[k]
-    if type(m) == 'function' then
-      -- Map through a math function
-      return function(tbl)
-        local out = {}
-        for i, v in ipairs(tbl) do
-          out[i] = type(v)=='table' and m(unpack(v)) or m(v)
-        end
-        return setmetatable(out, mt)
-      end
-    elseif type(m) == 'number' then
-      -- Populate with a math number
-      return function(n)
-        local out = {}
-        for i=1,n do out[i] = m end
-        return setmetatable(out, mt)
-      end
-    end
-  end
-})
+-- Add (simple) math function mapping support
+-- local math = require'math'
+-- return setmetatable(lib, {
+--   __index = function(t, k)
+--     local m = math[k]
+--     if type(m) == 'function' then
+--       -- Map through a math function
+--       return function(tbl)
+--         local out = {}
+--         for i in #tbl do
+--           out[i] = type(tbl[i])=='table' and m(unpack(tbl[i])) or m(tbl[i])
+--         end
+--         return setmetatable(out, mt)
+--       end
+--     elseif type(m) == 'number' then
+--       -- Populate with a math number
+--       return function(n)
+--         local out = {}
+--         for i=1,n do out[i] = m end
+--         return setmetatable(out, mt)
+--       end
+--     end
+--   end
+-- })
+
+return lib

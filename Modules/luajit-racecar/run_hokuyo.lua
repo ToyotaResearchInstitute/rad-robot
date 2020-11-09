@@ -19,6 +19,7 @@ local skt_hokuyo = assert(skt.open{
   tcp = true
 })
 
+-- Should be part of a Hokuyo obj that has a __gc exit method
 local function entry()
   -- Grab the parameters to save
   local hokuyo_params = {}
@@ -51,6 +52,7 @@ local function entry()
   local ret = skt_hokuyo:send(pkt_continuous)
 end
 
+-- Should be a __gc function
 local function exit()
   local hokuyo_params = {}
   for state in hokuyo.command_it(skt_hokuyo, "stream_off") do
@@ -68,7 +70,7 @@ local function exit()
   if log then log:close() end
   skt_hokuyo:close()
 end
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 
 local coro = coroutine.create(hokuyo.update)
 local function process(data)
@@ -93,7 +95,7 @@ local function on_hokuyo(e)
   if e~=1 and skt_hokuyo then
     print("Reading", e)
     exit()
-    return os.exit()
+    return os.exit(false, true)
   end
   local pkt, status = skt_hokuyo:recv()
   if not pkt then

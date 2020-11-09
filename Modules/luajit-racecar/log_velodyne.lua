@@ -35,7 +35,7 @@ local function exit()
   if log then log:close() end
   for _, s in ipairs(skts) do s:close() end
 end
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 
 local t_debug = time()
 while racecar.running do

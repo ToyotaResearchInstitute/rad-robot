@@ -53,3 +53,15 @@ if str1~=str2 then
 else
   print("String match OK")
 end
+
+--[[
+-- torch7 storage access
+local has_torch, torch = pcall(require, 'torch')
+-- TODO: Remove the torch dependence
+if has_torch then
+  lib.storage = function (ptr, sz)
+    local ptr0 = tonumber(ffi.cast('intptr_t', ffi.cast('void *', ptr)))
+    return torch.ByteStorage(tonumber(sz), ptr0)
+  end
+end
+--]]

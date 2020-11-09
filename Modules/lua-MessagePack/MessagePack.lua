@@ -14,7 +14,7 @@ if not jit and _VERSION < 'Lua 5.3' then
     -- Lua 5.1 & 5.2
     local loadstring = loadstring or load
     local luac = string.dump(loadstring "a = 1")
-    local header = { luac:sub(1, 12):byte(1, 12) }
+    local header = { luac:byte(1, 12) }
     SIZEOF_NUMBER = header[11]
 end
 
@@ -29,9 +29,27 @@ local char = require'string'.char
 local format = require'string'.format
 local floor = require'math'.floor
 local tointeger = require'math'.tointeger or floor
-local frexp = require'math'.frexp or require'mathx'.frexp
-local ldexp = require'math'.ldexp or require'mathx'.ldexp
+-- The following functions were removed from Lua 5.4
+local ldexp = require'math'.ldexp
+-- https://www.lua.org/manual/5.3/manual.html#8.2
+if not ldexp then
+    ldexp = function (x, exp)
+        return x * 2.0^exp
+    end
+end
+local frexp = require'math'.frexp
+if not frexp then
+    local log = require'math'.log
+    -- Potentially, use https://github.com/LuaDist/lmathx
+    -- https://en.cppreference.com/w/c/numeric/math/frexp
+    frexp = function(value)
+        if value==0 then return 0.0, 0 end
+        local exp = floor(1 + log(value, 2))
+        return value * 2.0^(-exp), exp
+    end
+end
 local huge = require'math'.huge
+local max = require'math'.max
 local tconcat = require'table'.concat
 
 local _ENV = nil
@@ -62,10 +80,7 @@ end
 local packers = setmetatable({}, {
     __index = function (t, k)
         if k == 1 then return end   -- allows ipairs
-        local err_msg = "pack '" .. k .. "' is unimplemented"
-        -- TODO: Safer table packing
-        return false, err_msg
-        -- error(err_msg)
+        error("pack '" .. k .. "' is unimplemented")
     end
 })
 m.packers = packers
@@ -201,6 +216,8 @@ packers['map'] = function (buffer, tbl, n)
         error"overflow in pack 'map'"
     end
     for k, v in pairs(tbl) do
+        -- Must have packers for both the key and value in order to properly add items
+        -- This is useful in the case of userdata or cdata
         local pk, pv = packers[type(k)], packers[type(v)]
         if pk and pv then
             pk(buffer, k)
@@ -227,34 +244,32 @@ packers['array'] = function (buffer, tbl, n)
     end
     for i = 1, n do
         local v = tbl[i]
-        local tv = type(v)
-        -- local can_encode = tv~='function' and tv~='userdata'
-        packers[tv](buffer, v)
+        packers[type(v)](buffer, v)
     end
 end
 
 local function count_table_members(tbl)
-    local is_map, n, max = false, 0, 0
+    local is_map, n, arr_max = false, 0, 0
     for k, v in pairs(tbl) do
         -- Skip unencodable items
-        local tk = type(k)
-        local tv = type(v)
-        local can_encode = tv~='function' and tv~='userdata'
-        if can_encode then
-            if tk == 'number' and k > 0 then
-                if k > max then
-                    max = k
-                end
+        -- local tv = type(v)
+        -- if tv~='function' and tv~='userdata' and tv~='cdata' then
+        if packers[type(v)] then
+            if type(k) == 'number' and k > 0 then
+                -- if k > max then max = k end
+                -- Avoid branching
+                arr_max = max(k, arr_max)
             else
                 is_map = true
             end
             n = n + 1
         end
     end
-    if max ~= n then    -- there are holes
+    if arr_max ~= n then    -- there are holes
         is_map = true
+    -- else there may not be holes TODO
     end
-    return n, is_map, max
+    return n, is_map, arr_max
 end
 
 local set_array = function (array)
@@ -269,11 +284,11 @@ local set_array = function (array)
         end
     elseif array == 'with_hole' then
         packers['_table'] = function (buffer, tbl)
-            local n, is_map, max = count_table_members(tbl)
+            local n, is_map, arr_max = count_table_members(tbl)
             if is_map then
                 packers['map'](buffer, tbl, n)
             else
-                packers['array'](buffer, tbl, max)
+                packers['array'](buffer, tbl, arr_max)
             end
         end
     elseif array == 'always_as_map' then
@@ -554,6 +569,14 @@ function m.pack (data)
     return tconcat(buffer)
 end
 
+-- Input of the data object and a table buffer in which to store data
+-- Allow the user to reuse the same table buffer object; use LuaJIT's table.clear
+function m.pack_buffer (data, buffer)
+    buffer = buffer or {}
+    packers[type(data)](buffer, data)
+    return buffer
+end
+
 
 local unpackers         -- forward declaration
 
@@ -563,7 +586,7 @@ local function unpack_cursor (c)
         c:underflow(i)
         s, i, j = c.s, c.i, c.j
     end
-    local val = s:sub(i, i):byte()
+    local val = s:byte(i)
     c.i = i+1
     return unpackers[val](c, val)
 end
@@ -610,7 +633,7 @@ local function unpack_float (c)
         c:underflow(i+3)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2, b3, b4 = s:sub(i, i+3):byte(1, 4)
+    local b1, b2, b3, b4 = s:byte(i, i+3)
     local sign = b1 > 0x7F
     local expo = (b1 % 0x80) * 0x2 + floor(b2 / 0x80)
     local mant = ((b2 % 0x80) * 0x100 + b3) * 0x100 + b4
@@ -641,7 +664,7 @@ local function unpack_double (c)
         c:underflow(i+7)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2, b3, b4, b5, b6, b7, b8 = s:sub(i, i+7):byte(1, 8)
+    local b1, b2, b3, b4, b5, b6, b7, b8 = s:byte(i, i+7)
     local sign = b1 > 0x7F
     local expo = (b1 % 0x80) * 0x10 + floor(b2 / 0x10)
     local mant = ((((((b2 % 0x10) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
@@ -672,7 +695,7 @@ local function unpack_uint8 (c)
         c:underflow(i)
         s, i, j = c.s, c.i, c.j
     end
-    local b1 = s:sub(i, i):byte()
+    local b1 = s:byte(i)
     c.i = i+1
     return b1
 end
@@ -683,7 +706,7 @@ local function unpack_uint16 (c)
         c:underflow(i+1)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2 = s:sub(i, i+1):byte(1, 2)
+    local b1, b2 = s:byte(i, i+1)
     c.i = i+2
     return b1 * 0x100 + b2
 end
@@ -694,7 +717,7 @@ local function unpack_uint32 (c)
         c:underflow(i+3)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2, b3, b4 = s:sub(i, i+3):byte(1, 4)
+    local b1, b2, b3, b4 = s:byte(i, i+3)
     c.i = i+4
     return ((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4
 end
@@ -705,7 +728,7 @@ local function unpack_uint64 (c)
         c:underflow(i+7)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2, b3, b4, b5, b6, b7, b8 = s:sub(i, i+7):byte(1, 8)
+    local b1, b2, b3, b4, b5, b6, b7, b8 = s:byte(i, i+7)
     c.i = i+8
     return ((((((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
 end
@@ -716,7 +739,7 @@ local function unpack_int8 (c)
         c:underflow(i)
         s, i, j = c.s, c.i, c.j
     end
-    local b1 = s:sub(i, i):byte()
+    local b1 = s:byte(i)
     c.i = i+1
     if b1 < 0x80 then
         return b1
@@ -731,7 +754,7 @@ local function unpack_int16 (c)
         c:underflow(i+1)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2 = s:sub(i, i+1):byte(1, 2)
+    local b1, b2 = s:byte(i, i+1)
     c.i = i+2
     if b1 < 0x80 then
         return b1 * 0x100 + b2
@@ -746,7 +769,7 @@ local function unpack_int32 (c)
         c:underflow(i+3)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2, b3, b4 = s:sub(i, i+3):byte(1, 4)
+    local b1, b2, b3, b4 = s:byte(i, i+3)
     c.i = i+4
     if b1 < 0x80 then
         return ((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4
@@ -761,7 +784,7 @@ local function unpack_int64 (c)
         c:underflow(i+7)
         s, i, j = c.s, c.i, c.j
     end
-    local b1, b2, b3, b4, b5, b6, b7, b8 = s:sub(i, i+7):byte(1, 8)
+    local b1, b2, b3, b4, b5, b6, b7, b8 = s:byte(i, i+7)
     c.i = i+8
     if b1 < 0x80 then
         return ((((((b1 * 0x100 + b2) * 0x100 + b3) * 0x100 + b4) * 0x100 + b5) * 0x100 + b6) * 0x100 + b7) * 0x100 + b8
@@ -924,9 +947,9 @@ else
 end
 set_array'without_hole'
 
-m._VERSION = '0.5.1'
+m._VERSION = '0.5.2'
 m._DESCRIPTION = "lua-MessagePack : a pure Lua implementation"
-m._COPYRIGHT = "Copyright (c) 2012-2018 Francois Perrad"
+m._COPYRIGHT = "Copyright (c) 2012-2019 Francois Perrad; Copyright (c) 2019-2020 Stephen McGill and Toyota Research Institute"
 return m
 --
 -- This library is licensed under the terms of the MIT/X11 license,

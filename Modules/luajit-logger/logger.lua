@@ -1,24 +1,37 @@
+-- Compatible with Lua 5.3+ and LuaJIT 2.1+
 local lib = {}
 
-local ffi = require'ffi'
-local coyield = require'coroutine'.yield
+local cocreate = require'coroutine'.create
 local coresume = require'coroutine'.resume
 local costatus = require'coroutine'.status
-local has_mmap, mmap = pcall(require, 'mmap')
-if not has_mmap then io.stderr:write"No mmap support\n" end
+local cowrap = require'coroutine'.wrap
+local coyield = require'coroutine'.yield
+
+local M_HUGE = require'math'.huge
 
 local sformat = require'string'.format
+-- String pack introduced in Lua 5.3
+local spack = require'string'.pack
+
 local tconcat = require'table'.concat
 local tinsert = require'table'.insert
 local tremove = require'table'.remove
--- local tsort = require'table'.sort
+local tsort = require'table'.sort
+-- table.unpack introduced in Lua 5.2; Using Luajit's 5.2 COMPAT mode, always
 local unpack = unpack or require'table'.unpack
-local utime = require'unix'.time_us
-local unix = require'unix'
--- local usleep = require'unix'.usleep
+
+-- Special packages, depending on the version of Lua used
+local has_ffi, ffi = pcall(require, 'ffi')
+local has_mmap, mmap = pcall(require, 'mmap')
+if not has_mmap then io.stderr:write"No mmap support\n" end
+
+-- Cycle logs that hit a certain file size limit
+-- Use the max size of a file on FAT32: https://en.wikipedia.org/wiki/File_Allocation_Table#FAT32
+local MAX_FILE_SZ = 2^32 - 1
 
 -- File extension
-local LOG_EXT = 'lmp' -- Lcm MessagePack
+local LOG_EXT = 'lmp' -- LCM MessagePack
+local FILENAME_FMT = "%s_%s-%03d."..LOG_EXT
 -- Form an ISO date timestamp for filename
 local iso8601_datestr = '!%Y%m%dT%H%M%SZ'
 local iso8601_datelen = #os.date(iso8601_datestr)
@@ -37,71 +50,114 @@ iso8601_find = tconcat(iso8601_find)
 -- Returns: prefix (default channel), iso8601 date, chunk id
 -- Require the underscore
 local lmp_match = tconcat{
-  "^", "(%w-)", "_", "(", iso8601_find, ")", "%-", "(%d+)", "%.", LOG_EXT, "$"
+  -- "^", "(%w-)", "_", "(", iso8601_find, ")", "%-", "(%d+)", "%.", LOG_EXT, "$"
+  "(%w-)", "_", "(", iso8601_find, ")", "%-", "(%d+)", "%.", LOG_EXT, "$"
 }
-local lmp_match_old = tconcat{
-  "^", "(%w-)", "_", "(", iso8601_find, ")", "%.", LOG_EXT, "$"
-}
+-- local lmp_match_old = tconcat{
+--   "^", "(%w-)", "_", "(", iso8601_find, ")", "%.", LOG_EXT, "$"
+-- }
 -- Export
 lib.iso8601_datestr = iso8601_datestr
+lib.iso8601_datelen = iso8601_datelen
 lib.iso8601_find = iso8601_find
 lib.lmp_match = lmp_match
 
-
--- LCM log entry header format
-ffi.cdef[[
-struct lcm_hdr_t {
-  uint32_t sync; // LCM Sync Word
-  uint64_t count; // Event Number
-  uint64_t t; // Timestamp of the entry, in micro seconds
-  uint32_t sz_channel; // Channel Length
-  uint32_t sz_data; // Data Length
-} __attribute__((packed));
-]]
-local lcm_hdr_t = ffi.typeof"struct lcm_hdr_t"
-local lcm_hdr_sz = ffi.sizeof"struct lcm_hdr_t"
-local lcm_hdr_ptr = ffi.typeof"struct lcm_hdr_t *"
-
+-- return math.type(v) == 'integer' or ffi.istype('uint64_t', t_us)
 local identity = function(x) return x end
 local bswap = identity
-if ffi.abi'le' then
-  local has_bit, bit = pcall(require, 'bit')
-  if has_bit then
-    bswap = bit.bswap
-  else
-    io.stderr:write("WARNING: Logging in Little Endian mode!")
+if has_ffi then
+  if ffi.abi'le' then
+    local has_bit, bit = pcall(require, 'bit')
+    if has_bit then
+      bswap = bit.bswap
+    else
+      io.stderr:write("WARNING: Logging in Little Endian mode!")
+    end
   end
-end
-local SYNC_WORD = bswap(0xEDA1DA01)
-local MAX_FILE_SZ = require'math'.pow(2, 32) - 1
 
--- Two different MessagePack implementations...
-local encode, decode
-do
-  local has_mp, mp = pcall(require, 'MessagePack')
-  local has_mp_lj, mp_lj = pcall(require, 'msgpack_pure')
-  if has_mp then
-    -- io.stderr:write"Using MessagePack\n"
-    if not pcall(mp.set_string, 'binaryish') then
-      io.stderr:write"Using pure binary\n"
-      mp.set_string'binary'
-    end
-    encode = mp.pack
-    decode = mp.unpack
-  elseif has_mp_lj then
-    -- io.stderr:write"Using msgpack_pure\n"
-    encode = mp_lj.pack
-    decode = function(str)
-      local _, obj = mp_lj.unpack(str)
-      return obj
-    end
-  else
-    io.stderr:write"msgpack not available\n"
+  -- LCM log entry header format
+  ffi.cdef[[
+  struct lcm_hdr_t {
+    uint32_t sync; // LCM Sync Word
+    uint64_t count; // Event Number
+    uint64_t t; // Timestamp of the entry, in micro seconds
+    uint32_t sz_channel; // Channel Length
+    uint32_t sz_data; // Data Length
+  } __attribute__((packed));
+  ]]
+  -- TODO: Allow a non-FFI version, here
+  local lcm_hdr_t = ffi.typeof"struct lcm_hdr_t"
+  local LCM_HDR_SZ = ffi.sizeof"struct lcm_hdr_t"
+  local lcm_hdr_ptr = ffi.typeof"struct lcm_hdr_t *"
+  local SYNC_WORD = bswap(0xEDA1DA01)
+
+  local function form_entry(str, channel, t_us, count)
+    local hdr = lcm_hdr_t{
+      SYNC_WORD,
+      bswap(count),
+      bswap(t_us),
+      bswap(#channel),
+      bswap(#str)
+    }
+    local entry = tconcat{ffi.string(hdr, LCM_HDR_SZ), channel, str}
+    return entry
   end
+
+  local function parse_header(lcm_hdr)
+    assert(lcm_hdr.sync == SYNC_WORD, sformat("Bad sync word! %X", lcm_hdr.sync))
+    local t_us = bswap(lcm_hdr.t)
+    local count = bswap(lcm_hdr.count)
+    local sz_channel = bswap(lcm_hdr.sz_channel)
+    assert(sz_channel < 256, sformat("Channel length too long: [%d]", sz_channel))
+    local sz_data = bswap(lcm_hdr.sz_data)
+    return sz_data, sz_channel, t_us, count
+  end
+
+  local C = ffi.C
+  ffi.cdef[[
+  typedef struct timeval {
+    long tv_sec;
+    int32_t tv_usec;
+  } timeval;
+  int gettimeofday(struct timeval *restrict tp, void *restrict tzp);
+  ]]
+  local function utime()
+    local t = ffi.new'timeval'
+    C.gettimeofday(t, nil)
+    return 1e6 * ffi.cast('uint64_t', t.tv_sec) + t.tv_usec
+  end
+
+elseif spack then
+  -- Using the string.pack/unpack methods
+  -- LCM log entry header format
+  local SYNC_WORD = 0xEDA1DA01
+  local LCM_HDR_FMT = "> I4 I8 I8 I4 I4"
+  form_entry = function (str, channel, t_us, count)
+    local hdr = spack(LCM_HDR_FMT,
+      SYNC_WORD,
+      count,
+      t_us,
+      #channel,
+      #str
+    )
+    local entry = tconcat{hdr, channel, str}
+    return entry
+  end
+
+  local function parse_header(lcm_hdr)
+    local sync, count, t_us, sz_channel, sz_data = sunpack(LCM_HDR_FMT, lcm_hdr)
+    assert(sync == SYNC_WORD, sformat("Bad sync word! %X", sync))
+    assert(sz_channel < 256, sformat("Channel length too long: [%d]", sz_channel))
+    return sz_data, sz_channel, t_us, count
+  end
+
+  -- Precision in seconds... not great, but just to have some placeholder
+  local otime = require'os'.time
+  local function utime()
+    return 1e6 * otime()
+  end
+
 end
--- Export
-lib.decode = decode
-lib.encode = encode
 
 local function check_write(self, str, channel, t_us, count)
   if type(str) ~='string' then
@@ -110,7 +166,7 @@ local function check_write(self, str, channel, t_us, count)
     return false, "Bad channel name"
   elseif not (type(t_us)=='number' or ffi.istype('uint64_t', t_us)) then
     return false, "Bad timestamp type"
-  elseif not (type(count)=='number' or ffi.istype('uint64_t', count)) then
+  elseif type(count)~='number' then
     return false, "Bad count type"
   elseif count < self.last_count then
     return false, "Decreasing log count"
@@ -120,29 +176,12 @@ local function check_write(self, str, channel, t_us, count)
   return true
 end
 
-local function form_entry(str, channel, t_us, count)
-  local hdr = lcm_hdr_t{
-    SYNC_WORD,
-    bswap(count),
-    bswap(t_us),
-    bswap(#channel),
-    bswap(#str)
-  }
-  local entry = tconcat{
-    ffi.string(hdr, lcm_hdr_sz),
-    channel,
-    str
-  }
-  return entry
-end
-
 local function next_chunk(self)
-  -- TODO: Unix call for chmod
+  -- TODO: Unix call for chmod to read-only
   self.f_log:close()
   -- Update the chunk and log name
   self.chunk_id = self.chunk_id + 1
-  local log_name = sformat("%s_%s-%03d.%s",
-    self.channel, self.datestamp, self.chunk_id, LOG_EXT)
+  local log_name = sformat(FILENAME_FMT, self.channel, self.datestamp, self.chunk_id)
   self.log_name = log_name
   local fname = sformat("%s/%s", self.log_dir, log_name)
   -- Use append mode if a new log
@@ -153,7 +192,8 @@ local function next_chunk(self)
   end
   self.f_log = f_log
   -- Reset the size
-  self.sz_chunk = ffi.cast('uint64_t', 0)
+  -- self.sz_chunk = ffi.cast('uint64_t', 0)
+  self.sz_chunk = 0
   io.stderr:write(sformat("Next chunk: %s\n", log_name))
   return self
 end
@@ -192,17 +232,7 @@ local function write(self, obj, channel, t_us)
   return write_raw(self, str, channel, t_us, count)
 end
 
-local function parse_header(lcm_hdr)
-  assert(lcm_hdr.sync == SYNC_WORD, sformat("Bad sync word! %X", lcm_hdr.sync))
-  local t_us = bswap(lcm_hdr.t)
-  local count = bswap(lcm_hdr.count)
-  local sz_channel = bswap(lcm_hdr.sz_channel)
-  assert(sz_channel < 256, sformat("Channel long too long: [%d]", sz_channel))
-  local sz_data = bswap(lcm_hdr.sz_data)
-  return sz_data, sz_channel, t_us, count
-end
-
--- Meant to be used as a coroutine. Yields:
+-- Meant to be used as a coroutine; yields:
 -- data_str: string or number
 -- channel_name: string or number
 -- t_us: ctype of uint64_t
@@ -214,21 +244,26 @@ local function playback(self, options)
   if f_type ~= 'file' then
     return false, "Bad file handle: "..tostring(f_type)
   end
+  -- Get the file size
+  -- TODO: Deal with streaming, which has no seek
+  local sz_log, err_seek = f_log:seek("end")
+  if not sz_log then
+    return false, err_seek
+  elseif sz_log==0 then
+    return false, "Empty log"
+  end
+
   if type(options) ~= 'table' then options = {} end
   local skip_data = options.skip_data
   local skip_channel = options.skip_channel
-  -- Get the file size
-  local sz_log = f_log:seek("end")
-  if sz_log==0 then
-    return false, "Empty log"
-  end
+
   -- Go back to the start of the file
   f_log:seek("set")
   -- Give the log size
   local log_info = {
     sz_log = sz_log, -- file size
     n_entries = 0,
-    --sz of valid part of log (ideally same as sz_log)
+    -- size of valid part of log (ideally same as sz_log)
     sz_entries = 0,
     corrupted = false
   }
@@ -238,17 +273,18 @@ local function playback(self, options)
   -- Read until the end of the file
   while f_log:read(0) do
     -- Read the LCM header
-    local lcm_hdr_str = f_log:read(lcm_hdr_sz)
-    if #lcm_hdr_str ~= lcm_hdr_sz then
-      io.stderr:write("Corrupted log: Header\n")
+    local lcm_hdr_str = f_log:read(LCM_HDR_SZ)
+    if #lcm_hdr_str ~= LCM_HDR_SZ then
+      io.stderr:write("Corrupted log: Bad Header Size\n")
       log_info.corrupted = true
       break
     end
+    -- TODO: Use ffi.cast?
     local lcm_hdr = ffi.new(lcm_hdr_t)
-    ffi.copy(lcm_hdr, lcm_hdr_str, lcm_hdr_sz)
+    ffi.copy(lcm_hdr, lcm_hdr_str, LCM_HDR_SZ)
     local sz_data, sz_channel, t_us, count = parse_header(lcm_hdr)
     if not sz_data then
-      io.stderr:write("Corrupted log: Bad Header\n")
+      io.stderr:write("Corrupted log: Bad Header Parsing\n")
       log_info.corrupted = true
       break
     end
@@ -282,6 +318,9 @@ local function playback(self, options)
     end
     log_info.sz_entries = f_log:seek()
     log_info.n_entries = log_info.n_entries + 1
+    -- In case of appending after indexing
+    self.last_count = count
+    self.last_t_us = t_us
     coyield(data_str, channel_name, t_us, count, idx)
     -- Update the index for the next round
     idx = log_info.sz_entries
@@ -298,13 +337,16 @@ if has_mmap then
     coyield()
     local offset = 0
     while offset >= 0 and offset < sz do
+      local cur_ptr = ptr + offset
       -- Read the LCM header
-      local lcm_hdr = ffi.cast(lcm_hdr_ptr, ptr + offset)
-      local sz_data, sz_channel, t_us, count = parse_header(lcm_hdr)
+      -- local lcm_hdr = ffi.cast(lcm_hdr_ptr, cur_ptr)
+      -- local sz_data, sz_channel, t_us, count = parse_header(lcm_hdr)
+      -- Try the implicit cast
+      local sz_data, sz_channel, t_us, count = parse_header(cur_ptr)
       -- Read logged information
-      local channel_name = ffi.string(ptr + lcm_hdr_sz, sz_channel)
-      local data_str = ffi.string(ptr + lcm_hdr_sz + sz_channel, sz_data)
-      local entry_sz = lcm_hdr_sz + sz_channel + sz_data
+      local channel_name = ffi.string(cur_ptr + LCM_HDR_SZ, sz_channel)
+      local data_str = ffi.string(cur_ptr + LCM_HDR_SZ + sz_channel, sz_data)
+      local entry_sz = LCM_HDR_SZ + sz_channel + sz_data
       -- Increment pointers
       offset = coyield(data_str, channel_name, t_us, count) or (offset + entry_sz)
     end
@@ -326,7 +368,7 @@ local function playback_multiple(logs, options)
   -- Initialize the states
   local states = {}
   for ilog, log in ipairs(logs) do
-    local co_play = coroutine.create(playback)
+    local co_play = cocreate(playback)
     local status0, sz_log = assert(coresume(co_play, log, options))
     local status1 = costatus(co_play)
     if status0 and status1=='suspended' then
@@ -341,7 +383,7 @@ local function playback_multiple(logs, options)
   -- Run until no logs are available
   while #states > 0 do
     -- Find the minimum timestamp
-    local imin, tmin = 0, math.huge
+    local imin, tmin = 0, M_HUGE
     for i,s in ipairs(states) do
       local t_us = tonumber(s[5])
       if t_us < tmin then
@@ -378,11 +420,11 @@ end
 local function play(self, options)
   if type(options) ~= 'table' then options = {} end
   if options.use_iterator then -- Wrap is a function
-    local fn_play = coroutine.wrap(playback)
+    local fn_play = cowrap(playback)
     local sz_log = fn_play(self, options)
     return fn_play, sz_log
   else
-    local co_play = coroutine.create(playback)
+    local co_play = cocreate(playback)
     local ok, sz_log, err = coresume(co_play, self, options)
     if not ok then
       return false, sz_log
@@ -398,11 +440,11 @@ local function play_many(logs, options)
   if type(options) ~= 'table' then options = {} end
   local use_iterator = options.use_iterator
   if use_iterator then -- Wrap is a function
-    local fn_play = coroutine.wrap(playback_multiple)
+    local fn_play = cowrap(playback_multiple)
     local sz_log = fn_play(logs, options)
     return fn_play, sz_log
   else
-    local co_play = coroutine.create(playback_multiple)
+    local co_play = cocreate(playback_multiple)
     local ok, sz_log = coresume(co_play, logs, options)
     return ok and co_play, sz_log
   end
@@ -463,7 +505,7 @@ local function new_log(ch_default, log_dir, datestamp, chunk_id)
   elseif #datestamp~=iso8601_datelen or datestamp:find(iso8601_find)~=1 then
     io.stderr:write("Unknown datestamp\n")
   end
-  local log_name = sformat("%s_%s-%03d.%s", ch_default, datestamp, chunk_id, LOG_EXT)
+  local log_name = sformat(FILENAME_FMT, ch_default, datestamp, chunk_id)
   local fname = sformat("%s/%s", log_dir, log_name)
   -- Use append mode if a new log
   -- TODO: Check if the file exists, and we want to overwrite (harvesting)
@@ -487,11 +529,15 @@ local function new_log(ch_default, log_dir, datestamp, chunk_id)
     datestamp = datestamp,
     chunk_id = chunk_id,
     --
-    sz_chunk = ffi.cast('uint64_t', 0),
-    sz_log = ffi.cast('uint64_t', 0),
-    n_entries = ffi.cast('uint64_t', 0),
-    last_count = ffi.cast('uint64_t', 0),
-    last_t_us = ffi.cast('uint64_t', 0),
+    -- sz_chunk = ffi.cast('uint64_t', 0),
+    sz_chunk = 0,
+    sz_log = 0,
+    n_entries = 0,
+    -- last_count = ffi.cast('uint64_t', 0),
+    -- TODO: Should count span across chunks?
+    last_count = 0,
+    -- last_t_us = ffi.cast('uint64_t', 0),
+    last_t_us = 0,
   }, mt)
 end
 lib.new = new_log
@@ -504,42 +550,45 @@ local function reopen_log(self)
   if not f_log then
     return false, "Cannot open log file"
   end
-  -- TODO: Open index if it exists
-  -- Add playback functionality
-  self.play = play
+  
   return self
 end
 
 -- Open a filename
-local function open_log(fname)
+local function open_log(log_fname)
   -- Check if we already have a log object
-  if type(fname) == 'table' then
-    return reopen_log(fname)
+  if type(log_fname) == 'table' then
+    return reopen_log(log_fname)
   end
-  local log_path = unix.realpath(fname)
-  local log_dir = assert(io.popen(sformat('dirname "%s"', log_path))):read"*line"
-  local log_name = assert(io.popen(sformat('basename "%s"', log_path))):read"*line"
-  -- Try the new format
-  local ch_default, datestamp, chunk_id = log_name:match(lmp_match)
-  -- Try the old format
-  if not ch_default then
-    ch_default, datestamp, chunk_id = log_name:match(lmp_match_old)
-    io.stderr:write("Old log naming\n")
-  end
-  -- No matching
-  if not ch_default then
-    io.stderr:write("Bad log naming\n")
+
+
+  -- If the pattern has captures, then in a successful match the captured values are also returned, after the two indices.
+  local name_start, name_end, ch_default, datestamp, chunk_id = log_fname:find(lmp_match)
+  local log_name, log_dir
+  if not name_start then
+    io.stderr:write"Bad log name\n"
     ch_default = ''
     datestamp = ''
+  elseif name_start == 1 then
+    -- Check if the file has no path component - then it lies in the same directory
+    -- Drawbacks: https://vineetreddy.wordpress.com/2017/05/17/pwd-vs-getcwd/
+    log_dir = os.getenv'PWD'
+    log_name = log_fname
+  else
+    log_dir = log_fname:sub(1, name_start)
+    log_name = log_fname:sub(name_start, name_end)
   end
   -- Convert the chunk id to a number
   chunk_id = tonumber(chunk_id) or 0
+
+
   -- Open the file
-  local fname0 = sformat("%s/%s", log_dir, log_name)
-  local f_log = io.open(fname0, "r")
+  local f_log = io.open(fname, "r")
   if not f_log then
     return false, "Cannot open log file"
   end
+  -- TODO: Try to open an index file
+  -- TODO: Open index if it exists
   local f_idx = false
   -- Return a log object
   return setmetatable({
@@ -554,19 +603,68 @@ local function open_log(fname)
     idx_name = false,
     log_name = log_name,
     log_dir = log_dir,
+    log_fname = log_fname,
     --
     channel = ch_default,
     datestamp = datestamp,
     chunk_id = chunk_id,
     --
-    sz_log = ffi.cast('uint64_t', 0),
-    n_entries = ffi.cast('uint64_t', 0),
-    last_count = ffi.cast('uint64_t', 0),
-    last_t_us = ffi.cast('uint64_t', 0),
+    -- double values should suffice to capture the number of entries
+    -- http://www.inf.puc-rio.br/~roberto/talks/ws2014.pdf
+    -- doubles can count up to 2^52 positive integers
+    -- MAX FILE SZ is 2^32
+    -- 2^52 / 2^32 = 2^20 = 1 million
+    -- No need to use ffi.cast('uint64_t', 0)
+    sz_log = 0,
+    n_entries = 0,
+    sz_chunk = 0,
+    last_count = 0,
+    last_t_us = 0,
   }, mt)
 
 end
 lib.open = open_log
+
+------------------
+-- Log Indexing --
+------------------
+
+local function index(self, override)
+  if self.idx_name and not override then
+    -- TODO: We should simply check the index
+    return false, "Log is indexed, already"
+  end
+  -- Suffix is .lmp.idx
+  local idx_name = self.log_name..".idx"
+  local fname_idx = sformat("%s/%s", self.log_dir, idx_name)
+  -- Open in append mode, as we do not seek
+  local f_idx = io.open(fname_idx, "a")
+  if not f_idx then
+    return false, "Cannot open idx file"
+  end
+
+  local options = {
+    skip_data = true,
+    skip_channel = true,
+    use_iterator = true
+  }
+  for sz_msg, sz_ch, t_us, cnt, idx in self:play(options) do
+    -- Index format: [entry_chunk entry_offset entry_size]
+    -- NOTE: We use Big endian 32 bits for each number
+    -- Can check the output with od -t u4
+    -- TODO: Add string.pack
+    -- Byte swapping works with 32bit number coersion
+    local idx_record = ffi.new('uint32_t[3]',
+                               {0, bswap(idx), bswap(LCM_HDR_SZ + sz_ch + sz_msg)})
+    -- Write the record via string
+    -- NOTE: Using ffi.string instead of using fwrite. fwrite may have speed, but not simplicity
+    assert(f_idx:write(ffi.string(idx_record, ffi.sizeof(idx_record))))
+  end
+  -- TODO: Check corruption
+
+  return self
+end
+lib.index = index
 
 -------------------
 -- Log utilities --
@@ -575,10 +673,8 @@ lib.open = open_log
 local function to_logs(logs)
   -- In-place
   for i=1, #logs do
-    local log = logs[i]
-    local tp = type(log)
-    if tp == 'string' then
-      logs[i] = assert(open_log(log))
+    if type(logs[i]) == 'string' then
+      logs[i] = assert(open_log(logs[i]))
     end
   end
   return logs
@@ -587,7 +683,7 @@ end
 local function combine(self, logs)
   -- Combine many
   local options = {use_iterator=true}
-  local co_play = coroutine.wrap(playback_multiple, options)
+  local co_play = cowrap(playback_multiple, options)
   co_play(to_logs(logs))
   for str, channel, t_us in co_play do
     assert(self:write_raw(str, channel, t_us))
@@ -595,11 +691,6 @@ local function combine(self, logs)
   return self
 end
 lib.combine = combine
-
--- For synchronization
-local function by_ts(t_usA, t_usB)
-  return t_usA[3] < t_usB[3]
-end
 
 -- TODO: Function to get the channels in a log
 local function get_channels(self, channels)
@@ -612,6 +703,11 @@ local function get_channels(self, channels)
   if type(channels) ~= 'table' then channels = {} end
   for _, ch in it_log do channels[ch] = true end
   return channels
+end
+
+-- For synchronization
+local function by_ts(t_usA, t_usB)
+  return t_usA[3] < t_usB[3]
 end
 
 function lib.sync(self, logs, options)
@@ -643,7 +739,7 @@ function lib.sync(self, logs, options)
   for ch in pairs(messages) do
     tinsert(included_channels, ch)
   end
-  table.sort(included_channels)
+  tsort(included_channels)
   -- Set the maximum sample rate
   local tp_sample = type(options.dt_sample)
   local dt_us_sample
@@ -711,7 +807,7 @@ function lib.sync(self, logs, options)
           -- Yield this, in order
           local entries = {}
           for _, message in pairs(messages) do tinsert(entries, message) end
-          table.sort(entries, by_ts)
+          tsort(entries, by_ts)
           for _, entry in ipairs(entries) do
             -- Handle the message as a log, callback or coroutine
             -- Ignore setting the count, since it doesn't make sense
@@ -734,54 +830,5 @@ function lib.sync(self, logs, options)
   end
   return true
 end
-
-local function index(self, override)
-  if self.idx_name and not override then
-    -- TODO: We should simply check the index
-    return false, "Log is indexed, already"
-  end
-  local idx_name = self.log_name:gsub("%.lmp$", ".idx")
-  local fname_idx = sformat("%s/%s", self.log_dir, idx_name)
-  -- Open in append mode, as we do not seek
-  local f_idx = io.open(fname_idx, "a")
-  if not f_idx then
-    return false, "Cannot open idx file"
-  end
-  local options = {
-    skip_data = true,
-    skip_channel = true
-  }
-  -- Must write the binary
-  local fwrite = require'unix'.fwrite
-  -- Index format is [entry_offset, entry_size, entry_timestamp]
-  -- NOTE: We use Big endian for the format
-  -- NOTE: No entry size will need more 32 bits to describe
-  local idx_record = ffi.new('uint64_t[3]')
-  local idx_record_sz = ffi.sizeof(idx_record)
-  local co_play = assert(self:play(options))
-  -- Use coroutine
-  while coroutine.status(co_play)=='suspended' do
-    local ok, sz_msg, sz_ch, t_us, cnt, idx = coresume(co_play)
-    assert(ok, sz_msg)
-    if coroutine.status(co_play) == 'dead' then break end
-    idx_record[0] = idx
-    idx_record[1] = lcm_hdr_sz + sz_ch + sz_msg
-    idx_record[2] = t_us
-    -- Must byte swap for force big endian
-    idx_record[0] = bswap(idx_record[0])
-    idx_record[1] = bswap(idx_record[1])
-    idx_record[2] = bswap(idx_record[2])
-    local ret = fwrite(f_idx, idx_record, idx_record_sz)
-    assert(ret==idx_record_sz, "Bad write")
-    self.n_entries = self.n_entries + 1
-    self.last_count = cnt
-    self.last_t_us = t_us
-  end
-  -- TODO: Check corruption
-
-  -- Can check the output with od -t u8
-  return self
-end
-lib.index = index
 
 return lib

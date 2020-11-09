@@ -36,7 +36,7 @@ local function exit()
   camera:close()
   return 0
 end
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 
 local function process_img(img, sz, t)
   local img_jpg = nil

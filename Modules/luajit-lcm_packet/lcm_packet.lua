@@ -30,9 +30,9 @@ local partition_sizes = setmetatable({
   ['OSX'] = 1443, -- Not sure why smaller... 1435 in lcm udpm
   ['wifi'] = 1500 - IP_HEADER_SZ - UDP_HEADER_SZ,
   -- ['lite'] = 8192, -- In lcm-lite
-  ['localhost'] = require'math'.pow(2, 14) - IP_HEADER_SZ - UDP_HEADER_SZ,
-  -- (math.pow(2, 16) - 1) is 0xFFFF
-  ['jumbo'] = (require'math'.pow(2, 16) - 1) - IP_HEADER_SZ - UDP_HEADER_SZ,
+  ['localhost'] = 2^14 - IP_HEADER_SZ - UDP_HEADER_SZ,
+  -- (2^16 - 1) is 0xFFFF
+  ['jumbo'] = (2^16 - 1) - IP_HEADER_SZ - UDP_HEADER_SZ,
 }, {
 __call = function(self, mtu)
   if type(mtu) == 'number' then
@@ -366,7 +366,7 @@ function lib.new_partitioning(mtu)
     LCM_MAX_MESSAGE_SZ = LCM_MAX_MESSAGE_SZ,
     LCM2_MAX_PAYLOAD_SZ = LCM2_MAX_PAYLOAD_SZ,
     LCM3_MAX_FRAGMENT_SZ = LCM3_MAX_FRAGMENT_SZ,
-    MAX_NUM_FRAGMENTS = math.pow(2, 12),
+    MAX_NUM_FRAGMENTS = 2^12,
     fragment = fragment,
     assemble = assemble
   }

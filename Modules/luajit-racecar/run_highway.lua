@@ -67,7 +67,7 @@ local function exit()
   if log then log:close() end
   return 0
 end
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 
 racecar.listen{
   channel_callbacks = cb_tbl,

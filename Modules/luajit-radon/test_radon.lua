@@ -4,7 +4,7 @@ local w, h = 40, 30
 local edges = ffi.new("uint8_t[?]", w * h)
 
 local function get_r(i, j)
-  return math.sqrt(math.pow(i,2)+math.pow(j,2))
+  return math.sqrt(i^2 + j^2)
 end
 
 for j=0,h-1 do

@@ -5,9 +5,12 @@ local cos = require'math'.cos
 local sin = require'math'.sin
 local PI = require'math'.pi
 local sqrt = require'math'.sqrt
+local rad2deg = require'math'.deg
 
 local unpack = unpack or require'table'.unpack
 local nan = 0 / 0
+
+-- TODO: Unroll all loops
 
 local mt = {
   __tostring = function(tr)
@@ -251,9 +254,9 @@ end
 function lib.string6D(tr)
   return string.format('%.2f %.2f %.2f | %.2f %.2f %.2f',
     tr[1][4],tr[2][4],tr[3][4],
-    math.deg(atan2(tr[3][2],tr[3][3])),
-    math.deg(-asin(tr[3][1])),
-    math.deg(atan2(tr[2][1],tr[1][1])))
+    rad2deg(atan2(tr[3][2],tr[3][3])),
+    rad2deg(-asin(tr[3][1])),
+    rad2deg(atan2(tr[2][1],tr[1][1])))
 end
 
 function lib.position(tr)

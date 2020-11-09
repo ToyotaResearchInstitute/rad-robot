@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.1
+#!/usr/bin/env lua
 local unpack = unpack or require'table'.unpack
 require'math'.randomseed(1)
 
@@ -18,7 +18,7 @@ local points = {}
 for i=1,1000 do
   local pt = {math.random(), math.random(), math.random()}
   local d = 0
-  for j,v in ipairs(pt) do d = d + math.pow(v-pt0[j], 2) end
+  for j,v in ipairs(pt) do d = d + (v - pt0[j]) ^ 2 end
   d = math.sqrt(d)
   pt.d = d
   if i<=25 then

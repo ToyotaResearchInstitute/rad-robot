@@ -6,6 +6,7 @@ local razor_imu = require'razor_imu'
 local unix = require'unix'
 
 local f_imu = assert(io.open(flags.imu))
+-- Need to keep f_imu open throughout the program; retain reference until exiting
 local fd_imu = assert(unix.fileno(f_imu))
 
 local has_logger, logger = pcall(require, 'logger')
@@ -20,7 +21,7 @@ local function exit()
   f_imu = nil
   fd_imu = nil
 end
-racecar.handle_shutdown(exit)
+-- racecar.handle_shutdown(exit)
 
 local co_imu = coroutine.create(razor_imu.co_update)
 

@@ -9,6 +9,8 @@ local ffi = require'ffi'
 local is_le = ffi.abi'le'
 local bswap = require'bit'.bswap
 local band = require'bit'.band
+local schar = require'string'.char
+local unpack = unpack or require'table'.unpack
 ------------------
 
 -- This assumes a Lua string
@@ -25,7 +27,7 @@ function lib.decode0(pkt)
   local id = pkt:byte(28) + 256*pkt:byte(27) + 65536*pkt:byte(26)
   -- CAN message
   local msg = pkt:sub(29, 29 + dlc - 1)
-  return id, msg
+  return id, msg, dlc
 end
 
 -- This assumes a char* from the LuaJIT ffi
@@ -53,11 +55,11 @@ end
 
 -- Encode a message to send across the bus
 local preamble = table.concat{
-  string.char(0, 0x24), -- Length of Packet is 36 (0x24)
-  string.char(0, 0x80), -- CAN data frame message type
-  string.char(0, 1, 2, 3, 4, 5, 6, 7), -- 8 Unused "tag" data
-  string.char(0, 1, 2, 3, 4, 5, 6, 7),-- TODO: Timestamp of 4 low and 4 high bytes
-  string.char(3), -- Channel (unused)
+  schar(0, 0x24), -- Length of Packet is 36 (0x24)
+  schar(0, 0x80), -- CAN data frame message type
+  schar(0, 1, 2, 3, 4, 5, 6, 7), -- 8 Unused "tag" data
+  schar(0, 1, 2, 3, 4, 5, 6, 7),-- TODO: Timestamp of 4 low and 4 high bytes
+  schar(3), -- Channel (unused)
 }
 ffi.cdef[[
 typedef struct pcan {
@@ -70,6 +72,17 @@ typedef struct pcan {
 ]]
 
 -- This returns a Lua string
+function lib.encode00(id, msg)
+  local pkt = table.concat{
+    preamble,
+    schar(#msg, 0),
+    id,
+    schar(unpack(msg))
+  }
+  assert(#pkt == 36)
+  return pkt
+end
+
 function lib.encode0(id, msg)
   local pkt = ffi.new('pcan', {preamble, #msg, 0, is_le and bswap(id) or id, msg})
   return ffi.string(pkt, 36)
